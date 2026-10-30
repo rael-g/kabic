@@ -542,7 +542,6 @@ public static class CSharpWriter
         }
         if (p.Has("utf8")) return "string";
         if (p.Has("rooted")) return "object";
-        if (p.Has("ctx")) return "nint";
         if (model.Enums.Any(e => e.Name == p.Type.Trim()))
             return Idioms.TypeName(p.Type.Trim(), convention);
         return PointerToView(model, p.Type, convention) ?? CsType(model, p.Type, convention);
@@ -1322,7 +1321,6 @@ public static class CSharpWriter
 
     static string ManagedLane(ApiModel model, ApiParam lane, string selfType, Convention convention) =>
         IsOwnerLane(lane, selfType, convention) ? selfType
-        : lane.Has("ctx") ? "nint"
         : lane.Has("utf8") ? "string"
         : IsBoolType(lane.Type, convention) ? "bool"
         : CsType(model, lane.Type, convention);
@@ -2372,7 +2370,6 @@ public static class CSharpWriter
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
             : p.Has("provider") ? $"{Idioms.Ident(p.Name!)}.Native"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
-            : p.Has("ctx") ? $"({CTypes.Normalize(p.Type)}){Idioms.Ident(p.Name!)}"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({p.Type.Trim()}){Idioms.Ident(p.Name!)}"
             : p.Has("enum") && CTypes.IsPointer(p.Type) ? $"({p.Type.Trim()}){Idioms.Ident(p.Name!)}"
@@ -2517,12 +2514,10 @@ public static class CSharpWriter
         var methodName = Idioms.Pascal(f.Name.StartsWith(prefix) ? f.Name[prefix.Length..]
             : convention.StripPrefix(f.Name));
 
-        var selfIsCtx = self is not null && self.Has("ctx");
         var selfSig = self is null ? null
-            : selfIsCtx ? $"nint {Idioms.Ident(self.Name!)}"
             : $"in {CsType(model, CTypes.Deref(self.Type), convention)} {Idioms.Ident(self.Name!)}";
         var selfArg = self is null ? null
-            : selfIsCtx ? $"({NativePointerType(model, self.Type, convention)}){Idioms.Ident(self.Name!)}" : "p";
+            : "p";
 
         var tupleOuts = cs.Shape is SlotShape.TupleOutParams ? cs.OutParams : [];
         var writes = cs.TrailingOuts.Concat(tupleOuts)
@@ -2585,7 +2580,7 @@ public static class CSharpWriter
         o.Add($"    public static {retType} {methodName}{generics}({string.Join(", ", sigParts)}){constraints}");
         o.Add("    {");
 
-        var needsFixed = self is not null && !selfIsCtx;
+        var needsFixed = self is not null;
         var body = new List<string>();
         foreach (var p in writes)
             body.Add($"{OutLocal(model, p, convention)} {Local(p)};");

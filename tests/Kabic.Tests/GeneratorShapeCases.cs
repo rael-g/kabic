@@ -139,43 +139,6 @@ internal static class GeneratorShapeCases
                        "return front == null ? default : new ReadOnlySpan<uint>(front, (int)countLocal);"],
             absent: ["out uint outCount", "public uint* Samples("]);
 
-        ExpectFreeFunctions("a free function honours [ctx], [out] and a counted return",
-            [
-                Function("ke_probe_ctx_samples", "const uint32_t *",
-                    Param("ctx", "ke_probe_ctx *", "ctx"),
-                    Param("query", "uint32_t"),
-                    Param("out_count", "size_t *", "out"),
-                    Returning("array_of:out_count")),
-                Function("ke_probe_ctx_share", "void",
-                    Param("ctx", "ke_probe_ctx *", "ctx"),
-                    Param("out_index", "uint32_t *", "out"),
-                    Param("out_count", "uint32_t *", "out")),
-            ],
-            contains: ["public static ReadOnlySpan<uint> Samples(nint ctx, uint query)",
-                       "var front = Native.ke_probe_ctx_samples((ProbeCtx*)ctx, query, &countLocal);",
-                       "nuint countLocal = 0;",
-                       "return front == null ? default : new ReadOnlySpan<uint>(front, (int)countLocal);",
-                       "public static (uint Index, uint Count) Share(nint ctx)",
-                       "Native.ke_probe_ctx_share((ProbeCtx*)ctx, &index, &count);",
-                       "return (index, count);"],
-            absent: ["in ke_probe_ctx ctx", "fixed (ke_probe_ctx* p =",
-                     "Samples(nint ctx, uint query, nuint* outCount)", "out uint index"]);
-
-        ExpectFreeFunctions("an opaque payload counted in bytes takes the caller's own type",
-            [
-                Function("ke_probe_ctx_attach", "bool",
-                    Param("ctx", "ke_probe_ctx *", "ctx"),
-                    Param("entity", "uint64_t"),
-                    Param("data", "const void *", "bytes_of:size"),
-                    Param("size", "size_t")),
-            ],
-            contains: ["public static bool Attach<TData>(nint ctx, ulong entity, in TData data)"
-                       + " where TData : unmanaged",
-                       "fixed (TData* dataPtr = &data)",
-                       "return Native.ke_probe_ctx_attach((ProbeCtx*)ctx, entity, (void*)dataPtr,"
-                       + " (nuint)sizeof(TData));"],
-            absent: ["public static bool Attach(nint"]);
-
         Expect("an opaque payload on a fallible slot takes the caller's own type",
             Vtable("ke_probe", Slot("attach", "ke_result",
                 Param("entity", "uint64_t"),
@@ -313,26 +276,6 @@ internal static class GeneratorShapeCases
                 ["fields"] = new JsonArray(Param("cid", "uint32_t")),
                 ["slots"] = new JsonArray(),
             }]);
-
-        Expect("a context lane is an nint the caller relays, not a native pointer",
-            Vtable("ke_probe", Slot("spawn", "ke_entity",
-                Param("sys", "ke_system_ctx *", "ctx"),
-                Param("parent", "ke_entity"))),
-            contains: ["public ulong Spawn(nint sys, ulong parent)", "(ke_system_ctx*)sys, parent"],
-            absent: ["ke_system_ctx* sys"]);
-
-        Expect("a handler relays a context lane as nint and reports its own failure by throwing",
-            Vtable("ke_probe", Slot("register_body", "ke_result",
-                Param("body", "ke_probe_body_fn", "closure:ctx"),
-                Param("ctx", "void *"))),
-            contains: ["public delegate void ProbeBody(nint sys, float dt);",
-                       "handler((nint)arg0, arg2);",
-                       "return KernelEngine.Result.Native.ke_result.KE_OK;"],
-            absent: ["delegate KernelEngine.Result.Native.ke_result ProbeBody", "ke_system_ctx* sys"],
-            aliases: new() { ["ke_probe_body_fn"] = "ke_result (*)(ke_system_ctx *, void *, float)" },
-            callbacks: [Callback("ke_probe_body_fn", "ke_result",
-                Param("sys", "ke_system_ctx *", "ctx"), Param("ctx", "void *", "context"),
-                Param("dt", "float"))]);
 
         Expect("a handler called with the provider is handed the managed wrapper, not the pointer",
             Vtable("ke_probe", Slot("register_body", "ke_result",
@@ -605,6 +548,10 @@ internal static class GeneratorShapeCases
             foreach (var needle in new[] { "pub const ke_rows:", "@offsetOf(ke_row, \"at\")", "@sizeOf(f32)", "pub const ke_grid:", "pub var ke_origin:", "pub const ke_limit: c_int = 3;" })
                 if (!zig.Contains(needle)) failures.Add($"expected in Zig: {needle}\n{zig}");
         });
+
+        ExpectFreeFunctions("a free function reaches the record it hangs off",
+            [Function("ke_probe_ctx_count", "uint32_t", Param("ctx", "ke_probe_ctx *"))],
+            contains: ["ke_probe_ctx_count("], absent: []);
 
         void ExpectFreeFunctions(string what, JsonObject[] functions, string[] contains, string[] absent)
 
