@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum ke_result
 {
     KE_OK,
@@ -92,5 +96,9 @@ typedef struct ke_probe_handle
 /// @param capacity Items.
 /// @param out_handle [out] The probe.
 ke_result ke_probe_create(uint32_t capacity, ke_probe_handle *out_handle);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

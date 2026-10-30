@@ -566,7 +566,7 @@ public static class CSharpWriter
     }
 
     static bool ByValue(string cType, ApiStruct target) =>
-        (IsPlain(target) || target.Has("view")) && CTypes.Deref(cType).TrimStart().StartsWith("const ", StringComparison.Ordinal);
+        (IsPlain(target) || target.Has("view")) && cType.TrimStart().StartsWith("const ", StringComparison.Ordinal);
 
     static string PassedArgument(ApiModel model, ApiParam p, Convention convention)
     {
