@@ -979,8 +979,7 @@ public static class CSharpWriter
     public readonly record struct ProviderSource(string Class, string? Contract);
 
     /// <summary>
-    /// Projects one vtable into the class that wraps it, and into the contract interface when the
-    /// vtable is tagged as an interface. Throws when a declaration cannot be spelled.
+    /// Projects one vtable into the class that wraps it, and into its contract interface. Throws when a declaration cannot be spelled.
     /// </summary>
     public static ProviderSource RenderProvider(ApiModel model, ApiStruct vtable, ClassifiedModel classified,
         string ns, string nativeNs, IReadOnlyList<string> extraUsings, Convention convention)
@@ -1011,7 +1010,7 @@ public static class CSharpWriter
         o.Add("}");
         o.Add("");
 
-        var domainIface = vtable.Has("interface") ? "I" + typeName : null;
+        var domainIface = "I" + typeName;
         var decls = domainIface is null ? null : new List<MemberDecl>();
 
         var contractNamesForeignProjections = vtable.Slots
@@ -1021,6 +1020,8 @@ public static class CSharpWriter
         if (contract is not null)
         {
             contract.Add($"using {convention.CommonManagedNamespace};");
+            contract.Add($"using {nativeNs};");
+            foreach (var u in extraUsings) contract.Add($"using {u};");
             if (contractNamesForeignProjections)
                 foreach (var u in extraUsings) contract.Add($"using {u};");
             contract.Add("");
@@ -1031,7 +1032,7 @@ public static class CSharpWriter
         var closures = VtableClosures(model, slots, convention);
         var closureGroups = VtableClosureGroups(model, slots, typeName, convention);
         foreach (var cb in closures.DistinctBy(c => c.Delegate))
-            RenderClosureDelegate(model, contract ?? o, cb, domainIface ?? typeName, convention);
+            RenderClosureDelegate(model, contract ?? o, cb, typeName, convention);
 
         var owned = OwnedOf(model, vtable, convention);
         foreach (var each in owned)
