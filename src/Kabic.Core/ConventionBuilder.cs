@@ -2,7 +2,7 @@ namespace Kabic;
 
 /// <summary>
 /// Builds the <see cref="Convention"/> of an ABI by declaring what it names, one call per fact.
-/// Every list is open: an ABI adds as many result codes, vector types or handle types as it has.
+/// Every list is open: an ABI adds as many result codes, mapped types or handle types as it has.
 /// </summary>
 public sealed class ConventionBuilder
 {
@@ -15,7 +15,7 @@ public sealed class ConventionBuilder
     string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "", resultCodesOut = "";
     readonly List<ResultCodeSpec> resultCodes = [];
     readonly Dictionary<string, string> handleTypes = [], typeNames = [];
-    readonly List<IShapePack> packs = [];
+    readonly Dictionary<string, Dictionary<string, string>> typeMap = [];
 
     /// <summary>
     /// The spellings that mark what a symbol is: its prefix and the suffix of a handle, a factory,
@@ -82,10 +82,10 @@ public sealed class ConventionBuilder
         return this;
     }
 
-    /// <summary>Adds a pack of types the ABI has beyond C's own.</summary>
-    public ConventionBuilder Use(IShapePack pack)
+    /// <summary>Spells <paramref name="cType"/> as <paramref name="target"/> in <paramref name="language"/>.</summary>
+    public ConventionBuilder AddType(string language, string cType, string target)
     {
-        packs.Add(pack);
+        (typeMap.TryGetValue(language, out var types) ? types : typeMap[language] = [])[cType] = target;
         return this;
     }
 
@@ -133,6 +133,6 @@ public sealed class ConventionBuilder
         ResultCodes = resultCodes.ToList(),
         HandleTypes = new Dictionary<string, string>(handleTypes),
         TypeNameOverrides = new Dictionary<string, string>(typeNames),
-        Packs = packs.ToList(),
+        TypeMap = typeMap.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(kv.Value)),
     };
 }

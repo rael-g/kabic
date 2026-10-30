@@ -202,23 +202,6 @@ internal static class GeneratorShapeCases
             contains: [], absent: [],
             throws: "already names one");
 
-        Expect("consecutive lanes become one vector parameter",
-            Vtable("ke_probe", Slot("set_gravity", "void",
-                Param("x", "float", "vector2:gravity"),
-                Param("y", "float"))),
-            contains: ["public void SetGravity(Vector2 gravity)", "gravity.X, gravity.Y", "using System.Numerics;"],
-            absent: ["SetGravity(float x, float y)"]);
-
-        Expect("a vector parameter does not disturb the parameters around it",
-            Vtable("ke_probe", Slot("apply_impulse", "void",
-                Param("body", "uint32_t"),
-                Param("impulse_x", "float", "vector2:impulse"),
-                Param("impulse_y", "float"),
-                Param("wake", "bool"))),
-            contains: ["public void ApplyImpulse(uint body, Vector2 impulse, bool wake)",
-                       "body, impulse.X, impulse.Y, wake"],
-            absent: ["float impulseX"]);
-
         Expect("a callback and its context become one delegate parameter",
             Vtable("ke_probe", Slot("watch", "ke_result",
                 Param("on_event", "ke_probe_event_func", "closure:event_ctx"),
@@ -423,8 +406,8 @@ internal static class GeneratorShapeCases
 
         ExpectValueStruct("a value struct's math fields take the managed math types",
             ValueStruct("ke_transform", ("position", "ke_vec3"), ("rotation", "ke_quat"), ("scale", "ke_vec3")),
-            contains: ["using System.Numerics;", "public Vector3 Position;", "public Quaternion Rotation;",
-                       "public Vector3 Scale;"],
+            contains: ["public System.Numerics.Vector3 Position;", "public System.Numerics.Quaternion Rotation;",
+                       "public System.Numerics.Vector3 Scale;"],
             absent: ["ke_vec3", "ke_quat"]);
 
         ExpectValueStruct("a value struct's fixed char array stays the bytes it is",
@@ -436,7 +419,7 @@ internal static class GeneratorShapeCases
 
         ExpectValueStruct("a value struct's matrix field takes the managed matrix type",
             ValueStruct("ke_world_transform", ("matrix", "ke_mat4")),
-            contains: ["using System.Numerics;", "public Matrix4x4 Matrix;"],
+            contains: ["public System.Numerics.Matrix4x4 Matrix;"],
             absent: ["ke_mat4"]);
 
         ExpectValueStruct("a value struct seeds the defaults the header states",
@@ -446,7 +429,7 @@ internal static class GeneratorShapeCases
                 ("layers", "uint32_t", ["default:1"]),
                 ("offset", "ke_vec2", [])),
             contains: ["public static SurfaceComponent Default => new()",
-                       "BaseColor = new Vector4(1f, 1f, 1f, 1f),", "Roughness = 1f,", "Layers = 1,"],
+                       "BaseColor = new System.Numerics.Vector4(1f, 1f, 1f, 1f),", "Roughness = 1f,", "Layers = 1,"],
             absent: ["Offset ="]);
 
         ExpectValueStruct("a value struct that is not a component carries no registered name",
@@ -864,11 +847,11 @@ internal static class GeneratorShapeCases
             var m = new ApiModel();
             foreach (var (name, lanes, tags) in new (string, string[], string[])[]
                 {
-                    ("ke_vec2", ["x", "y"], ["vector"]), ("ke_vec3", ["x", "y", "z"], ["vector"]),
-                    ("ke_vec4", ["x", "y", "z", "w"], ["vector"]), ("ke_quat", ["x", "y", "z", "w"], ["quaternion"]),
+                    ("ke_vec2", ["x", "y"], []), ("ke_vec3", ["x", "y", "z"], []),
+                    ("ke_vec4", ["x", "y", "z", "w"], []), ("ke_quat", ["x", "y", "z", "w"], []),
                 })
                 m.Structs.Add(new ApiStruct(name, null, tags, lanes.Select(l => new ApiField(l, "float", [], null)).ToList(), []));
-            m.Structs.Add(new ApiStruct("ke_mat4", null, ["matrix"], [new ApiField("m", "float[16]", [], null)], []));
+            m.Structs.Add(new ApiStruct("ke_mat4", null, [], [new ApiField("m", "float[16]", [], null)], []));
             return m;
         }
 

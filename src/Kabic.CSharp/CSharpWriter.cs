@@ -585,7 +585,6 @@ public static class CSharpWriter
     public static string RenderStruct(ApiModel model, ApiStruct s, string ns,
         IEnumerable<string> extraUsings, Convention convention)
     {
-        var needsPackImports = s.Fields.Any(f => convention.ShapeOf(model, f.Type) is not null);
         var inlineArrays = s.Fields
             .Select(f => (Field: f, Array: ValueArray(model, s, f, convention)))
             .Where(x => x.Array is not null)
@@ -595,7 +594,6 @@ public static class CSharpWriter
         var borrowsAType = s.Fields.Any(f => NamesForeignDeclaration(model, f, convention));
 
         var o = new List<string> { Header };
-        if (needsPackImports) foreach (var u in convention.Imports(Languages.CSharp)) o.Add($"using {u};");
         if (inlineArrays.Count > 0) o.Add("using System.Runtime.CompilerServices;");
         o.Add("using System.Runtime.InteropServices;");
         if (borrowsAType) foreach (var u in extraUsings) o.Add($"using {u};");
@@ -869,7 +867,7 @@ public static class CSharpWriter
     static bool NamesForeignDeclaration(ApiModel model, ApiField f, Convention convention)
     {
         var t = StripQualifiers(CTypes.FixedArray(f.Type)?.Element ?? f.Type).Trim();
-        if (convention.ShapeOf(model, t) is not null) return false;
+        if (convention.Project(Languages.CSharp, t) is not null) return false;
         return model.Enums.Any(e => e.Name == t && e.External)
             || model.Structs.Any(v => v.Name == t && v.External);
     }
@@ -933,7 +931,7 @@ public static class CSharpWriter
         var borrowsAType = s.Fields.Any(f =>
         {
             var named = StripQualifiers(CTypes.IsPointer(f.Type) ? CTypes.Deref(f.Type) : f.Type).Trim();
-            if (convention.ShapeOf(model, named) is not null) return false;
+            if (convention.Project(Languages.CSharp, named) is not null) return false;
             return model.Enums.Any(e => e.Name == named && e.External)
                 || model.Structs.Any(v => v.Name == named && v.External);
         });
@@ -963,7 +961,7 @@ public static class CSharpWriter
     static (string Buffer, string Element, int Arity)? ValueArray(ApiModel model, ApiStruct s, ApiField f,
         Convention convention)
     {
-        if (CTypes.FixedArray(f.Type) is not { } arr || convention.ShapeOf(model, f.Type) is not null) return null;
+        if (CTypes.FixedArray(f.Type) is not { } arr || convention.Project(Languages.CSharp, f.Type) is not null) return null;
 
         var element = arr.Element;
         if (CTypes.IsPointer(element))
@@ -982,7 +980,7 @@ public static class CSharpWriter
     /// type whose fields are the other.
     /// </summary>
     static string ValueTypeName(ApiModel model, string cType, Convention convention) =>
-        convention.Project(Languages.CSharp, model, cType) is { } mat ? mat
+        convention.Project(Languages.CSharp, cType) is { } mat ? mat
         : convention.HandleTypes.TryGetValue(cType.Trim(), out var handle) ? handle
         : model.Structs.Any(v => v.Name == cType.Trim() && (IsValue(v) || IsBorrowed(v)))
         || model.Enums.Any(e => e.Name == cType.Trim())
@@ -1007,7 +1005,7 @@ public static class CSharpWriter
                 + " it only has to outlive the call that takes the struct, declare the struct"
                 + " [borrowed].");
 
-        if (convention.Project(Languages.CSharp, model, f.Type) is { } projected) return projected;
+        if (convention.Project(Languages.CSharp, f.Type) is { } projected) return projected;
         if (ValueArray(model, s, f, convention) is { } array) return array.Buffer;
         return ValueTypeName(model, f.Type, convention);
     }
@@ -1024,16 +1022,9 @@ public static class CSharpWriter
         var name = Idioms.Pascal(f.Name);
         var parts = d.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var lanes = convention.ShapeOf(model, f.Type)?.Shape.Lanes.Count ?? 1;
-        if (lanes > 1)
-        {
-            if (parts.Length != lanes)
-                throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [default:{d}] has {parts.Length} components but the field"
-                    + $" holds {lanes}.");
+        if (parts.Length > 1)
             return $"{name} = new {ValueFieldType(model, s, f, convention)}"
                 + $"({string.Join(", ", parts.Select(p => p + "f"))}),";
-        }
 
         if (ValueArray(model, s, f, convention) is not null)
             throw new InvalidOperationException(
@@ -1176,7 +1167,6 @@ public static class CSharpWriter
             $"using {convention.CommonBindingsNamespace};",
             $"using {nativeNs};",
         };
-        if (HasGroupedParams(vtable, convention)) foreach (var u in convention.Imports(Languages.CSharp)) o.Add($"using {u};");
         foreach (var u in extraUsings) o.Add($"using {u};");
         o.Add("");
         o.Add($"namespace {ns};");
@@ -1199,7 +1189,6 @@ public static class CSharpWriter
         var contract = domainIface is null ? null : new List<string> { Header };
         if (contract is not null)
         {
-            if (HasGroupedParams(vtable, convention)) foreach (var u in convention.Imports(Languages.CSharp)) contract.Add($"using {u};");
             contract.Add($"using {convention.CommonManagedNamespace};");
             if (contractNamesForeignProjections)
                 foreach (var u in extraUsings) contract.Add($"using {u};");
@@ -1475,38 +1464,6 @@ public static class CSharpWriter
 
         return new ProviderSource(string.Join('\n', o), text);
     }
-
-    /// <summary>
-    /// The lane each parameter occupies in a vector a run of consecutive parameters
-    /// spells out. A C ABI has no vector type, so a position arrives as two floats and
-    /// every language that does have one re-groups them; doing that by hand is an
-    /// overload per slot whose only content is which argument goes where.
-    /// </summary>
-    static Dictionary<ApiParam, (string Group, string Lane, string Type, bool Leads)> GroupedLanes(IReadOnlyList<ApiParam> ps, Convention convention)
-    {
-        var map = new Dictionary<ApiParam, (string, string, string, bool)>();
-        for (var i = 0; i < ps.Count; i++)
-        {
-            if (convention.GroupOf(ps[i]) is not { } found) continue;
-            var (pack, group) = found;
-            var arity = group.Shape.Lanes.Count;
-            var type = pack.Project(Languages.CSharp, group.Shape)
-                ?? throw new InvalidOperationException(
-                    $"{ps[i].Name}: [{group.Shape.Kind}:{group.Name}] groups {arity} parameters, but C# has no type for that");
-            if (i + arity > ps.Count)
-                throw new InvalidOperationException(
-                    $"{ps[i].Name}: [{group.Shape.Kind}:{group.Name}] needs {arity} consecutive parameters, "
-                    + $"but only {ps.Count - i} follow");
-            for (var lane = 0; lane < arity; lane++)
-                map[ps[i + lane]] = (group.Name, group.Shape.Lanes[lane].ToUpperInvariant(), type, lane == 0);
-            i += arity - 1;
-        }
-        return map;
-    }
-
-    /// <summary>Whether any slot on the vtable groups parameters into a vector.</summary>
-    static bool HasGroupedParams(ApiStruct vtable, Convention convention) =>
-        vtable.Slots.Any(s => s.Params.Any(p => convention.GroupOf(p) is not null));
 
     /// <summary>
     /// How long the managed handler must stay reachable after the call that registered it.
@@ -2194,7 +2151,6 @@ public static class CSharpWriter
         var access = owned is not null && owned.Any(x => x.Release == slot) ? "internal" : "public";
         var ownedReturn = owned?.FirstOrDefault(x =>
             x.Answers(slot.Returns) || (cs.ResultOut is { } ro && x.Answers(CTypes.Deref(ro.Type))));
-        var lanes = GroupedLanes(slot.Params, convention);
         var callbacks = CallbackPairs(model, cs, convention);
         var groups = ClosureGroups(model, cs, callbacks, owner, ownerDrains, convention);
         var completion = CompletionOf(model, cs, convention, owned);
@@ -2233,11 +2189,8 @@ public static class CSharpWriter
         IEnumerable<string> SigParts(IEnumerable<ApiParam> ps)
         {
             var parts = ps
-                .Where(p => !lanes.TryGetValue(p, out var l) || l.Leads)
                 .Where(p => callbacks.All(c => c.Ctx != p))
-                .Select(p => (Param: p, Text: lanes.TryGetValue(p, out var l)
-                    ? $"{l.Type} {Idioms.Ident(l.Group)}"
-                    : callbacks.FirstOrDefault(c => c.Fn == p) is { } cb
+                .Select(p => (Param: p, Text: callbacks.FirstOrDefault(c => c.Fn == p) is { } cb
                         ? $"{cb.Delegate}? {Idioms.Ident(p.Name!)}"
                     : cs.Sequences.FirstOrDefault(s => s.Seq == p) is { } asSpan
                         ? (p.Has("utf8") ? $"ReadOnlySpan<string> {Idioms.Ident(p.Name!)}"
@@ -2711,7 +2664,6 @@ public static class CSharpWriter
                 ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
-            : lanes.TryGetValue(p, out var lane) ? $"{Idioms.Ident(lane.Group)}.{lane.Lane}"
             : p.Has("provider") ? $"{Idioms.Ident(p.Name!)}.Native"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("ctx") ? $"({CTypes.Normalize(p.Type)}){Idioms.Ident(p.Name!)}"

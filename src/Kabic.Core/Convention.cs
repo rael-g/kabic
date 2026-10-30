@@ -186,50 +186,22 @@ public sealed class Convention
     /// <summary>C owner-wrapper handle types and the managed type a caller holds instead.</summary>
     public IReadOnlyDictionary<string, string> HandleTypes { get; init; } = new Dictionary<string, string>();
 
-    /// <summary>The packs of types this ABI has beyond what C itself provides.</summary>
-    public IReadOnlyList<IShapePack> Packs { get; init; } = [];
-
     /// <summary>
-    /// The shape a C type is, as the first pack that recognises it says, or null.
+    /// The target type a C type is written as, by language: a spelling, whose layout is the
+    /// declarer's to keep equal to the C type's.
     /// </summary>
-    public (IShapePack Pack, TypeShape Shape)? ShapeOf(ApiModel model, string cType)
-    {
-        foreach (var pack in Packs)
-            if (pack.Recognize(model, cType) is { } shape)
-                return (pack, shape);
-        return null;
-    }
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> TypeMap { get; init; } =
+        new Dictionary<string, IReadOnlyDictionary<string, string>>();
 
-    /// <summary>
-    /// How <paramref name="language"/> spells the shape of a C type, or null when it is no shape or
-    /// the language has no such type.
-    /// </summary>
-    public string? Project(string language, ApiModel model, string cType) =>
-        ShapeOf(model, cType) is { } found ? found.Pack.Project(language, found.Shape) : null;
-
-    /// <summary>The group a parameter opens, with the pack that groups it.</summary>
-    public (IShapePack Pack, ParamGroup Group)? GroupOf(ApiParam parameter)
-    {
-        foreach (var pack in Packs)
-            if (pack.GroupOf(parameter) is { } group)
-                return (pack, group);
-        return null;
-    }
-
-    /// <summary>Everything the packs say <paramref name="language"/> has to import.</summary>
-    public IEnumerable<string> Imports(string language) => Packs.SelectMany(p => p.Imports(language)).Distinct();
-
-    /// <summary>
-    /// Every library, beyond the language's own, the packs say <paramref name="language"/> has to
-    /// reference.
-    /// </summary>
-    public IEnumerable<string> Libraries(string language) => Packs.SelectMany(p => p.Libraries(language)).Distinct();
+    /// <summary>How <paramref name="language"/> spells <paramref name="cType"/>, or null when the map holds no such type.</summary>
+    public string? Project(string language, string cType) =>
+        TypeMap.GetValueOrDefault(language)?.GetValueOrDefault(cType.Replace("const ", "").Replace("struct ", "").Trim());
 
     /// <summary>
     /// Reads the <c>convention</c> object of a manifest into a <see cref="ConventionBuilder"/> and
-    /// builds it; <paramref name="pack"/> resolves the name of a pack.
+    /// builds it.
     /// </summary>
-    public static Convention FromJson(System.Text.Json.Nodes.JsonObject json, Func<string, IShapePack> pack)
+    public static Convention FromJson(System.Text.Json.Nodes.JsonObject json)
     {
         static string Text(System.Text.Json.Nodes.JsonObject o, string key) =>
             o[key]?.GetValue<string>() ?? throw new InvalidOperationException($"the convention declares no '{key}'");
@@ -257,8 +229,9 @@ public sealed class Convention
         foreach (var (language, rules) in json["names"]?.AsObject() ?? [])
             foreach (var rule in rules!.AsArray())
                 builder.AddNameRule(language, rule!["match"]!.GetValue<string>(), rule["replace"]!.GetValue<string>());
-        foreach (var name in json["packs"]?.AsArray() ?? [])
-            builder.Use(pack(name!.GetValue<string>()));
+        foreach (var (language, types) in json["types"]?.AsObject() ?? [])
+            foreach (var (cType, target) in types!.AsObject())
+                builder.AddType(language, cType, target!.GetValue<string>());
         return builder.Build();
     }
 }

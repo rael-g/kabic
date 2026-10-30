@@ -6,7 +6,6 @@
   <Project Path="src/Kabic.CSharp/Kabic.CSharp.csproj" />
   <Project Path="src/Kabic.Factories/Kabic.Factories.csproj" />
   <Project Path="src/Kabic/Kabic.csproj" />
-  <Project Path="src/Kabic.Numerics/Kabic.Numerics.csproj" />
   <Project Path="src/Kabic.Pipeline/Kabic.Pipeline.csproj" />
   <Project Path="src/Kabic.Reader/Kabic.Reader.csproj" />
   <Project Path="src/Kabic.Zig/Kabic.Zig.csproj" />

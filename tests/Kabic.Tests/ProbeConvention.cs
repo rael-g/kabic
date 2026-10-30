@@ -1,11 +1,14 @@
-using Kabic.Numerics;
 
 namespace Kabic.Tests;
 
 internal static class ProbeConvention
 {
     public static readonly Convention Value = new ConventionBuilder()
-        .UseNumerics()
+        .AddType(Languages.CSharp, "ke_vec2", "System.Numerics.Vector2")
+        .AddType(Languages.CSharp, "ke_vec3", "System.Numerics.Vector3")
+        .AddType(Languages.CSharp, "ke_vec4", "System.Numerics.Vector4")
+        .AddType(Languages.CSharp, "ke_quat", "System.Numerics.Quaternion")
+        .AddType(Languages.CSharp, "ke_mat4", "System.Numerics.Matrix4x4")
         .AddNameRule(Languages.CSharp, "^out_(.+)$", "$1")
         .Symbols("ke_", "_handle", "_create", "_params")
         .Bindings("kernel_engine", "KernelEngine.Common.Native")

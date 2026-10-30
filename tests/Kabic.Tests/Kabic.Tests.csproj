@@ -25,7 +25,6 @@
     <ProjectReference Include="..\..\src\Kabic.CSharp\Kabic.CSharp.csproj" />
     <ProjectReference Include="..\..\src\Kabic.Zig\Kabic.Zig.csproj" />
     <ProjectReference Include="..\..\src\Kabic.Pipeline\Kabic.Pipeline.csproj" />
-    <ProjectReference Include="..\..\src\Kabic.Numerics\Kabic.Numerics.csproj" />
     <ProjectReference Include="..\..\src\Kabic.Bindings\Kabic.Bindings.csproj" />
   </ItemGroup>
 
