@@ -551,7 +551,7 @@ public static class CSharpWriter
     }
 
     static ApiStruct? Pointee(ApiModel model, string cType) =>
-        CTypes.IsPointer(cType) ? model.Structs.FirstOrDefault(s => s.Name == StripQualifiers(CTypes.Deref(cType)).Trim()) : null;
+        CType.Of(cType) is { IsPointer: true } type ? model.Structs.FirstOrDefault(s => s.Name == type.Name) : null;
 
     /// <summary>
     /// How a pointer reaches a caller without a pointer: a struct by value, a vtable through its
@@ -566,7 +566,7 @@ public static class CSharpWriter
     }
 
     static bool ByValue(string cType, ApiStruct target) =>
-        (IsPlain(target) || target.Has("view")) && cType.TrimStart().StartsWith("const ", StringComparison.Ordinal);
+        (IsPlain(target) || target.Has("view")) && CType.Of(cType).Const;
 
     static string PassedArgument(ApiModel model, ApiParam p, Convention convention)
     {

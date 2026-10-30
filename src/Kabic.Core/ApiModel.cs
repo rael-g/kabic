@@ -256,7 +256,7 @@ public class ApiModel
         return Structs.Any(s => s.Name == made && s.Has("owner")) ? made : null;
     }
 
-    static string Bare(string type) => type.Replace("const ", "").Replace("struct ", "").Trim().TrimEnd('*', ' ');
+    static string Bare(string type) => CType.Of(type).Name;
 
     /// <summary>
     /// Resolves a type through <see cref="TypeAliases"/> until it is no longer an alias.

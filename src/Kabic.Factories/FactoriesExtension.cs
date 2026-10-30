@@ -157,7 +157,7 @@ public sealed class FactoriesExtension : IKabicExtension
         return new FactoryArgument(field.Doc, field.Name, name, Idioms.CsPrimitive(type, context.Convention), name, false);
     }
 
-    private static string Bare(string cType) => cType.Replace("const ", "").Replace("struct ", "").Trim().TrimEnd('*', ' ');
+    private static string Bare(string cType) => CType.Of(cType).Name;
 
     private static string Render(Factory f, Convention convention)
     {

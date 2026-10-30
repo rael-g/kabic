@@ -231,7 +231,7 @@ public static class Classifier
     public static (ApiParam? Param, ApiStruct? Bag) ExpandedBag(ApiModel model, ApiSlot slot)
     {
         var expanded = slot.Params.FirstOrDefault(p => CTypes.IsPointer(p.Type)
-            && model.Structs.Any(s => s.Has("bag") && s.Name == CTypes.Deref(p.Type).Trim()));
+            && model.Structs.Any(s => s.Has("bag") && s.Name == CType.Of(p.Type).Name));
         if (expanded is null) return (null, null);
 
         if (!CTypes.IsPointer(expanded.Type))
