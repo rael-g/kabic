@@ -1,6 +1,5 @@
 <Solution>
   <Project Path="src/Kabic.Bindings/Kabic.Bindings.csproj" />
-  <Project Path="src/Kabic.C/Kabic.C.csproj" />
   <Project Path="src/Kabic.Cli/Kabic.Cli.csproj" />
   <Project Path="src/Kabic.Conventions/Kabic.Conventions.csproj" />
   <Project Path="src/Kabic.Core/Kabic.Core.csproj" />

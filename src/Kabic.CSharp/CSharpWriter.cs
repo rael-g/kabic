@@ -611,19 +611,9 @@ public static class CSharpWriter
         o.Add(s.Doc is not null
             ? XmlDoc("", s.Doc, convention).TrimEnd()
             : $"/// <summary>Mirrors <c>{s.Name}</c>.</summary>");
-        var layoutNs = convention.IsComponentType(s.Name) ? convention.FieldTable?.ManagedNamespace : null;
         o.Add("[StructLayout(LayoutKind.Sequential)]");
-        o.Add($"public partial struct {Idioms.TypeName(s.Name, convention)}"
-            + (layoutNs is null ? "" : $" : global::{layoutNs}.IComponentLayout"));
+        o.Add($"public partial struct {Idioms.TypeName(s.Name, convention)}");
         o.Add("{");
-        if (convention.IsComponentType(s.Name))
-        {
-            o.Add("    /// <summary>The name this component is registered under, which is its only"
-                + " identity across languages. Derived from the struct the ABI declares, so a caller"
-                + " naming the component and the storage holding it cannot come to disagree.</summary>");
-            o.Add($"    public const string Name = \"{convention.ComponentNameFor(s.Name)}\";");
-            o.Add("");
-        }
         foreach (var (f, array) in inlineArrays)
         {
             o.Add($"    /// <summary>Elements <c>{Idioms.Pascal(f.Name)}</c> has room for, as the ABI"
@@ -638,7 +628,6 @@ public static class CSharpWriter
             o.Add($"    public {ValueFieldType(model, s, f, convention)} {Idioms.Pascal(f.Name)};");
         }
 
-        if (layoutNs is not null) o.AddRange(LayoutMembers(model, s, layoutNs, convention));
 
         var seeded = s.Fields.Where(f => f.TagValue("default") is not null).ToList();
         if (seeded.Count > 0)
@@ -668,61 +657,6 @@ public static class CSharpWriter
         o.Add("}");
         o.Add("");
         return string.Join('\n', o);
-    }
-
-    /// <summary>
-    /// The members by which a component struct states its field table: the rows
-    /// <see cref="FieldTables"/> describes, each with its offset and size taken from the struct at
-    /// run time, so the table the native registry compares is the struct's actual layout.
-    /// </summary>
-    private static IEnumerable<string> LayoutMembers(ApiModel model, ApiStruct s, string ns, Convention convention)
-    {
-        var typeName = Idioms.TypeName(s.Name, convention);
-        var field = $"global::{ns}.ComponentField";
-        yield return "";
-        yield return $"    private static readonly {field}[] s_fields = DescribeFields();";
-        yield return "";
-        yield return "    /// <inheritdoc/>";
-        yield return $"    public static global::System.ReadOnlySpan<{field}> Fields => s_fields;";
-        yield return "";
-        yield return $"    private static {field}[] DescribeFields()";
-        yield return "    {";
-        var rows = FieldTables.Fields(model, s, convention).ToList();
-        if (rows.Count == 0)
-        {
-            yield return "        return [];";
-            yield return "    }";
-            yield break;
-        }
-        yield return $"        var v = default({typeName});";
-        yield return "        return";
-        yield return "        [";
-        foreach (var f in rows)
-        {
-            var kind = FieldTables.KindOf(model, f, convention)!;
-            yield return $"            global::{ns}.ComponentFields.Row(ref v, ref v.{Idioms.Pascal(f.Name)}, \"{FieldTables.KeyOf(f)}\","
-                + $" global::{ns}.ComponentFieldKind.{KindMember(kind)}, {LayoutDefault(model, f, ns, convention)}),";
-        }
-        yield return "        ];";
-        yield return "    }";
-    }
-
-    private static string KindMember(string kind) => char.ToUpperInvariant(kind[0]) + kind[1..];
-
-    private static string LayoutDefault(ApiModel model, ApiField f, string ns, Convention convention)
-    {
-        var value = $"global::{ns}.ComponentFieldValue";
-        if (FieldTables.DefaultOf(model, f, convention) is not { } d) return $"{value}.None";
-        static string Lane(string raw) => (raw.Contains('.') ? raw : raw + ".0") + "f";
-        return d.Kind switch
-        {
-            "string" => $"{value}.Of(\"{d.Raw}\")",
-            "bool" => $"{value}.Of({(d.Raw is "1" or "true" ? "true" : "false")})",
-            "int" => $"{value}.Of({d.Raw}L)",
-            "float" => $"{value}.Of({(d.Lanes[0].Contains('.') ? d.Lanes[0] : d.Lanes[0] + ".0")})",
-            _ => $"{value}.Of(global::{ns}.ComponentFieldKind.{KindMember(d.Kind)}, new global::System.Numerics.Vector4("
-                + string.Join(", ", d.Lanes.Select(Lane).Concat(Enumerable.Repeat("0f", 4 - d.Lanes.Length))) + "))",
-        };
     }
 
     /// <summary>
@@ -2823,24 +2757,21 @@ public static class CSharpWriter
         var cbParam = cs.PublicParams.First(p => classified.Callbacks.Any(c => c.Name == p.Type.Trim()));
         var cbType = classified.Callbacks.First(c => c.Name == cbParam.Type.Trim());
         var ifaceName = "I" + Idioms.TypeName(cbType.Name, convention) + "Native";
-        var hasLevel = classified.CallbackHasLevel.GetValueOrDefault(cbType.Name);
         var handlesField = $"_{Idioms.Camel(slot.Name)}Handles";
         var otherParams = cs.PublicParams.Where(p => p != cbParam).ToList();
 
         o.Add($"    private readonly List<GCHandle> {handlesField} = [];");
         o.Add("");
-        var lvlArg = hasLevel ? ", int minLevel = 0" : "";
         var otherArgs = string.Concat(otherParams.Select(p => $", {CsParamType2(p)} {Idioms.Ident(p.Name!)}"));
         Declare(o, decls,
             XmlDoc("    ", slot.Doc, convention, [(Idioms.Ident(cbParam.Name!), cbParam.Doc)], throwsOnFail: true).TrimEnd(),
-            $"void {Idioms.Pascal(slot.Name)}({ifaceName} {Idioms.Ident(cbParam.Name!)}{otherArgs}{lvlArg})");
+            $"void {Idioms.Pascal(slot.Name)}({ifaceName} {Idioms.Ident(cbParam.Name!)}{otherArgs})");
         o.Add("    {");
         o.Add($"        var gch = GCHandle.Alloc({Idioms.Ident(cbParam.Name!)});");
         o.Add($"        {handlesField}.Add(gch);");
         o.Add($"        var native = new {cbType.Name}");
         o.Add("        {");
         o.Add("            handle = GCHandle.ToIntPtr(gch).ToPointer(),");
-        if (hasLevel) o.Add("            min_level = minLevel,");
         foreach (var s in cbType.Slots)
             o.Add($"            {s.Name} = &{Idioms.Pascal(s.Name)}Trampoline,");
         o.Add("        };");

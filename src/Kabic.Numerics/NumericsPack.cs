@@ -64,8 +64,6 @@ public sealed class NumericsPack : IShapePack
         (Languages.CSharp, Vector, 2 or 3 or 4) => $"Vector{shape.Lanes.Count}",
         (Languages.CSharp, Quaternion, 4) => "Quaternion",
         (Languages.CSharp, Matrix, _) => "Matrix4x4",
-        (Languages.FieldTable, Vector, 2 or 3 or 4) => $"vec{shape.Lanes.Count}",
-        (Languages.FieldTable, Quaternion, 4) => "quat",
         _ => null,
     };
 

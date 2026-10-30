@@ -29,7 +29,6 @@ public sealed class NumericsPackTests
         var shape = Pack.Recognize(ModelWith("my_rot", ["quaternion"], "x", "y", "z", "w"), "my_rot")!;
 
         Assert.Equal("Quaternion", Pack.Project(Languages.CSharp, shape));
-        Assert.Equal("quat", Pack.Project(Languages.FieldTable, shape));
     }
 
     [Fact]

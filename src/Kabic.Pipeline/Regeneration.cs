@@ -6,8 +6,7 @@ namespace Kabic.Pipeline;
 public sealed record DomainOutput(
     string ApiJson,
     string OutDir,
-    string ContractDir,
-    string? CFieldTableFile);
+    string ContractDir);
 
 /// <summary>
 /// Plans, extracts and generates the artifacts of each domain in the manifest.
@@ -25,8 +24,7 @@ public static class Regeneration
         return new DomainOutput(
             place(spec.ApiJson),
             outDir,
-            spec.AbstractionsOutDir is null ? outDir : place(spec.AbstractionsOutDir),
-            spec.CFieldTable is null ? null : place(spec.CFieldTable.File));
+            spec.AbstractionsOutDir is null ? outDir : place(spec.AbstractionsOutDir));
     }
 
     /// <summary>
@@ -59,8 +57,7 @@ public static class Regeneration
         Extraction.Run(RequestFor(spec, rootDir, zig, convention));
 
     /// <summary>
-    /// Generates the C# projection of one domain from its API JSON, and writes its C field
-    /// table when the domain declares one and a path was planned for it.
+    /// Generates the C# projection of one domain from its API JSON.
     /// </summary>
     public static void GenerateOne(DomainSpec spec, string apiJson, DomainOutput output, Convention convention)
     {
@@ -68,8 +65,6 @@ public static class Regeneration
             apiJson, spec.Namespace, spec.NativeNamespace, output.OutDir, output.ContractDir,
             spec.Name, spec.Library, spec.Providers, [], spec.Usings, convention));
 
-        if (spec.CFieldTable is { } c && output.CFieldTableFile is { } file)
-            Generation.CFieldTable(apiJson, file, c.Guard, c.Includes, convention);
     }
 
     /// <summary>

@@ -1,31 +1,5 @@
 namespace Kabic;
 
-/// <summary>How one kind of field is spelled in the generated table.</summary>
-public sealed record FieldVariant(string Constant, string Member);
-
-/// <summary>
-/// How a component struct is described to the runtime that applies a scene file to it: the entry
-/// type of the table, the header declaring it, and the spelling of every kind of field, by the
-/// kind's name: <c>null</c>, <c>bool</c>, <c>int</c>, <c>float</c> and <c>string</c> are C's own,
-/// and a pack names the others. <c>ManagedNamespace</c> is where kabic emits the layout a C#
-/// component struct states (<c>IComponentLayout</c> and the types its rows are made of), into the
-/// file <c>ManagedOut</c>; <c>NativeOut</c> receives the conversion of such a layout into the native
-/// entry type, declared in <c>BindingsNamespace</c> with its default as a <c>VariantType</c> whose
-/// kind is a <c>VariantKindType</c>. Without <c>ManagedNamespace</c> the C# structs
-/// state none. A convention without a field table has no field tables.
-/// </summary>
-public sealed record FieldTableConvention(
-    string EntryType,
-    string Include,
-    string NameMacroPrefix,
-    IReadOnlyDictionary<string, FieldVariant> Variants,
-    string? ManagedNamespace = null,
-    string? ManagedOut = null,
-    string? BindingsNamespace = null,
-    string? NativeOut = null,
-    string VariantType = "",
-    string VariantKindType = "");
-
 /// <summary>
 /// One result code the ABI names on the managed side: the constant, and the exception a caller
 /// catches for it, declared by kabic as deriving from <paramref name="Extends"/> when that is given.
@@ -67,28 +41,6 @@ public sealed class Convention
 
     /// <summary>Whether a struct name marks a parameter bag rather than an interface.</summary>
     public bool IsParamsType(string structName) => structName.EndsWith(ParamsSuffix);
-
-    /// <summary>
-    /// Suffix marking an ECS component struct (<c>ke_point_light_component</c>). Stripped
-    /// along with <see cref="SymbolPrefix"/> to recover the name the component is registered
-    /// under at runtime (<c>point_light</c>), which is its only cross-language identity.
-    /// </summary>
-    public required string ComponentSuffix { get; init; }
-
-    /// <summary>
-    /// Whether a struct name marks an ECS component rather than plain value data.
-    /// </summary>
-    public bool IsComponentType(string structName) => structName.EndsWith(ComponentSuffix);
-
-    /// <summary>
-    /// The registered component name for a component struct (<c>ke_point_light_component</c> →
-    /// <c>point_light</c>).
-    /// </summary>
-    public string ComponentNameFor(string structName)
-    {
-        var n = StripPrefix(structName);
-        return n.EndsWith(ComponentSuffix) ? n[..^ComponentSuffix.Length] : n;
-    }
 
     /// <summary>Boolean return-type spellings that mean "succeeded".</summary>
     public IReadOnlyList<string> BooleanReturnTypes => ["_Bool", "bool"];
@@ -207,11 +159,6 @@ public sealed class Convention
 
 
     /// <summary>
-    /// How component structs are described as field tables, or null when this ABI has none.
-    /// </summary>
-    public FieldTableConvention? FieldTable { get; init; }
-
-    /// <summary>
     /// Header, relative to the repository root, that declares the result type and its codes.
     /// </summary>
     public string ResultAbiHeader { get; init; } = "";
@@ -281,7 +228,7 @@ public sealed class Convention
 
         var builder = new ConventionBuilder()
             .Symbols(Text(json, "symbolPrefix"), Text(json, "handleSuffix"), Text(json, "factorySuffix"),
-                Text(json, "componentSuffix"), Text(json, "paramsSuffix"))
+                Text(json, "paramsSuffix"))
             .OutParams(Or(json, "outParamPrefix", "out_"))
             .Bindings(Or(json, "includeDirectoryName", "kernel_engine"), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
@@ -301,25 +248,6 @@ public sealed class Convention
             builder.AddTypeName(symbol, name!.GetValue<string>());
         foreach (var name in json["packs"]?.AsArray() ?? [])
             builder.Use(pack(name!.GetValue<string>()));
-        if (json["fieldTable"] is System.Text.Json.Nodes.JsonObject table)
-            builder.FieldTable(ReadFieldTable(table));
         return builder.Build();
-    }
-
-    static FieldTableConvention ReadFieldTable(System.Text.Json.Nodes.JsonObject table)
-    {
-        return new FieldTableConvention(
-            table["entryType"]!.GetValue<string>(),
-            table["include"]!.GetValue<string>(),
-            table["nameMacroPrefix"]!.GetValue<string>(),
-            table["variants"]!.AsObject().ToDictionary(
-                kv => kv.Key,
-                kv => new FieldVariant(kv.Value!["constant"]!.GetValue<string>(), kv.Value["member"]?.GetValue<string>() ?? "")),
-            table["managedNamespace"]?.GetValue<string>(),
-            table["managedOut"]?.GetValue<string>(),
-            table["bindingsNamespace"]?.GetValue<string>(),
-            table["nativeOut"]?.GetValue<string>(),
-            table["variantType"]?.GetValue<string>() ?? "",
-            table["variantKindType"]?.GetValue<string>() ?? "");
     }
 }

@@ -449,11 +449,6 @@ internal static class GeneratorShapeCases
                        "BaseColor = new Vector4(1f, 1f, 1f, 1f),", "Roughness = 1f,", "Layers = 1,"],
             absent: ["Offset ="]);
 
-        ExpectValueStruct("a component value struct carries the name it is registered under",
-            ValueStruct("ke_point_light_component", ("intensity", "float")),
-            contains: ["public const string Name = \"point_light\";"],
-            absent: []);
-
         ExpectValueStruct("a value struct that is not a component carries no registered name",
             ValueStruct("ke_vertex_position", ("x", "float")),
             contains: [], absent: ["public const string Name"]);

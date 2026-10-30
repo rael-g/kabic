@@ -62,17 +62,6 @@ internal static class GenerateCommand
                 Console.WriteLine("result codes: regenerated");
             }
 
-            if (convention.FieldTable is { ManagedOut: { } managedOut, NativeOut: { } nativeOut })
-            {
-                foreach (var (path, text) in new[] { (managedOut, Generation.ComponentLayout(convention)), (nativeOut, Generation.NativeFieldTable(convention)) })
-                {
-                    var file = Place(path);
-                    Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-                    File.WriteAllText(file, text);
-                }
-                Console.WriteLine("component layout: regenerated");
-            }
-
             IReadOnlyDictionary<string, string> emitted;
             try
             {

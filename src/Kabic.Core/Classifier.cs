@@ -124,11 +124,6 @@ public class ClassifiedModel
     public Dictionary<string, ConstructorPlan> Constructors { get; } = [];
 
     /// <summary>
-    /// Whether each vtable declares a field named <c>min_level</c>, keyed by the vtable's name.
-    /// </summary>
-    public Dictionary<string, bool> CallbackHasLevel { get; } = [];
-
-    /// <summary>
     /// The name of the slot tagged as the init lifecycle, keyed by the vtable's name.
     /// </summary>
     public Dictionary<string, string> LifecycleInit { get; } = [];
@@ -193,7 +188,6 @@ public static class Classifier
             var shutdown = v.Slots.FirstOrDefault(s => s.Has("lifecycle") && s.TagValue("lifecycle") == "shutdown");
             if (shutdown is not null) result.LifecycleShutdown[v.Name] = shutdown.Name;
 
-            result.CallbackHasLevel[v.Name] = v.Fields.Any(f => f.Name == "min_level");
         }
 
         foreach (var v in result.Providers)
@@ -337,9 +331,9 @@ public static class Classifier
                     + " dereference, and a rooted pointer is the one thing it never does.");
 
         var written = allOut.Concat(returnCount is null ? [] : new[] { returnCount }).ToList();
-        var stripped = written.Where(p => p.Name!.StartsWith("out_", StringComparison.Ordinal)
-                                       && p.Name!.Length > "out_".Length)
-            .Select(p => (Param: p, Bare: p.Name!["out_".Length..])).ToList();
+        var stripped = written.Where(p => p.Name!.StartsWith(convention.OutParamPrefix, StringComparison.Ordinal)
+                                       && p.Name!.Length > convention.OutParamPrefix.Length)
+            .Select(p => (Param: p, Bare: p.Name![convention.OutParamPrefix.Length..])).ToList();
         foreach (var (p, bare) in stripped)
         {
             var taken = slot.Params.FirstOrDefault(q => q != p && q.Name == bare)

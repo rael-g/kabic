@@ -6,7 +6,7 @@ internal static class ProbeConvention
 {
     public static readonly Convention Value = new ConventionBuilder()
         .UseNumerics()
-        .Symbols("ke_", "_handle", "_create", "_component", "_params")
+        .Symbols("ke_", "_handle", "_create", "_params")
         .Bindings("kernel_engine", "KernelEngine.Common.Native")
         .Managed("KernelEngine.Common")
         .Result("ke_result", "KE_OK", "KernelEngine.Result.Native.ke_result", "KernelEngine.NativeResults")

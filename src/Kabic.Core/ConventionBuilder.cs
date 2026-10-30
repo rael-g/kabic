@@ -6,7 +6,7 @@ namespace Kabic;
 /// </summary>
 public sealed class ConventionBuilder
 {
-    string symbolPrefix = "", handleSuffix = "", factorySuffix = "", componentSuffix = "", paramsSuffix = "";
+    string symbolPrefix = "", handleSuffix = "", factorySuffix = "", paramsSuffix = "";
     string outParamPrefix = "out_";
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
     string commonManagedNamespace = "";
@@ -14,17 +14,16 @@ public sealed class ConventionBuilder
     IReadOnlyList<string> resultAbiIncludeDirs = [];
     string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "", resultCodesOut = "";
     readonly List<ResultCodeSpec> resultCodes = [];
-    FieldTableConvention? fieldTable;
     readonly Dictionary<string, string> handleTypes = [], typeNames = [];
     readonly List<IShapePack> packs = [];
 
     /// <summary>
     /// The spellings that mark what a symbol is: its prefix and the suffix of a handle, a factory,
-    /// a component and a parameter bag.
+    /// a parameter bag.
     /// </summary>
-    public ConventionBuilder Symbols(string prefix, string handle, string factory, string component, string parameters)
+    public ConventionBuilder Symbols(string prefix, string handle, string factory, string parameters)
     {
-        (symbolPrefix, handleSuffix, factorySuffix, componentSuffix, paramsSuffix) = (prefix, handle, factory, component, parameters);
+        (symbolPrefix, handleSuffix, factorySuffix, paramsSuffix) = (prefix, handle, factory, parameters);
         return this;
     }
 
@@ -106,13 +105,6 @@ public sealed class ConventionBuilder
         return this;
     }
 
-    /// <summary>How component structs are described as field tables.</summary>
-    public ConventionBuilder FieldTable(FieldTableConvention table)
-    {
-        fieldTable = table;
-        return this;
-    }
-
     /// <summary>
     /// Builds the <see cref="Convention"/> from the facts declared so far, without checking them.
     /// </summary>
@@ -125,7 +117,6 @@ public sealed class ConventionBuilder
         SymbolPrefix = symbolPrefix,
         HandleSuffix = handleSuffix,
         FactorySuffix = factorySuffix,
-        ComponentSuffix = componentSuffix,
         ParamsSuffix = paramsSuffix,
         OutParamPrefix = outParamPrefix,
         IncludeDirectoryName = includeDirectoryName,
@@ -142,7 +133,6 @@ public sealed class ConventionBuilder
         ResultCodes = resultCodes.ToList(),
         HandleTypes = new Dictionary<string, string>(handleTypes),
         TypeNameOverrides = new Dictionary<string, string>(typeNames),
-        FieldTable = fieldTable,
         Packs = packs.ToList(),
     };
 }

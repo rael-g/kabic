@@ -3,11 +3,6 @@ using System.Text.Json.Nodes;
 namespace Kabic.Pipeline;
 
 /// <summary>
-/// The C field table a domain generates: its output file, its include guard and its includes.
-/// </summary>
-public sealed record CFieldTableSpec(string File, string Guard, IReadOnlyList<string> Includes);
-
-/// <summary>
 /// One domain of the manifest, with its headers, its output locations and its providers.
 /// </summary>
 public sealed record DomainSpec(
@@ -23,8 +18,7 @@ public sealed record DomainSpec(
     string? AbstractionsOutDir,
     IReadOnlyList<string> Providers,
     IReadOnlyList<string> Usings,
-    string? Library,
-    CFieldTableSpec? CFieldTable)
+    string? Library)
 {
     /// <summary>
     /// Reads the manifest at the given path and returns its domains in manifest order.
@@ -40,7 +34,6 @@ public sealed record DomainSpec(
         static List<string> Strings(JsonNode? node) =>
             node?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
 
-        var cOut = d["cOut"] as JsonObject;
         return new DomainSpec(
             d["name"]!.GetValue<string>(),
             Strings(d["headers"]),
@@ -54,8 +47,6 @@ public sealed record DomainSpec(
             d["abstractionsOutDir"]?.GetValue<string>(),
             Strings(d["providers"]),
             Strings(d["usings"]),
-            d["library"]?.GetValue<string>(),
-            cOut is null ? null : new CFieldTableSpec(
-                cOut["file"]!.GetValue<string>(), cOut["guard"]!.GetValue<string>(), Strings(cOut["includes"])));
+            d["library"]?.GetValue<string>());
     }
 }

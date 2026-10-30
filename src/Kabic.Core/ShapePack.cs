@@ -5,9 +5,6 @@ public static class Languages
 {
     /// <summary>The managed projection.</summary>
     public const string CSharp = "csharp";
-
-    /// <summary>The C table that describes a component's fields to the runtime.</summary>
-    public const string FieldTable = "field-table";
 }
 
 /// <summary>
