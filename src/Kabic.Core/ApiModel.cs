@@ -368,7 +368,7 @@ public static class ApiReader
         foreach (var f in root["functions"]!.AsArray())
         {
             var o = f!.AsObject();
-            m.Functions.Add(new ApiFunction(Str(o, "name")!, Str(o, "returns")!, Str(o, "doc"), Str(o, "return_doc"),
+            m.Functions.Add(new ApiFunction(Str(o, "name")!, Returned(o), Str(o, "doc"), Str(o, "return_doc"),
                 o["params"]!.AsArray().Select(p => ReadParam(p!.AsObject())).ToList())
             {
                 ReturnTags = ReadTags(o, "return_tags"),
@@ -386,7 +386,10 @@ public static class ApiReader
         new(Enum.Parse<ApiValueKind>(Str(o, "kind")!), Str(o, "text") ?? "",
             o["items"]?.AsArray().Select(i => ReadValue(i!.AsObject())).ToList() ?? []);
 
-    static ApiSlot ReadSlot(System.Text.Json.Nodes.JsonObject o) => new(Str(o, "name")!, Str(o, "returns")!,
+    static string Returned(System.Text.Json.Nodes.JsonObject o) =>
+        ReadTags(o, "return_tags").Contains("result") ? Convention.TaggedResult : Str(o, "returns")!;
+
+    static ApiSlot ReadSlot(System.Text.Json.Nodes.JsonObject o) => new(Str(o, "name")!, Returned(o),
         o["tags"]?.AsArray().Select(t => t!.GetValue<string>()).ToList() ?? [], Str(o, "doc"),
         Str(o, "return_doc"), o["params"]!.AsArray().Select(p => ReadParam(p!.AsObject())).ToList())
     {

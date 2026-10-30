@@ -18,7 +18,14 @@ public sealed class Convention
     /// True if a slot returns the result code (<see cref="ResultType"/>): it fails by returning a
     /// code other than <see cref="ResultOk"/>, and hands its value back through an out-parameter.
     /// </summary>
-    public bool ReturnsResult(string returns) => ResultType.Length > 0 && returns.Trim() == ResultType;
+    public bool ReturnsResult(string returns) =>
+        returns == TaggedResult || (ResultType.Length > 0 && returns.Trim() == ResultType);
+
+    /// <summary>The return of a call whose <c>@return</c> is tagged <c>[result]</c>.</summary>
+    public const string TaggedResult = "[result]";
+
+    /// <summary>The expression that means success.</summary>
+    public string ResultOkValue => char.IsDigit(ResultOk[0]) ? ResultOk : $"{ResultManagedType}.{ResultOk}";
 
     /// <summary>
     /// The parameters a caller of <paramref name="factory"/> supplies: all of them, but the owner

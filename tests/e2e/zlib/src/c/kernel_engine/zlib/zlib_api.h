@@ -16,7 +16,7 @@ extern "C" {
  * @param destLen [out] Written bytes.
  * @param source [array_of:sourceLen] Input.
  * @param sourceLen Input bytes.
- * @return 0 on success.
+ * @return [result] 0 on success.
  */
 int compress(Bytef *dest, uLong *destLen, const Bytef *source, uLong sourceLen);
 

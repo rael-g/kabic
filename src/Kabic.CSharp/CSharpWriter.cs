@@ -473,6 +473,7 @@ public static class CSharpWriter
     static string OutLocal(ApiModel model, ApiParam p, Convention convention) =>
         p.TagValue("enum") is { } named
             ? Idioms.TypeName(named, convention)
+            : CTypes.IsPointer(CTypes.Deref(p.Type)) && Pointee(model, CTypes.Deref(p.Type)) is null ? "nint"
             : CsType(model, CTypes.Deref(p.Type), convention);
 
     /// <summary>
@@ -1311,9 +1312,9 @@ public static class CSharpWriter
 
         public string ThrowIfFailed(string call) => $"{C.ResultHelperClass}.ThrowIfFailed({call}, \"{Context}\");";
 
-        public string Ok(string call) => $"(rc = {call}) == {C.ResultManagedType}.{C.ResultOk}";
+        public string Ok(string call) => $"(rc = {call}) == {C.ResultOkValue}";
 
-        public string Failed(string call) => $"(rc = {call}) != {C.ResultManagedType}.{C.ResultOk}";
+        public string Failed(string call) => $"(rc = {call}) != {C.ResultOkValue}";
 
         public string Exception => $"{C.ResultHelperClass}.FromCode(rc, \"{Context}\")";
     }
@@ -1738,6 +1739,7 @@ public static class CSharpWriter
             : $"arg{i}"));
         var byResult = convention.ReturnsResult(pair.Callback.Returns);
         var returns = IsBoolType(pair.Callback.Returns, convention);
+        var yields = returns || (pair.Callback.Returns.Trim() != "void" && !convention.ReturnsResult(pair.Callback.Returns));
         var handlerAnswers = ManagedReturn(model, pair.Callback, convention) != "void";
         var nativeReturn = byResult ? convention.ResultManagedType : BlittableLane(model, pair.Callback.Returns, convention);
 
@@ -1754,7 +1756,7 @@ public static class CSharpWriter
         {
             o.Add("            {");
             o.Add($"                handler({args});");
-            o.Add($"                return {convention.ResultManagedType}.{convention.ResultOk};");
+            o.Add($"                return {convention.ResultOkValue};");
             o.Add("            }");
             o.Add($"            return {convention.ResultHelperClass}.ToCode(new InvalidOperationException(\"{pair.Callback.Name}: no handler is registered\"));");
         }
@@ -1766,8 +1768,8 @@ public static class CSharpWriter
             o.Add("            }");
         }
         else
-            o.Add($"                {(returns ? $"return handler({args});" : $"handler({args});")}");
-        if (returns) o.Add("            return false;");
+            o.Add($"                {(yields ? $"return handler({args});" : $"handler({args});")}");
+        if (yields) o.Add("            return default;");
         o.Add("        }");
         o.Add("        catch (Exception ex)");
         o.Add("        {");
@@ -1780,7 +1782,7 @@ public static class CSharpWriter
         else
         {
             o.Add("            s_parkedCallbackException ??= ex;");
-            if (returns) o.Add("            return false;");
+            if (yields) o.Add("            return default;");
         }
         o.Add("        }");
         o.Add("    }");
@@ -1819,7 +1821,7 @@ public static class CSharpWriter
             ? "void* ctx"
             : $"{BlittableLane(model, l.Type, convention)} arg{i}");
         var err = $"arg{completion.CodeLane}";
-        var errFailed = $"{err} != {convention.ResultManagedType}.{convention.ResultOk}";
+        var errFailed = $"{err} != {convention.ResultOkValue}";
         var errException = $"{convention.ResultHelperClass}.FromCode({err}, \"{slot.Name}\")";
 
         string Answer()
@@ -2190,7 +2192,7 @@ public static class CSharpWriter
                         }
                         BuildBag();
                         if (parks) o.Add($"{fInd}s_parkedCallbackException = null;");
-                        if (resultOut is not null) o.Add($"{fInd}{OutLocal(model, resultOut, convention)} resultOut = default;");
+                        if (resultOut is not null) o.Add($"{fInd}{OutLocal(model, resultOut, convention)} resultOut = {(cs.Sequences.FirstOrDefault(s => s.Count == resultOut) is { } capacity ? $"({OutLocal(model, resultOut, convention)}){Idioms.Ident(capacity.Seq.Name!)}.Length" : "default")};");
                         o.Add($"{fInd}{lane.DeclareForCheck}");
                         o.Add($"{fInd}bool ok;");
                         o.Add($"{fInd}try");
@@ -2282,7 +2284,7 @@ public static class CSharpWriter
                     }
                     else if (resultOut is not null)
                     {
-                        o.Add($"{fInd}{OutLocal(model, resultOut, convention)} resultOut = default;");
+                        o.Add($"{fInd}{OutLocal(model, resultOut, convention)} resultOut = {(cs.Sequences.FirstOrDefault(s => s.Count == resultOut) is { } capacity ? $"({OutLocal(model, resultOut, convention)}){Idioms.Ident(capacity.Seq.Name!)}.Length" : "default")};");
                         o.Add($"{fInd}{lane.ThrowIfFailed(plainCall)}");
                         var value = OutRead(resultOut, "resultOut");
                         o.Add($"{fInd}return {(ownedReturn is null ? value : $"new {ownedReturn.TypeName}(this, ({ownedReturn.View}){value})")};");
@@ -2534,9 +2536,14 @@ public static class CSharpWriter
     public static string RenderFunctions(ApiModel model, ClassifiedModel classified, string domain, string ns, string nativeNs,
         IReadOnlyList<string> extraUsings, Convention convention)
     {
-        var o = new List<string> { Header, "using System.Runtime.InteropServices;", $"using {nativeNs};" };
+        var o = new List<string> { Header, "using System.Runtime.CompilerServices;", "using System.Runtime.InteropServices;", $"using {nativeNs};" };
         foreach (var u in extraUsings) o.Add($"using {u};");
-        o.AddRange(["", $"namespace {ns};", "", "/// <summary>The functions of the domain.</summary>", $"public static unsafe partial class {Idioms.TypeName(domain, convention)}", "{"]);
+        o.AddRange(["", $"namespace {ns};", ""]);
+        var typeName = Idioms.TypeName(domain, convention);
+        var closures = VtableClosures(model, classified.Functions, convention);
+        foreach (var cb in closures.DistinctBy(c => c.Delegate)) RenderClosureDelegate(model, o, cb, typeName, convention);
+        o.AddRange(["/// <summary>The functions of the domain.</summary>", $"public static unsafe partial class {typeName}", "{"]);
+        if (closures.Count > 0) o.AddRange(["    [ThreadStatic]", "    private static Exception? s_parkedCallbackException;", ""]);
         foreach (var cs in classified.Functions)
         {
             var symbol = $"global::{nativeNs}.{convention.BindingsMethodsClass}.{convention.StripPrefix(cs.Slot.Name)}";

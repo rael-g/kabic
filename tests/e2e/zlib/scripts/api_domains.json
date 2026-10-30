@@ -1,5 +1,5 @@
 {
-  "convention": { "symbolPrefix": "", "commonManagedNamespace": "Zlib", "commonBindingsNamespace": "Zlib.Shared", "includeDirectoryName": "kernel_engine",
+  "convention": { "symbolPrefix": "", "resultManagedType": "int", "resultOk": "0", "resultType": "[none]", "resultHelperClass": "global::Zlib.Results", "commonManagedNamespace": "Zlib", "commonBindingsNamespace": "Zlib.Shared", "includeDirectoryName": "kernel_engine",
     "names": { "csharp": [] } },
   "domains": [ { "name": "zlib", "headers": ["src/c/kernel_engine/zlib/zlib_api.h"], "includeDirs": ["src/c"],
     "apiJson": "src/csharp/ke_api.json", "namespace": "Zlib", "nativeNamespace": "Zlib.Native",

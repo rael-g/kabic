@@ -39,6 +39,9 @@
           "tags": [],
           "doc": "Input bytes."
         }
+      ],
+      "return_tags": [
+        "result"
       ]
     },
     {
