@@ -82,10 +82,6 @@ public static class Generation
             File.WriteAllText(Path.Combine(outDir, $"{counted.Name}.Spans.g.cs"),
                 CSharpWriter.RenderStructSpans(model, counted, nativeNs, convention));
 
-        foreach (var kinds in model.Enums.Where(e => !e.External && e.Has("borrow_kinds")))
-            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(kinds.Name, convention)}Wrappers.g.cs"),
-                CSharpWriter.RenderBorrowWrappers(kinds, ns, convention));
-
         foreach (var provider in classified.Providers)
         {
             var typeName = Idioms.TypeName(provider.Name, convention);
@@ -96,13 +92,6 @@ public static class Generation
                 Directory.CreateDirectory(contractDir);
                 File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), source.Contract);
             }
-        }
-
-        foreach (var bridged in model.Callbacks.Where(c => c.Has("bridge")))
-        {
-            Directory.CreateDirectory(contractDir);
-            File.WriteAllText(Path.Combine(contractDir, $"{Idioms.TypeName(bridged.Name, convention)}.g.cs"),
-                CSharpWriter.RenderCallbackBridge(model, bridged, ns, nativeNs, convention));
         }
 
         foreach (var callback in classified.Callbacks)

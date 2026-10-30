@@ -107,14 +107,6 @@ internal static class GeneratorShapeCases
             contains: [], absent: [],
             throws: "a rooted pointer is the one thing it never does");
 
-        Expect("an interning slot emits the type cache and its reverse",
-            Vtable("ke_probe", Slot("signal_id", "ke_result",
-                Param("name", "const char *", "utf8,type_name"),
-                Param("payload_size", "uint32_t", "type_size"),
-                Param("out_id", "uint32_t *", "out"), "interns")),
-            contains: ["public uint SignalIdOf<T>() where T : unmanaged", "public Type? SignalIdTypeOf(uint id)"],
-            absent: []);
-
         Expect("a slot that answers and writes spells the written value out",
             Vtable("ke_probe", Slot("ask", "ke_entity",
                 Param("entity", "ke_entity"),
@@ -342,13 +334,6 @@ internal static class GeneratorShapeCases
                 ["fields"] = new JsonArray(Param("cid", "uint32_t")),
                 ["slots"] = new JsonArray(),
             }]);
-
-        Expect("only a slot declaring itself raw takes the suffix",
-            Vtable("ke_probe", Slot("drain", "uint32_t", "raw",
-                Param("out_buf", "uint32_t *", "out,array_of:capacity"),
-                Param("capacity", "uint32_t"))),
-            contains: ["public uint DrainRaw(Span<uint> outBuf)"],
-            absent: ["public uint Drain("]);
 
         Expect("a context lane is an nint the caller relays, not a native pointer",
             Vtable("ke_probe", Slot("spawn", "ke_entity",
@@ -621,47 +606,6 @@ internal static class GeneratorShapeCases
                     Param("pool", "ke_task_pool *", "provider"))),
             contains: ["Attach(ke_probe* self, INativeTaskPool pool)", "pool.Native"],
             absent: ["ke_task_pool* pool", "ke_task_pool *pool"]);
-
-        ExpectCallbackBridge("a bridged callback becomes a delegate without its context and a pinning trampoline",
-            new ApiCallback("ke_probe_line_fn", "void", "Receives a line.",
-            [
-                new ApiParam("ctx", "void *", ["context"], null),
-                new ApiParam("level", "ke_probe_reach_kind", [], null),
-                new ApiParam("text", "const char *", ["borrowed", "utf8"], null),
-            ])
-            { Tags = ["bridge"] },
-            contains: ["public delegate void ProbeLineFn(ProbeReachKind level, string text);",
-                       "public static delegate* unmanaged[Cdecl]<void*, ke_probe_reach_kind, sbyte*, void> Pointer => &Trampoline;",
-                       "public static void* Pin(ProbeLineFn handler)",
-                       "((ProbeLineFn)GCHandle.FromIntPtr((nint)ctx).Target!)((ProbeReachKind)level, Marshal.PtrToStringUTF8((nint)text)!);"],
-            absent: ["void* ctx, ProbeReachKind"]);
-
-        ExpectCallbackBridge("a bridged callback without a context lane is refused",
-            new ApiCallback("ke_probe_line_fn", "void", null,
-                [new ApiParam("text", "const char *", ["utf8"], null)])
-            { Tags = ["bridge"] },
-            contains: [], absent: [], throws: "exactly one [context] lane");
-
-        ExpectCallbackBridge("a bridged callback lane with no managed form is refused",
-            new ApiCallback("ke_probe_line_fn", "void", null,
-            [
-                new ApiParam("ctx", "void *", ["context"], null),
-                new ApiParam("count", "uint32_t", [], null),
-            ])
-            { Tags = ["bridge"] },
-            contains: [], absent: [], throws: "has no bridged form");
-
-        ExpectBorrowKinds("a borrow-kinds enum emits one wrapper per value, each marked with its reach",
-            contains: [
-                "public sealed class NodeBorrowAttribute : Attribute",
-                "[NodeBorrow(ProbeReachKind.Near)]",
-                "public readonly ref struct Near<T> where T : class",
-                "public Near(T? node) => _node = node;",
-                "[NodeBorrow(ProbeReachKind.Far)]",
-                "public readonly ref struct Far<T> where T : class",
-            ],
-            absent: ["internal Near("]);
-
 
         void Expect(string what, JsonObject vtable, string[] contains, string[] absent,
             Dictionary<string, string>? aliases = null, JsonObject[]? callbacks = null,
@@ -994,79 +938,6 @@ internal static class GeneratorShapeCases
             new(name, null, [],
                 fields.Select(f => new ApiField(f.Name, f.Type,
                     f.Tags is "" ? [] : f.Tags.Split(','), null)).ToList(), []);
-
-        void ExpectCallbackBridge(string what, ApiCallback callback, string[] contains, string[] absent, string? throws = null)
-        {
-            Register(what, failures =>
-            {
-                var model = new ApiModel();
-                model.Enums.Add(new ApiEnum("ke_probe_reach_kind", "Where a borrow looks.",
-                [
-                    new ApiEnumValue("KE_PROBE_REACH_KIND_NEAR", "0", true, "Close by."),
-                ]));
-                model.Callbacks.Add(callback);
-
-                string emitted;
-                try
-                {
-                    emitted = CSharpWriter.RenderCallbackBridge(model, callback, "Probe", "Probe.Native", ProbeConvention.Value);
-                }
-                catch (Exception ex)
-                {
-                    if (throws is null || !ex.Message.Contains(throws, StringComparison.Ordinal))
-                        failures.Add($"{what}: the writer threw {ex.GetType().Name}: {ex.Message}");
-                    return;
-                }
-                if (throws is not null)
-                {
-                    failures.Add($"{what}: expected the writer to refuse with \"{throws}\"");
-                    return;
-                }
-                if (Environment.GetEnvironmentVariable("KE_SHAPES_DUMP") == what) Console.WriteLine(emitted);
-
-                foreach (var needle in contains)
-                    if (!emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected to find \"{needle}\"");
-
-                foreach (var needle in absent)
-                    if (emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected NOT to find \"{needle}\"");
-            });
-        }
-
-        void ExpectBorrowKinds(string what, string[] contains, string[] absent)
-
-        {
-            Register(what, failures =>
-            {
-                var kinds = new ApiEnum("ke_probe_reach_kind", "Where a borrow looks.",
-            [
-                new ApiEnumValue("KE_PROBE_REACH_KIND_NEAR", "0", true, "Close by."),
-                new ApiEnumValue("KE_PROBE_REACH_KIND_FAR", "1", true, "Further off."),
-            ])
-                { Tags = ["borrow_kinds"] };
-
-                string emitted;
-                try
-                {
-                    emitted = CSharpWriter.RenderBorrowWrappers(kinds, "Probe", ProbeConvention.Value);
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"{what}: the writer threw {ex.GetType().Name}: {ex.Message}");
-                    return;
-                }
-                if (Environment.GetEnvironmentVariable("KE_SHAPES_DUMP") == what) Console.WriteLine(emitted);
-
-                foreach (var needle in contains)
-                    if (!emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected to find \"{needle}\"");
-
-                foreach (var needle in absent)
-                    if (emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected NOT to find \"{needle}\"");
-            });
-        }
 
         static JsonObject Vtable(string name, params object[] rest)
         {

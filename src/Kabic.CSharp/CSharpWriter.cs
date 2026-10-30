@@ -541,7 +541,6 @@ public static class CSharpWriter
         }
         if (p.Has("utf8")) return "string";
         if (p.Has("rooted")) return "object";
-        if (p.Has("opaque")) return "void*";
         if (p.Has("ctx")) return "nint";
         if (model.Enums.Any(e => e.Name == p.Type.Trim()))
             return Idioms.TypeName(p.Type.Trim(), convention);
@@ -1038,105 +1037,6 @@ public static class CSharpWriter
     }
 
     /// <summary>
-    /// Emits one borrow wrapper per value of an enum that names where a borrow looks.
-    /// The engine asks one question with the region as a parameter, so a projection
-    /// that hands borrows to a script body needs one type per region and nothing else
-    /// varying between them; writing them out by hand is copying the same struct once
-    /// per enum value and letting the copies drift.
-    /// </summary>
-    public static string RenderBorrowWrappers(ApiEnum kinds, string ns, Convention convention)
-    {
-        var enumType = Idioms.TypeName(kinds.Name, convention);
-        var o = new List<string> { Header, $"namespace {ns};\n" };
-
-        o.Add("/// <summary>");
-        o.Add($"/// Marks a borrow wrapper with the <c>{enumType}</c> it resolves with, so a");
-        o.Add("/// projection recognises a borrow parameter by what it means rather than by a list");
-        o.Add("/// of type names kept in step by hand.");
-        o.Add("/// </summary>");
-        o.Add("[AttributeUsage(AttributeTargets.Struct)]");
-        o.Add("public sealed class NodeBorrowAttribute : Attribute");
-        o.Add("{");
-        o.Add("    /// <summary>Where this wrapper's borrow looks for the node it names.</summary>");
-        o.Add($"    public {enumType} Reach {{ get; }}");
-        o.Add("");
-        o.Add("    /// <param name=\"reach\">Where this wrapper's borrow looks for the node it names.</param>");
-        o.Add($"    public NodeBorrowAttribute({enumType} reach) => Reach = reach;");
-        o.Add("}");
-        o.Add("");
-
-        foreach (var v in kinds.Values)
-        {
-            var member = Idioms.EnumMember(v.Name, kinds.Name);
-            o.Add("/// <summary>");
-            o.Add($"/// {Escape(v.Doc ?? $"A borrow resolved with {member}.")} Obtained as a parameter rather");
-            o.Add("/// than stored in a field: re-resolved each time it is handed over, so it can never");
-            o.Add("/// dangle, and its type is what puts <typeparamref name=\"T\"/>'s components into the");
-            o.Add("/// borrowing body's access list.");
-            o.Add("/// </summary>");
-            o.Add($"[NodeBorrow({enumType}.{member})]");
-            o.Add($"public readonly ref struct {member}<T> where T : class");
-            o.Add("{");
-            o.Add("    private readonly T? _node;");
-            o.Add("");
-            o.Add("    /// <summary>The borrowed node, or null when none matched.</summary>");
-            o.Add("    public T? Node => _node;");
-            o.Add("");
-            o.Add("    /// <summary>True when a node matched this borrow.</summary>");
-            o.Add("    public bool IsBound => _node is not null;");
-            o.Add("");
-            o.Add("    /// <param name=\"node\">The node this borrow resolved to, or null when none matched.</param>");
-            o.Add($"    public {member}(T? node) => _node = node;");
-            o.Add("");
-            o.Add("    /// <summary>Unwraps the borrow, throwing when nothing matched.</summary>");
-            o.Add("    public T Value => _node ?? throw new InvalidOperationException(");
-            o.Add($"        $\"No node of type {{typeof(T).Name}} is bound for this {member.ToLowerInvariant()} borrow.\");");
-            o.Add("}");
-            o.Add("");
-        }
-        return string.Join('\n', o);
-    }
-
-    /// <summary>
-    /// Emits the type-to-id cache for a slot that interns a type under its name and
-    /// payload size. The engine identifies the thing by those two values precisely so
-    /// that two languages agree on it; what a language then needs is the trip back to
-    /// its own type system, and every binding runtime would otherwise write the same
-    /// pair of dictionaries by hand.
-    /// </summary>
-    static void RenderInterning(List<string> o, ApiSlot slot, ApiModel model, Convention convention)
-    {
-        var name = Idioms.Pascal(slot.Name);
-        var nameParam = slot.Params.FirstOrDefault(p => p.Has("type_name"));
-        var sizeParam = slot.Params.FirstOrDefault(p => p.Has("type_size"));
-        if (nameParam is null || sizeParam is null) return;
-
-        var ids = $"_{Idioms.Ident(slot.Name)}Ids";
-        var types = $"_{Idioms.Ident(slot.Name)}Types";
-
-        o.Add($"    private readonly Dictionary<Type, uint> {ids} = new();");
-        o.Add($"    private readonly Dictionary<uint, Type> {types} = new();");
-        o.Add("");
-        o.Add($"    /// <summary>The id <typeparamref name=\"T\"/> interns to, registering it on first use.</summary>");
-        o.Add($"    public uint {name}Of<T>() where T : unmanaged");
-        o.Add("    {");
-        o.Add($"        if ({ids}.TryGetValue(typeof(T), out var cached)) return cached;");
-        o.Add($"        var resolved = {name}(typeof(T).Name, (uint)sizeof(T));");
-        o.Add($"        {ids}[typeof(T)] = resolved;");
-        o.Add($"        {types}[resolved] = typeof(T);");
-        o.Add("        return resolved;");
-        o.Add("    }");
-        o.Add("");
-        o.Add("    /// <summary>");
-        o.Add($"    /// The type <paramref name=\"id\"/> was interned for, or null when this runtime never");
-        o.Add("    /// interned one. Null is a normal answer rather than a failure: an id another");
-        o.Add("    /// language registered is real, and simply has no type here to name it.");
-        o.Add("    /// </summary>");
-        o.Add($"    public Type? {name}TypeOf(uint id) => {types}.TryGetValue(id, out var t) ? t : null;");
-        o.Add("");
-    }
-
-    /// <summary>
     /// The class projecting a vtable, and -- where the vtable declares one -- the contract
     /// naming what it can do. The two are separate units because the contract is what a
     /// caller depends on and the class is what satisfies it: emitting them together puts
@@ -1370,8 +1270,6 @@ public static class CSharpWriter
             RenderSlotMethod(model, o, decls, cs, convention, typeName, Drains(model, slots, convention), owned);
         }
 
-        foreach (var slot in vtable.Slots.Where(s => s.Has("interns")))
-            RenderInterning(o, slot, model, convention);
 
         var teardownParks = closureGroups.Any(g => g.Pairs.Any(p => p.Teardown));
 
@@ -1890,8 +1788,7 @@ public static class CSharpWriter
     /// different hand-written member, is left whole to the idiom layer.
     /// </summary>
     static bool Projected(ClassifiedSlot cs) =>
-        !cs.Slot.Has("sink") && !cs.Slot.Has("lifecycle") && !cs.Slot.Has("raw_callback")
-        && !cs.Slot.Has("idiom") && !cs.PublicParams.Any(p => p.Has("raw_callback"));
+        !cs.Slot.Has("lifecycle");
 
     /// <summary>
     /// Every closure a vtable projects. Only the slots that are projected count: a
@@ -2140,7 +2037,7 @@ public static class CSharpWriter
 
     /// <summary>What a slot is called where the provider projects it.</summary>
     static string SlotName(ApiSlot slot) =>
-        (slot.TagValue("name") ?? Idioms.Pascal(slot.Name)) + (slot.Has("raw") ? "Raw" : "");
+        Idioms.Pascal(slot.Name);
 
     static void RenderSlotMethod(ApiModel model, List<string> o, List<MemberDecl>? decls,
         ClassifiedSlot cs, Convention convention, string owner, bool ownerDrains,
@@ -2766,90 +2663,6 @@ public static class CSharpWriter
     /// Renders the managed interface a callback struct is implemented against: one method for
     /// each slot other than <c>destroy</c>.
     /// </summary>
-    /// <summary>
-    /// The managed side of a callback typedef tagged <c>bridge</c>: a delegate of its lanes
-    /// without the context lane, and a class whose <c>Pointer</c> and <c>Pin</c> are the two
-    /// arguments a native setter of that typedef takes. The trampoline turns an enum lane into
-    /// the managed enum of the same name and a utf8 lane into a string; a lane of any other kind,
-    /// a typedef without exactly one context lane, or one that returns a value is refused.
-    /// </summary>
-    public static string RenderCallbackBridge(ApiModel model, ApiCallback cb, string ns, string nativeNs, Convention convention)
-    {
-        var name = Idioms.TypeName(cb.Name, convention);
-        if (cb.Returns.Trim() != "void")
-            throw new InvalidOperationException($"{cb.Name}: a bridged callback returns nothing, and this one returns {cb.Returns}");
-        var contexts = cb.Lanes.Where(l => l.Has("context")).ToList();
-        if (contexts.Count != 1)
-            throw new InvalidOperationException($"{cb.Name}: a bridged callback has exactly one [context] lane, and this one has {contexts.Count}");
-
-        var nativeLanes = new List<string>();
-        var nativeParams = new List<string>();
-        var managedParams = new List<string>();
-        var managedArgs = new List<string>();
-        foreach (var lane in cb.Lanes)
-        {
-            var ident = Idioms.Ident(lane.Name ?? $"arg{nativeLanes.Count}");
-            if (lane.Has("context"))
-            {
-                nativeLanes.Add("void*");
-                nativeParams.Add($"void* {ident}");
-                continue;
-            }
-            var enumType = model.Enums.FirstOrDefault(e => e.Name == lane.Type.Trim());
-            if (enumType is not null)
-            {
-                var managed = Idioms.TypeName(enumType.Name, convention);
-                nativeLanes.Add(enumType.Name);
-                nativeParams.Add($"{enumType.Name} {ident}");
-                managedParams.Add($"{managed} {ident}");
-                managedArgs.Add($"({managed}){ident}");
-            }
-            else if (lane.Has("utf8"))
-            {
-                nativeLanes.Add("sbyte*");
-                nativeParams.Add($"sbyte* {ident}");
-                managedParams.Add($"string {ident}");
-                managedArgs.Add($"Marshal.PtrToStringUTF8((nint){ident})!");
-            }
-            else
-            {
-                throw new InvalidOperationException($"{cb.Name}: lane '{lane.Name}' of type {lane.Type} has no bridged form; an enum or a [utf8] string has");
-            }
-        }
-        var pointer = $"delegate* unmanaged[Cdecl]<{string.Join(", ", nativeLanes)}, void>";
-        var ctx = Idioms.Ident(contexts[0].Name ?? "ctx");
-
-        var o = new List<string>
-        {
-            Header,
-            "using System.Runtime.CompilerServices;",
-            "using System.Runtime.InteropServices;",
-            "",
-            $"using {nativeNs};",
-            "",
-            $"namespace {ns};",
-            "",
-        };
-        o.Add(XmlDoc("", cb.Doc, convention).TrimEnd());
-        o.Add($"public delegate void {name}({string.Join(", ", managedParams)});");
-        o.Add("");
-        o.Add($"/// <summary>Hands a <see cref=\"{name}\"/> to native code: <see cref=\"Pointer\"/> and the context <see cref=\"Pin\"/> returns are the two arguments a native setter of <c>{cb.Name}</c> takes.</summary>");
-        o.Add($"public static unsafe class {name}Native");
-        o.Add("{");
-        o.Add("    /// <summary>The function native code calls; it forwards each call to the handler the context names.</summary>");
-        o.Add($"    public static {pointer} Pointer => &Trampoline;");
-        o.Add("");
-        o.Add("    /// <summary>The context naming <paramref name=\"handler\"/>. The handler is kept alive from then on, since native code may call it until the process ends.</summary>");
-        o.Add($"    public static void* Pin({name} handler) => (void*)GCHandle.ToIntPtr(GCHandle.Alloc(handler));");
-        o.Add("");
-        o.Add("    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]");
-        o.Add($"    static void Trampoline({string.Join(", ", nativeParams)}) =>");
-        o.Add($"        (({name})GCHandle.FromIntPtr((nint){ctx}).Target!)({string.Join(", ", managedArgs)});");
-        o.Add("}");
-        o.Add("");
-        return string.Join('\n', o);
-    }
-
     public static string RenderCallbackInterface(ApiStruct cbType, string ns, string nativeNs, Convention convention)
     {
         var ifaceName = "I" + Idioms.TypeName(cbType.Name, convention) + "Native";
