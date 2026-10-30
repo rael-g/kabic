@@ -249,7 +249,7 @@ public static class Classifier
                     + "the slot does not declare");
             sequences.Add(new SequencePair(seq, count));
         }
-        ps = ps.Where(p => sequences.All(s => s.Count != p)).ToList();
+        ps = ps.Where(p => sequences.All(s => s.Count != p || CTypes.IsPointer(p.Type))).ToList();
 
         var blobs = new List<BlobPair>();
         foreach (var blob in ps.Where(p => p.Has("bytes_of")))

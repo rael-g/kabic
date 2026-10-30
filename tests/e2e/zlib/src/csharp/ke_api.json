@@ -1,0 +1,71 @@
+{
+  "enums": [],
+  "structs": [],
+  "vtables": [],
+  "functions": [
+    {
+      "name": "compress",
+      "returns": "int",
+      "doc": "Compresses a buffer.",
+      "return_doc": "0 on success.",
+      "params": [
+        {
+          "name": "dest",
+          "type": "Bytef *",
+          "tags": [
+            "array_of:destLen"
+          ],
+          "doc": "Output."
+        },
+        {
+          "name": "destLen",
+          "type": "uLong *",
+          "tags": [
+            "out"
+          ],
+          "doc": "Written bytes."
+        },
+        {
+          "name": "source",
+          "type": "const Bytef *",
+          "tags": [
+            "array_of:sourceLen"
+          ],
+          "doc": "Input."
+        },
+        {
+          "name": "sourceLen",
+          "type": "uLong",
+          "tags": [],
+          "doc": "Input bytes."
+        }
+      ]
+    },
+    {
+      "name": "compressBound",
+      "returns": "uLong",
+      "doc": "Bound of a compressed size.",
+      "return_doc": "Worst case bytes.",
+      "params": [
+        {
+          "name": "sourceLen",
+          "type": "uLong",
+          "tags": [],
+          "doc": "Input bytes."
+        }
+      ]
+    },
+    {
+      "name": "zlibVersion",
+      "returns": "const char *",
+      "doc": null,
+      "return_doc": "The version.",
+      "params": []
+    }
+  ],
+  "callbacks": [],
+  "type_aliases": {
+    "Bytef": "unsigned char",
+    "uLong": "unsigned long"
+  }
+}

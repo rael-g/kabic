@@ -2337,7 +2337,9 @@ public static class CSharpWriter
                     var pClosers = SequenceClosers(model, cs.Sequences);
                     var pInd = new string(' ', 8 + pDepth * 4);
                     foreach (var op in cs.TrailingOuts)
-                        o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local;");
+                        o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local"
+                            + (cs.Sequences.FirstOrDefault(s => s.Count == op) is { } capacity
+                                ? $" = ({OutLocal(model, op, convention)}){Idioms.Ident(capacity.Seq.Name!)}.Length;" : ";"));
                     var pCall = Call(slot, call);
                     if (retType == "string")
                     {
