@@ -313,7 +313,7 @@ public static class ApiReader
                 {
                     var f = fRaw!.AsObject();
                     return new ApiField(Str(f, "name")!, Str(f, "type")!,
-                        f["tags"]?.AsArray().Select(t => t!.GetValue<string>()).ToList() ?? [], Str(f, "doc"))
+                        WithText(Str(f, "type")!, f["tags"]?.AsArray().Select(t => t!.GetValue<string>()).ToList() ?? []), Str(f, "doc"))
                     {
                         Inline = f["inline"] is System.Text.Json.Nodes.JsonObject inline
                             ? ReadRecord(inline, inline["slots"] is not null) : null,
@@ -395,7 +395,13 @@ public static class ApiReader
         o[key]?.AsArray().Select(t => t!.GetValue<string>()).ToList() ?? [];
 
     static ApiParam ReadParam(System.Text.Json.Nodes.JsonObject o) => new(Str(o, "name"), Str(o, "type")!,
-        o["tags"]!.AsArray().Select(t => t!.GetValue<string>()).ToList(), Str(o, "doc"));
+        WithText(Str(o, "type")!, o["tags"]!.AsArray().Select(t => t!.GetValue<string>()).ToList()), Str(o, "doc"));
+
+    static List<string> WithText(string type, List<string> tags)
+    {
+        if (type.Replace(" ", "").StartsWith("constchar*", StringComparison.Ordinal) && !tags.Contains("utf8")) tags.Add("utf8");
+        return tags;
+    }
 
     static string? Str(System.Text.Json.Nodes.JsonObject o, string key) => o[key]?.GetValue<string>();
 }

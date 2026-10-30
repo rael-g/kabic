@@ -37,9 +37,7 @@
     {
       "name": "ke_probe_item",
       "doc": null,
-      "tags": [
-        "value"
-      ],
+      "tags": [],
       "fields": [
         {
           "name": "id",

@@ -152,11 +152,11 @@ internal static class GeneratorShapeCases
                     Param("out_count", "uint32_t *", "out")),
             ],
             contains: ["public static ReadOnlySpan<uint> Samples(nint ctx, uint query)",
-                       "var front = Native.ke_probe_ctx_samples((ke_probe_ctx*)ctx, query, &countLocal);",
+                       "var front = Native.ke_probe_ctx_samples((ProbeCtx*)ctx, query, &countLocal);",
                        "nuint countLocal = 0;",
                        "return front == null ? default : new ReadOnlySpan<uint>(front, (int)countLocal);",
                        "public static (uint Index, uint Count) Share(nint ctx)",
-                       "Native.ke_probe_ctx_share((ke_probe_ctx*)ctx, &index, &count);",
+                       "Native.ke_probe_ctx_share((ProbeCtx*)ctx, &index, &count);",
                        "return (index, count);"],
             absent: ["in ke_probe_ctx ctx", "fixed (ke_probe_ctx* p =",
                      "Samples(nint ctx, uint query, nuint* outCount)", "out uint index"]);
@@ -172,7 +172,7 @@ internal static class GeneratorShapeCases
             contains: ["public static bool Attach<TData>(nint ctx, ulong entity, in TData data)"
                        + " where TData : unmanaged",
                        "fixed (TData* dataPtr = &data)",
-                       "return Native.ke_probe_ctx_attach((ke_probe_ctx*)ctx, entity, (void*)dataPtr,"
+                       "return Native.ke_probe_ctx_attach((ProbeCtx*)ctx, entity, (void*)dataPtr,"
                        + " (nuint)sizeof(TData));"],
             absent: ["public static bool Attach(nint"]);
 
@@ -300,8 +300,8 @@ internal static class GeneratorShapeCases
                 Param("term_count", "uint32_t"),
                 Param("tags", "const uint32_t *", "array_of:tag_count"),
                 Param("tag_count", "uint32_t"))),
-            contains: ["public ulong Declare(string name, ReadOnlySpan<ke_probe_term> terms, ReadOnlySpan<uint> tags)",
-                       "fixed (ke_probe_term* termsPtr = terms)",
+            contains: ["public ulong Declare(string name, ReadOnlySpan<ProbeTerm> terms, ReadOnlySpan<uint> tags)",
+                       "fixed (ProbeTerm* termsPtr = terms)",
                        "fixed (uint* tagsPtr = tags)",
                        "termsPtr, (uint)terms.Length, tagsPtr, (uint)tags.Length"],
             absent: ["uint termCount", "uint tagCount"],

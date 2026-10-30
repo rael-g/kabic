@@ -3,7 +3,6 @@
 
 #include <kernel_engine/probe/probe.h>
 
-/// [value]
 typedef struct ke_other_pair
 {
     ke_probe_item first;

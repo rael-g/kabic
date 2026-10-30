@@ -258,7 +258,7 @@ public static class CSharpWriter
     /// </summary>
     static string CsType(ApiModel model, string cType, Convention convention)
     {
-        if (model.Structs.Any(s => s.Name == StripQualifiers(cType).Trim() && !s.IsVtable && s.Has("value"))) return Idioms.TypeName(StripQualifiers(cType).Trim(), convention);
+        if (model.Structs.Any(s => s.Name == StripQualifiers(cType).Trim() && IsPlain(s))) return Idioms.TypeName(StripQualifiers(cType).Trim(), convention);
         var t = cType.Trim();
         if (t is "void *" or "void*") return "nint";
         if (CTypes.IsPointer(t))
@@ -637,7 +637,7 @@ public static class CSharpWriter
     /// </summary>
     static string ViewElement(ApiModel model, string cType, Convention convention) =>
         model.Structs.Any(v => v.Name == cType.Trim() && !v.IsVtable
-            && (v.Has("value") || v.Has("view")))
+            && (IsPlain(v) || v.Has("view")))
             ? Idioms.TypeName(cType.Trim(), convention)
             : ValueTypeName(model, cType, convention);
 
@@ -778,7 +778,9 @@ public static class CSharpWriter
     /// asserting a layout instead of naming one.
     /// </summary>
     public static bool IsValue(ApiStruct s) =>
-        !s.External && !s.IsVtable && s.Has("value");
+        !s.External && IsPlain(s);
+
+    static bool IsPlain(ApiStruct s) => !s.IsVtable && !s.Has("view") && !s.Has("borrowed") && !s.Has("bag") && !s.Has("owner");
 
     /// <summary>
     /// Whether a struct is one a caller builds and the native side only reads while a call
