@@ -35,7 +35,7 @@ public static class Regeneration
     {
         List<string> Rooted(IEnumerable<string> paths) => paths.Select(p => Path.Combine(rootDir, p)).ToList();
         return new Extraction.Request(Rooted(spec.Headers), Rooted(spec.IncludeDirs),
-            Rooted(spec.AuxHeaders), Rooted(spec.ComposeHeaders), zig, convention);
+            Rooted(spec.AuxHeaders), zig, convention);
     }
 
     /// <summary>
@@ -46,7 +46,7 @@ public static class Regeneration
     {
         string Rooted(string path) => Path.Combine(rootDir, path);
         var json = Extraction.Run(new Extraction.Request([Rooted(convention.ResultAbiHeader)],
-            convention.ResultAbiIncludeDirs.Select(Rooted).ToList(), [], [], zig, convention));
+            convention.ResultAbiIncludeDirs.Select(Rooted).ToList(), [], zig, convention));
         return ApiReader.Read(System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject());
     }
 

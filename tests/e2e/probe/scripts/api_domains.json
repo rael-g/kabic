@@ -5,7 +5,7 @@
   "domains": [ { "name": "probe", "headers": ["src/c/kernel_engine/probe/probe.h"], "includeDirs": ["src/c"],
     "apiJson": "src/csharp/ke_api.json", "namespace": "Probe", "nativeNamespace": "Probe.Native",
     "outDir": "src/csharp/Probe/Generated", "providers": ["ke_probe"], "usings": [] },
-    { "name": "other", "headers": ["src/c/kernel_engine/other/other.h"], "includeDirs": ["src/c"], "composeHeaders": ["src/c/kernel_engine/probe/probe.h"],
+    { "name": "other", "headers": ["src/c/kernel_engine/other/other.h"], "includeDirs": ["src/c"],
     "apiJson": "src/csharp/other_ke_api.json", "namespace": "Other", "nativeNamespace": "Other.Native",
     "outDir": "src/csharp/Other/Generated", "providers": ["ke_other"], "usings": ["Probe.Native"] } ],
   "bindings": [ { "name": "Probe", "project": "src/csharp/Probe", "namespace": "Probe.Native",

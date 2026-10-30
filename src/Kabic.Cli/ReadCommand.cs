@@ -20,7 +20,6 @@ internal static class ReadCommand
         var includeDirs = new List<string>();
         var headers = new List<string>();
         var auxHeaders = new List<string>();
-        var composeHeaders = new List<string>();
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -31,7 +30,6 @@ internal static class ReadCommand
                 case "--manifest": manifest = args[++i]; break;
                 case "-I": includeDirs.Add(args[++i]); break;
                 case "--aux": auxHeaders.Add(args[++i]); break;
-                case "--compose": composeHeaders.Add(args[++i]); break;
                 default: headers.Add(args[i]); break;
             }
         }
@@ -39,14 +37,14 @@ internal static class ReadCommand
         if (outPath is null || headers.Count == 0)
         {
             Console.Error.WriteLine("usage: kabic read --out <path> [-I <dir>]... "
-                + "[--aux <header.h>]... [--compose <header.h>]... <header.h>...");
+                + "[--aux <header.h>]... [ <header.h>...");
             return 1;
         }
 
         string json;
         try
         {
-            json = Extraction.Run(new Extraction.Request(headers, includeDirs, auxHeaders, composeHeaders, zigOverride,
+            json = Extraction.Run(new Extraction.Request(headers, includeDirs, auxHeaders, zigOverride,
                 ConventionLoader.Load(manifest ?? Path.Combine("scripts", "api_domains.json"))));
         }
         catch (InvalidOperationException e)

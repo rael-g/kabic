@@ -20,7 +20,6 @@ public static class Extraction
         IReadOnlyList<string> Headers,
         IReadOnlyList<string> IncludeDirs,
         IReadOnlyList<string> AuxHeaders,
-        IReadOnlyList<string> ComposeHeaders,
         string? Zig,
         Convention Convention);
 
@@ -34,8 +33,7 @@ public static class Extraction
         var zig = ResolveZig(request.Zig);
         var headerPaths = request.Headers.Select(Path.GetFullPath).ToList();
         var auxPaths = request.AuxHeaders.Select(Path.GetFullPath).ToList();
-        var composePaths = request.ComposeHeaders.Select(Path.GetFullPath).ToList();
-        var all = headerPaths.Concat(auxPaths).Concat(composePaths).ToList();
+        var all = headerPaths.Concat(auxPaths).ToList();
 
         var tuDir = Path.Combine(Path.GetTempPath(), "kabic_extract_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tuDir);
@@ -66,7 +64,7 @@ public static class Extraction
         }
 
         var sourceBytes = all.Distinct().ToDictionary(Path.GetFullPath, File.ReadAllBytes);
-        var (api, errors) = Extractor.Extract(ast, headerPaths.ToHashSet(), sourceBytes, auxPaths.ToHashSet(), composePaths.ToHashSet(), request.Convention.SymbolPrefix);
+        var (api, errors) = Extractor.Extract(ast, headerPaths.ToHashSet(), sourceBytes, auxPaths.ToHashSet(), request.Convention.IncludeDirectoryName, request.Convention.SymbolPrefix);
         errors.AddRange(typed.Errors);
         var byName = typed.Read.ToDictionary(c => c.Name);
         foreach (var i in typed.Integers)

@@ -271,7 +271,7 @@ public static class BindingsPlanner
     {
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
-            job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], [], null, convention)))!.AsObject());
+            job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
         foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
             yield return $"{cType}={target}";
         foreach (var e in model.Enums.Where(e => !e.External))

@@ -87,7 +87,7 @@ public sealed class ExtensionContext
     public ApiModel ReadHeaders(IEnumerable<string> headers, IEnumerable<string> includeDirs, IEnumerable<string> auxHeaders)
     {
         List<string> Rooted(IEnumerable<string> paths) => [.. paths.Select(p => Path.Combine(Root, p))];
-        var json = Extraction.Run(new Extraction.Request(Rooted(headers), Rooted(includeDirs), Rooted(auxHeaders), [], _zig, Convention));
+        var json = Extraction.Run(new Extraction.Request(Rooted(headers), Rooted(includeDirs), Rooted(auxHeaders), _zig, Convention));
         return ApiReader.Read(JsonNode.Parse(json)!.AsObject());
     }
 

@@ -123,7 +123,7 @@ internal static class WriteZigCommand
         {
             try
             {
-                var json = Extraction.Run(new Extraction.Request(unit.Headers, includeDirs, [], [], options.Zig, convention));
+                var json = Extraction.Run(new Extraction.Request(unit.Headers, includeDirs, [], options.Zig, convention));
                 models[unit.Key] = ApiReader.Read(JsonNode.Parse(json)!.AsObject());
             }
             catch (Exception e) { failures[unit.Key] = e.Message; }

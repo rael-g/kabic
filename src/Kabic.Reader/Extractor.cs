@@ -23,13 +23,12 @@ public static class Extractor
     /// extracted.</param>
     public static (ApiModel Model, List<string> Errors) Extract(JsonObject ast, HashSet<string> headerNames,
         Dictionary<string, byte[]> sourceBytes, HashSet<string>? auxHeaderNames = null,
-        HashSet<string>? composeHeaderNames = null, string symbolPrefix = "")
+        string includeDirectoryName = "", string symbolPrefix = "")
     {
         var api = new ApiModel();
         var errors = new List<string>();
         string? currentFile = null;
         auxHeaderNames ??= [];
-        composeHeaderNames ??= [];
 
         (bool Owned, bool AuxOnly, bool Compose, string? File) Owns(JsonObject node)
         {
@@ -37,8 +36,10 @@ public static class Extractor
             if (f is not null) currentFile = Path.GetFullPath(f);
             if (currentFile is null) return (false, false, false, null);
             var full = headerNames.Contains(currentFile);
-            var compose = !full && composeHeaderNames.Contains(currentFile);
-            var aux = !full && !compose && auxHeaderNames.Contains(currentFile);
+            var aux = !full && auxHeaderNames.Contains(currentFile);
+            var compose = !full && !aux && includeDirectoryName.Length > 0
+                && currentFile.Replace('\\', '/').Contains($"/{includeDirectoryName}/", StringComparison.Ordinal);
+            if (compose && !sourceBytes.ContainsKey(currentFile)) sourceBytes[currentFile] = File.ReadAllBytes(currentFile);
             return (full || aux || compose, aux, compose, currentFile);
         }
 
