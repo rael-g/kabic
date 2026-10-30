@@ -66,6 +66,11 @@ internal static class ZigShapeCases
             });
         }
 
+        Expect("a slot on its own record is a method over a suffixed field",
+            m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [], [
+                Slot("read", "uint32_t", "ke_probe *", P("count", "uint32_t"), P("read", "uint32_t"))])),
+            ["read_fn: ?*const fn", "pub fn read(self: *ke_probe, count: u32, read_: u32) u32 {", "return self.read_fn.?(self, count, read_);"]);
+
         Expect("a fixed-size array field declares its extent and its element type",
             m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [
                 F("path", "char[256]"),
@@ -129,9 +134,9 @@ internal static class ZigShapeCases
                     P("capacity", "uint32_t")),
             ])),
             contains: ["handle: ?*anyopaque = std.mem.zeroes(?*anyopaque),",
-                       "count: ?*const fn (?*ke_probe) callconv(.c) u32 = null,",
-                       "fill: ?*const fn (?*ke_probe, ?[*]far.ke_item, u32) callconv(.c) result.ke_result = null,"],
-            absent: ["self:"],
+                       "count_fn: ?*const fn (?*ke_probe) callconv(.c) u32 = null,",
+                       "fill_fn: ?*const fn (?*ke_probe, ?[*]far.ke_item, u32) callconv(.c) result.ke_result = null,"],
+            absent: [],
             foreign: new Dictionary<string, string> { ["ke_item"] = "far", ["ke_result"] = "result" });
 
         Expect("members keep declaration order when slots and fields interleave",
@@ -139,7 +144,7 @@ internal static class ZigShapeCases
                 Slot("write", "void", "struct ke_probe *"),
             ])
             { Order = ["write", "handle"] }),
-            contains: ["write: ?*const fn (?*ke_probe) callconv(.c) void = null,\n    handle: ?*anyopaque = std.mem.zeroes(?*anyopaque),"]);
+            contains: ["write_fn: ?*const fn (?*ke_probe) callconv(.c) void = null,\n    handle: ?*anyopaque = std.mem.zeroes(?*anyopaque),"]);
 
         Expect("an anonymous union is an inline extern union",
             m => m.Structs.Add(new ApiStruct("ke_probe_variant", null, [], [
@@ -163,7 +168,7 @@ internal static class ZigShapeCases
             m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [], [
                 Slot("compile", "void", "struct ke_probe *", P("on_ready", "void (*)(uint64_t, void *)")),
             ])),
-            contains: ["compile: ?*const fn (?*ke_probe, ?*const fn (u64, ?*anyopaque) callconv(.c) void) callconv(.c) void = null,"]);
+            contains: ["compile_fn: ?*const fn (?*ke_probe, ?*const fn (u64, ?*anyopaque) callconv(.c) void) callconv(.c) void = null,"]);
 
         Expect("a record declared and never defined is opaque",
             m =>
@@ -220,8 +225,8 @@ internal static class ZigShapeCases
             m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [F("held", "ke_probe_kind")], [])),
             "ke_probe.held: ke_probe_kind is held by value and no domain describes it");
 
-        Refuse("a contract declaring a plain function is refused",
+        Expect("a plain function is declared as external",
             m => m.Functions.Add(new ApiFunction("ke_probe_create", "void", null, null, [])),
-            "declares vtable shapes only");
+            ["pub extern fn ke_probe_create() void;"]);
     }
 }

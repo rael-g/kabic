@@ -15,6 +15,9 @@ using Kabic;
 /// </summary>
 public sealed class ZigWriter
 {
+    /// <summary>What a slot's field adds to its name, since a method takes the name itself.</summary>
+    public const string SlotSuffix = "_fn";
+
     readonly ApiModel model;
     readonly IReadOnlyDictionary<string, string> foreign;
     readonly SortedSet<string> imported = [];
@@ -85,12 +88,12 @@ public sealed class ZigWriter
             body.AppendLine();
         }
 
-        var refused = model.Functions.Where(_ => !factory).Select(f => f.Name).Concat(model.Variables.Select(v => v.Name)).ToList();
+        var refused = model.Variables.Select(v => v.Name).ToList();
         if (refused.Count > 0)
             throw new NotSupportedException(
-                $"a contract declares vtable shapes only, and this one declares " + string.Join(", ", refused));
+                $"an extern variable has no projection: " + string.Join(", ", refused));
 
-        foreach (var f in model.Functions.Where(_ => factory))
+        foreach (var f in model.Functions)
         {
             Doc(body, f.Doc, "");
             var ps = f.Params.Select((p, i) => $"{Ident(p.Name ?? $"arg{i}")}: {Spell(p.Type, Lane.Of(p))}");
@@ -165,7 +168,8 @@ public sealed class ZigWriter
 
     /// <summary>
     /// A record as an extern struct or union, members in declaration order. A slot reads as a
-    /// nullable function pointer whose first parameter is its receiver.
+    /// nullable function pointer whose first parameter is its receiver; a slot that receives the
+    /// record itself is the field <c>slot_fn</c> and the method <c>slot</c>.
     /// </summary>
     string Record(ApiStruct s, string indent)
     {
@@ -177,8 +181,31 @@ public sealed class ZigWriter
             try { Member(sb, s, name, indent + "    "); }
             catch (NotSupportedException e) { throw new NotSupportedException($"{s.Name}.{name}: {e.Message}"); }
         }
+        foreach (var slot in s.Slots.Where(sl => IsMethod(s, sl))) Method(sb, s, slot, indent + "    ");
         sb.Append(indent).Append('}');
         return sb.ToString();
+    }
+
+    static bool IsMethod(ApiStruct s, ApiSlot slot) =>
+        s.IsVtable && !s.Has("bag") && Bare((slot.Receiver ?? s.Name + " *").Replace("*", " ")) == s.Name;
+
+    void Method(StringBuilder sb, ApiStruct s, ApiSlot slot, string inner)
+    {
+        var names = slot.Params.Select((p, i) => ParamName(s, p, i)).ToList();
+        var ps = slot.Params.Select((p, i) => $", {names[i]}: {Spell(p.Type, Lane.Of(p))}");
+        var returned = Spell(slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null);
+        sb.AppendLine();
+        Doc(sb, slot.Doc, inner);
+        sb.AppendLine($"{inner}pub fn {Ident(slot.Name)}(self: *{s.Name}{string.Concat(ps)}) {returned} {{");
+        sb.AppendLine($"{inner}    return self.{slot.Name}{SlotSuffix}.?({string.Join(", ", names.Prepend("self"))});");
+        sb.AppendLine($"{inner}}}");
+    }
+
+    /// <summary>A parameter's name, which Zig refuses when it shadows a method of the record.</summary>
+    static string ParamName(ApiStruct s, ApiParam p, int index)
+    {
+        var name = p.Name is { Length: > 0 } named ? named : $"arg{index + 1}";
+        return s.Slots.Any(sl => sl.Name == name) || name == "self" ? $"{name}_" : Ident(name);
     }
 
     void Member(StringBuilder sb, ApiStruct s, string name, string inner)
@@ -194,7 +221,8 @@ public sealed class ZigWriter
         Doc(sb, slot.Doc, inner);
         var lanes = slot.Params.Select(p => (p.Type, (ApiParam?)p))
             .Prepend((slot.Receiver ?? $"{s.Name} *", null));
-        sb.AppendLine($"{inner}{Ident(slot.Name)}: {FnPointer(lanes, slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null)} = null,");
+        var field = IsMethod(s, slot) ? slot.Name + SlotSuffix : Ident(slot.Name);
+        sb.AppendLine($"{inner}{field}: {FnPointer(lanes, slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null)} = null,");
     }
 
     /// <summary>
