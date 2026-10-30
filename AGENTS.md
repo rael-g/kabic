@@ -15,6 +15,10 @@ idiomatically in a target language.
   about a declaration. It never names a consumer, a use, or a mechanism of a binding.
 - **Writers spell that semantics idiomatically** in their language. A writer holds no logic beyond
   how its language says the thing.
+- **ClangSharp is the C# base.** It emits what the AST says, under names kabic remaps. kabic adds
+  only what depends on enrichment; a `Render*` that adds nothing to ClangSharp's output must go.
+- **A header that needs a tag to rebuild something is often the header to fix**: use `bool`, the
+  enum type, a `ke_vec2`, the field's real name.
 - **Anyone who wants additional logic uses an extension.** Extensions live with whoever needs them,
   outside this repository's core.
 
@@ -43,6 +47,7 @@ consumer's expected output is a reason to change kabic.
 - runtime code held as strings in a generator;
 - a discriminator based on a name suffix when the declaration can say it;
 - anything to `Convention` other than spellings.
+- a workaround for a design problem of a consumer (drains was one): fix the design there.
 
 If a design needs one of these, the design is wrong; go back to the semantics.
 
@@ -55,12 +60,19 @@ If a design needs one of these, the design is wrong; go back to the semantics.
 - `src/Kabic.Bindings`: raw bindings through ClangSharp.
 - `tests/Kabic.Tests`: shape tests of the writers.
 
+## Spellings
+
+`Convention` declares, per language, ordered regex name rules and a type map from C types to target
+types. A rule carries no meaning; meaning comes from the code and its tags. `[owner]` marks the
+struct owning a vtable, a factory is a function making an owner, `[bag]` marks a struct that has
+function pointers and is no vtable.
+
 ## Commands
 
 ```bash
 dotnet build kabic.slnx
 dotnet test kabic.slnx
-tests/e2e/run.sh
+tests/e2e/run.sh    # generates a sample header and compiles the output
 ```
 
 Tools run in the distrobox `dev`.
