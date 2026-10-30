@@ -5,3 +5,5 @@ obj/
 Native/Generated/
 src/csharp/ke_api.json
 src/csharp/other_ke_api.json
+src/csharp/ke_api.json
+zlib/src/csharp/Zlib/Native/

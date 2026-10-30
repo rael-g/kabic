@@ -88,12 +88,11 @@ public static class Generation
             File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(callback.Name, convention)}Native.g.cs"),
                 CSharpWriter.RenderCallbackInterface(callback, ns, nativeNs, convention));
 
-        foreach (var (owner, fns) in classified.FreeFunctionGroups)
+        if (classified.Functions.Count > 0)
         {
-            if (r.Library is null)
-                throw new InvalidOperationException($"domain has free functions on '{owner}' but no library was given");
-            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(owner, convention)}Functions.g.cs"),
-                CSharpWriter.RenderFreeFunctions(model, owner, fns, ns, nativeNs, usings, r.Library, convention));
+            var domain = r.Domain ?? "functions";
+            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(domain, convention)}.Functions.g.cs"),
+                CSharpWriter.RenderFunctions(model, classified, domain, ns, nativeNs, usings, convention));
         }
     }
 }

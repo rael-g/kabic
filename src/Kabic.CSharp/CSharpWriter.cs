@@ -1891,6 +1891,9 @@ public static class CSharpWriter
     static string SlotName(ApiSlot slot) =>
         Idioms.Pascal(slot.Name);
 
+    static string Call(ApiSlot slot, string arguments) =>
+        slot.Symbol is { } symbol ? $"{symbol}({arguments.TrimStart(',', ' ')})" : $"Handle->{slot.Name}(Handle{arguments})";
+
     static void RenderSlotMethod(ApiModel model, List<string> o, List<MemberDecl>? decls,
         ClassifiedSlot cs, Convention convention, string owner,
         IReadOnlyList<OwnedProjection>? owned = null)
@@ -2012,11 +2015,11 @@ public static class CSharpWriter
                     if (cs.Fallible)
                     {
                         var lane = FailureLane.Of(convention, slot.Returns, slot.Name);
-                        o.Add($"{roInd}{lane.ThrowIfFailed($"Handle->{slot.Name}(Handle{nativeArgs})")}");
+                        o.Add($"{roInd}{lane.ThrowIfFailed(Call(slot, nativeArgs))}");
                     }
                     else
                     {
-                        o.Add($"{roInd}Handle->{slot.Name}(Handle{nativeArgs});");
+                        o.Add($"{roInd}{Call(slot, nativeArgs)};");
                     }
                     o.Add($"{roInd}return {OutRead(cs.OutParam!, "result")};");
                     CloseScopes(o, roDepth, roSeqAt, roClosers);
@@ -2054,11 +2057,11 @@ public static class CSharpWriter
                     if (cs.Fallible)
                     {
                         var lane = FailureLane.Of(convention, slot.Returns, slot.Name);
-                        o.Add($"{tuInd}{lane.ThrowIfFailed($"Handle->{slot.Name}(Handle{callArgs})")}");
+                        o.Add($"{tuInd}{lane.ThrowIfFailed(Call(slot, callArgs))}");
                     }
                     else
                     {
-                        o.Add($"{tuInd}Handle->{slot.Name}(Handle{callArgs});");
+                        o.Add($"{tuInd}{Call(slot, callArgs)};");
                     }
                     o.Add($"{tuInd}return ({string.Join(", ", cs.OutParams.Zip(locals, OutRead))});");
                     CloseScopes(o, tuDepth, tuSeqAt, tuClosers);
@@ -2097,7 +2100,7 @@ public static class CSharpWriter
                             $"{slot.Name}: a [try] slot answers whether it found something through a bool, and"
                             + $" this one returns {convention.ResultType}. A miss is either an answer or a"
                             + " failure; the header has to say which, as a bool [try] slot or a fallible one.");
-                    var tryCall = $"Handle->{slot.Name}(Handle, {string.Join(", ", tryArgs)}"
+                    var tryCall = Call(slot, ", " + string.Join(", ", tryArgs)).TrimEnd(')')
                         + (cs.Fallible ? ", null)" : ")");
                     o.Add($"{tInd}var found = {tryCall};");
                     foreach (var op in outs)
@@ -2191,7 +2194,7 @@ public static class CSharpWriter
                         o.Add($"{fInd}bool ok;");
                         o.Add($"{fInd}try");
                         o.Add($"{fInd}{{");
-                        o.Add($"{fInd}    ok = {lane.Ok($"Handle->{slot.Name}(Handle{call})")};");
+                        o.Add($"{fInd}    ok = {lane.Ok(Call(slot, call))};");
                         o.Add($"{fInd}}}");
                         if (scoped.Count > 0)
                         {
@@ -2262,7 +2265,7 @@ public static class CSharpWriter
                         return;
                     }
                     BuildBag();
-                    var plainCall = $"Handle->{slot.Name}(Handle{call})";
+                    var plainCall = Call(slot, call);
                     if (rooted.Count > 0)
                         o.Add($"{fInd}{lane.DeclareForCheck}");
                     if (rooted.Count > 0)
@@ -2334,7 +2337,7 @@ public static class CSharpWriter
                     var pInd = new string(' ', 8 + pDepth * 4);
                     foreach (var op in cs.TrailingOuts)
                         o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local;");
-                    var pCall = $"Handle->{slot.Name}(Handle{call})";
+                    var pCall = Call(slot, call);
                     var pHolds = cs.TrailingOuts.Count > 0;
                     if (spanElement is not null)
                     {
@@ -2517,180 +2520,24 @@ public static class CSharpWriter
     }
 
     /// <summary>
-    /// One free function as a projected method. A receiver declared <c>[ctx]</c> is the
-    /// opaque token its callers already hold, so it is passed along rather than pinned;
-    /// anything else is a value and has to be pinned to be addressed. What the function
-    /// writes and what it returns are read from the same classification a vtable slot
-    /// gets, so a tag means one thing wherever the header puts it.
+    /// The functions of a domain as one static class named after it: each is rendered as the slot it
+    /// is, reached by its native method instead of through a handle.
     /// </summary>
-    static void RenderFreeFunction(ApiModel model, List<string> o, GroupedFunction g, string prefix,
-        Convention convention)
+    public static string RenderFunctions(ApiModel model, ClassifiedModel classified, string domain, string ns, string nativeNs,
+        IReadOnlyList<string> extraUsings, Convention convention)
     {
-        var f = g.Fn;
-        var cs = g.Classified;
-        var self = g.SelfParam;
-        var rest = self is not null ? f.Params.Skip(1).ToList() : f.Params.ToList();
-        var methodName = Idioms.Pascal(f.Name.StartsWith(prefix) ? f.Name[prefix.Length..]
-            : convention.StripPrefix(f.Name));
-
-        var selfSig = self is null ? null
-            : $"in {CsType(model, CTypes.Deref(self.Type), convention)} {Idioms.Ident(self.Name!)}";
-        var selfArg = self is null ? null
-            : "p";
-
-        var tupleOuts = cs.Shape is SlotShape.TupleOutParams ? cs.OutParams : [];
-        var writes = cs.TrailingOuts.Concat(tupleOuts)
-            .Concat(cs.OutParam is null ? [] : new[] { cs.OutParam }).ToList();
-
-        if (cs.ReturnCount is not null || writes.Count > 0)
-        {
-            if (cs.Shape is SlotShape.Try || cs.Fallible || cs.ExpandedParam is not null || cs.Sequences.Count > 0)
-                throw new InvalidOperationException(
-                    $"{f.Name}: a free function that writes or answers with a sequence is projected"
-                    + $" plainly, and this one also declares {cs.Shape}"
-                    + (cs.Fallible ? " with a failure channel" : "")
-                    + " -- which of them the caller reads first is a choice, not something to infer here.");
-            if (cs.ReturnCount is not null && writes.Count > 0)
-                throw new InvalidOperationException(
-                    $"{f.Name}: the return carries the sequence, and {string.Join(", ", writes.Select(p => p.Name))}"
-                    + " is written besides -- two answers reached by one call, and the sequence is"
-                    + " the one the return already spells, so the other has nowhere to go.");
-        }
-
-        var ins = cs.PublicParams
-            .Where(p => !tupleOuts.Contains(p) && p != cs.OutParam).ToList();
-        var spanElement = cs.ReturnCount is null ? null : ReturnElement(model, cs.Slot, convention);
-        var retType = spanElement is not null ? $"ReadOnlySpan<{spanElement}>"
-            : cs.OutParam is not null ? OutElement(model, cs.OutParam, convention)
-            : tupleOuts.Count > 0
-                ? "(" + string.Join(", ", tupleOuts.Select(p =>
-                    $"{OutElement(model, p, convention)} {Idioms.Pascal(WrittenName(p, convention))}")) + ")"
-            : ReturnType(model, f.Returns, convention);
-
-        string Local(ApiParam p) => Idioms.Ident(writes.Contains(p) || p == cs.ReturnCount
-            ? WrittenName(p, convention) : p.Name!)
-            + (cs.TrailingOuts.Contains(p) || p == cs.ReturnCount ? "Local" : "");
-
-        var args = (self is null ? [] : new[] { selfArg! }).Concat(rest.Select(p =>
-            p == cs.ReturnCount || writes.Contains(p) ? OutAddress(model, p, convention, Local(p))
-            : cs.Blobs.FirstOrDefault(b => b.Blob == p) is { } asBlob
-                ? $"({NativePointerType(model, p.Type, convention)}){Idioms.Ident(p.Name!)}Ptr"
-            : cs.Blobs.FirstOrDefault(b => b.Size == p) is { } asSize
-                ? $"({CsType(model, asSize.Size.Type, convention)})sizeof({BlobTypeParam(asSize.Blob)})"
-            : p.Has("enum") ? $"(int){Idioms.Ident(p.Name!)}"
-            : Idioms.Ident(p.Name!)));
-        var call = $"{(cs.ReturnCount is null ? ReturnCast(model, f.Returns, convention) : "")}"
-            + $"Native.{f.Name}({string.Join(", ", args)})";
-
-        var sigParts = (selfSig is null ? [] : new[] { selfSig }).Concat(ins.Select(p =>
-            cs.Blobs.Any(b => b.Blob == p)
-                ? $"in {BlobTypeParam(p)} {Idioms.Ident(p.Name!)}"
-            : cs.TrailingOuts.Contains(p)
-                ? $"out {OutElement(model, p, convention)} {Idioms.Ident(WrittenName(p, convention))}"
-                : $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"));
-
-        var generics = cs.Blobs.Count == 0 ? ""
-            : "<" + string.Join(", ", cs.Blobs.Select(b => BlobTypeParam(b.Blob))) + ">";
-        var constraints = string.Concat(cs.Blobs
-            .Select(b => $" where {BlobTypeParam(b.Blob)} : unmanaged"));
-
-        o.Add(XmlDoc("    ", f.Doc, convention, ins.Select(p =>
-            (Idioms.Ident(cs.TrailingOuts.Contains(p) ? WrittenName(p, convention) : p.Name!), p.Doc))).TrimEnd());
-        o.Add($"    public static {retType} {methodName}{generics}({string.Join(", ", sigParts)}){constraints}");
-        o.Add("    {");
-
-        var needsFixed = self is not null;
-        var body = new List<string>();
-        foreach (var p in writes)
-            body.Add($"{OutLocal(model, p, convention)} {Local(p)};");
-        if (cs.ReturnCount is not null)
-        {
-            var native = CsType(model, CTypes.Deref(f.Returns), convention);
-            var front = spanElement == native ? "front" : $"({spanElement}*)front";
-            body.Add($"{CsType(model, CTypes.Deref(cs.ReturnCount.Type), convention)} {Local(cs.ReturnCount)} = 0;");
-            body.Add($"var front = {call};");
-            body.Add($"return front == null ? default"
-                + $" : new ReadOnlySpan<{spanElement}>({front}, (int){Local(cs.ReturnCount)});");
-        }
-        else if (writes.Count == 0)
-            body.Add((retType == "void" ? "" : "return ") + call + ";");
-        else
-        {
-            body.Add($"{call};");
-            foreach (var p in cs.TrailingOuts)
-                body.Add($"{Idioms.Ident(WrittenName(p, convention))} = {OutRead(p, Local(p))};");
-            body.Add(cs.OutParam is not null
-                ? $"return {OutRead(cs.OutParam, Local(cs.OutParam))};"
-                : $"return ({string.Join(", ", tupleOuts.Select(p => OutRead(p, Local(p))))});");
-        }
-
-        var pins = new List<string>();
-        if (needsFixed)
-            pins.Add($"fixed ({CsType(model, CTypes.Deref(self!.Type), convention)}* p = &{Idioms.Ident(self.Name!)})");
-        foreach (var b in cs.Blobs)
-            pins.Add($"fixed ({BlobTypeParam(b.Blob)}* {Idioms.Ident(b.Blob.Name!)}Ptr"
-                + $" = &{Idioms.Ident(b.Blob.Name!)})");
-
-        var braced = pins.Count > 1 || (pins.Count == 1 && body.Count > 1);
-        for (var i = 0; i < pins.Count; i++)
-        {
-            var at = new string(' ', 8 + i * 4);
-            o.Add(at + pins[i]);
-            if (braced) o.Add(at + "{");
-        }
-        var indent = new string(' ', 8 + pins.Count * 4);
-        foreach (var line in body) o.Add(indent + line);
-        if (braced) for (var i = pins.Count - 1; i >= 0; i--) o.Add(new string(' ', 8 + i * 4) + "}");
-        o.Add("    }");
-        o.Add("");
-    }
-
-    /// <summary>
-    /// Renders the free functions of one owner as static methods of a partial class, with a
-    /// nested <c>Native</c> class declaring each entry point.
-    /// </summary>
-    public static string RenderFreeFunctions(ApiModel model, string owner, List<GroupedFunction> fns, string ns, string nativeNs,
-        IReadOnlyList<string> extraUsings, string libraryName, Convention convention)
-    {
-        var ownerCs = Idioms.TypeName(owner, convention);
-        var prefix = owner + "_";
-
-        var o = new List<string>
-        {
-            Header,
-            "using System.Runtime.InteropServices;",
-            $"using {convention.CommonBindingsNamespace};",
-            $"using {nativeNs};",
-        };
+        var o = new List<string> { Header, "using System.Runtime.InteropServices;", $"using {nativeNs};" };
         foreach (var u in extraUsings) o.Add($"using {u};");
-        o.AddRange([
-            "",
-            $"namespace {ns};",
-            "",
-            $"/// <summary>Free-function operations on <see cref=\"{owner}\"/>.</summary>",
-            $"public unsafe partial class {ownerCs}",
-            "{",
-        ]);
-
-        foreach (var g in fns) RenderFreeFunction(model, o, g, prefix, convention);
-
-        o.Add("    private static unsafe class Native");
-        o.Add("    {");
-        foreach (var g in fns)
+        o.AddRange(["", $"namespace {ns};", "", "/// <summary>The functions of the domain.</summary>", $"public static unsafe partial class {Idioms.TypeName(domain, convention)}", "{"]);
+        foreach (var cs in classified.Functions)
         {
-            var f = g.Fn;
-            var rest = (g.SelfParam is not null ? f.Params.Skip(1) : f.Params)
-                .Select(p => $"{(p.Has("enum") ? "int" : CsType(model, p.Type, convention))} {Idioms.Ident(p.Name!)}").ToList();
-            var selfParamSig = g.SelfParam is not null ? $"{CsType(model, CTypes.Deref(f.Params[0].Type), convention)}* {Idioms.Ident(f.Params[0].Name!)}" : null;
-            var nativeSig = string.Join(", ", (selfParamSig is not null ? [selfParamSig] : Array.Empty<string>()).Concat(rest));
-            o.Add($"        [DllImport(\"{libraryName}\", CallingConvention = CallingConvention.Cdecl,");
-            o.Add($"                   EntryPoint = \"{f.Name}\", ExactSpelling = true)]");
-            o.Add($"        public static extern {CsType(model, f.Returns, convention)} {f.Name}({nativeSig});");
-            o.Add("");
+            var symbol = $"global::{nativeNs}.{convention.BindingsMethodsClass}.{convention.StripPrefix(cs.Slot.Name)}";
+            var slot = cs.Slot with { Name = convention.StripPrefix(cs.Slot.Name), Symbol = symbol };
+            var body = new List<string>();
+            RenderSlotMethod(model, body, null, cs with { Slot = slot }, convention, Idioms.TypeName(domain, convention));
+            o.AddRange(body.Select(l => l.StartsWith("    public ", StringComparison.Ordinal) ? "    public static " + l["    public ".Length..] : l));
         }
-        o.Add("    }");
         o.Add("}");
-        o.Add("");
         return string.Join('\n', o);
     }
 

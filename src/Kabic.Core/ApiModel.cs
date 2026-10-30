@@ -38,6 +38,9 @@ public record ApiSlot(string Name, string Returns, IReadOnlyList<string> Tags, s
     /// </summary>
     public string? Receiver { get; init; }
 
+    /// <summary>The native method a function is reached by; null for a slot of a vtable.</summary>
+    public string? Symbol { get; init; }
+
     /// <summary>Whether the slot carries <paramref name="tag"/>, with or without a value.</summary>
     public bool Has(string tag) => Tags.Any(t => t == tag || t.StartsWith(tag + ":"));
 

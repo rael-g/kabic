@@ -87,17 +87,6 @@ public enum ConstructorKind { FromFactory, FromHandle, None }
 public record ConstructorPlan(ConstructorKind Kind, ApiFunction? Factory, string? HandleTypeName, bool NeedsWrapper);
 
 /// <summary>
-/// A free function, grouped under its owner, with the slot classification it is projected through.
-/// </summary>
-/// <param name="Classified">
-/// What the function's own parameters and return declare, read with the same rules a
-/// vtable slot's are. A free function is the same contract reached by a symbol instead of
-/// a field, so a tag placed on one has to mean what it means on the other -- read twice,
-/// the same header line would project two different ways.
-/// </param>
-public record GroupedFunction(ApiFunction Fn, ApiParam? SelfParam, ClassifiedSlot Classified);
-
-/// <summary>
 /// The roles <see cref="Classifier"/> assigns to the declarations of one model, each keyed by name.
 /// </summary>
 public class ClassifiedModel
@@ -117,8 +106,8 @@ public class ClassifiedModel
     /// <summary>The classified slots of each vtable, keyed by the vtable's name.</summary>
     public Dictionary<string, List<ClassifiedSlot>> SlotsByVtable { get; } = [];
 
-    /// <summary>The free functions of each owner, keyed by the owner's name.</summary>
-    public Dictionary<string, List<GroupedFunction>> FreeFunctionGroups { get; } = [];
+    /// <summary>The functions that make no owner, read as slots with no receiver.</summary>
+    public List<ClassifiedSlot> Functions { get; } = [];
 
     /// <summary>The construction plan of each provider, keyed by the provider's name.</summary>
     public Dictionary<string, ConstructorPlan> Constructors { get; } = [];
@@ -205,21 +194,8 @@ public static class Classifier
                 : new ConstructorPlan(ConstructorKind.None, null, null, NeedsWrapper: false);
         }
 
-        foreach (var fn in model.Functions)
-        {
-            if (convention.ReturnsResult(fn.Returns) && model.Makes(fn) is { } made
-                && vtables.Any(v => model.OwnerOf(v.Name)?.Name == made))
-                continue;
-
-            var firstParamType = (fn.Params.FirstOrDefault() is { } first ? CType.Of(first.Type).Name : null);
-            var owner = firstParamType is not null && model.Structs.Any(s => s.Name == firstParamType) ? firstParamType : null;
-            owner ??= vtables.Select(v => v.Name).FirstOrDefault(n => fn.Returns.Trim() == n);
-            if (owner is null) continue;
-            var selfParam = firstParamType == owner ? fn.Params[0] : null;
-            (result.FreeFunctionGroups.TryGetValue(owner, out var list)
-                ? list : result.FreeFunctionGroups[owner] = []).Add(
-                new GroupedFunction(fn, selfParam, ClassifySlot(model, AsSlot(fn, selfParam), convention)));
-        }
+        foreach (var fn in model.Functions.Where(f => model.Makes(f) is null))
+            result.Functions.Add(ClassifySlot(model, AsSlot(fn), convention));
 
         return result;
     }
@@ -247,17 +223,8 @@ public static class Classifier
         return (expanded, bag);
     }
 
-    /// <summary>
-    /// A free function read as the slot it is, with the receiver dropped: the receiver is
-    /// how the call reaches the contract, never part of what the contract answers, so
-    /// leaving it in would let it be mistaken for a value the caller supplies.
-    /// </summary>
-    static ApiSlot AsSlot(ApiFunction fn, ApiParam? self) =>
-        new(fn.Name, fn.Returns, [], fn.Doc, fn.ReturnDoc,
-            (self is null ? fn.Params : fn.Params.Skip(1)).ToList())
-        {
-            ReturnTags = fn.ReturnTags,
-        };
+    static ApiSlot AsSlot(ApiFunction fn) =>
+        new(fn.Name, fn.Returns, [], fn.Doc, fn.ReturnDoc, fn.Params.ToList()) { ReturnTags = fn.ReturnTags, Symbol = fn.Name };
 
     static ClassifiedSlot ClassifySlot(ApiModel model, ApiSlot slot, Convention convention)
     {

@@ -533,7 +533,7 @@ internal static class GeneratorShapeCases
 
         ExpectFreeFunctions("a free function reaches the record it hangs off",
             [Function("ke_probe_ctx_count", "uint32_t", Param("ctx", "ke_probe_ctx *"))],
-            contains: ["ke_probe_ctx_count("], absent: []);
+            contains: ["public static uint ProbeCtxCount(", "NativeMethods.probe_ctx_count("], absent: []);
 
         void ExpectFreeFunctions(string what, JsonObject[] functions, string[] contains, string[] absent)
 
@@ -564,9 +564,7 @@ internal static class GeneratorShapeCases
                     var model = ApiReader.Read(api);
                     var convention = ProbeConvention.Value;
                     var classified = Classifier.Classify(model, [], [], convention);
-                    var (owner, group) = classified.FreeFunctionGroups.Single();
-                    emitted = CSharpWriter.RenderFreeFunctions(model, owner, group, "Probe", "Probe.Native",
-                        [], "ke_probe", convention);
+                    emitted = CSharpWriter.RenderFunctions(model, classified, "probe", "Probe", "Probe.Native", [], convention);
                 }
                 catch (Exception ex)
                 {
