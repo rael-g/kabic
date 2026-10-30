@@ -195,7 +195,7 @@ internal static class GeneratorShapeCases
 
         Expect("an expanded params bag flattens the call and its shared context roots one object",
             Vtable("ke_probe", Slot("register_module", "ke_result",
-                Param("p", "const ke_probe_module_params *", "expand"),
+                Param("p", "const ke_probe_module_params *"),
                 Param("out_id", "uint64_t *", "out"))),
             contains: ["public ulong RegisterModule(string name, ProbeLoad? onLoad, ProbeUnload? onUnload = null)",
                        "private readonly Dictionary<ulong, GCHandle> _retainedUserData = new();",
@@ -226,7 +226,7 @@ internal static class GeneratorShapeCases
             {
                 ["name"] = "ke_probe_module_params",
                 ["doc"] = null,
-                ["tags"] = new JsonArray(),
+                ["tags"] = new JsonArray("bag"),
                 ["fields"] = new JsonArray(
                     Param("name", "const char *", "utf8"),
                     Param("user_data", "void *", "context"),
