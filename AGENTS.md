@@ -60,6 +60,7 @@ If a design needs one of these, the design is wrong; go back to the semantics.
 ```bash
 dotnet build kabic.slnx
 dotnet test kabic.slnx
+tests/e2e/run.sh
 ```
 
 Tools run in the distrobox `dev`.

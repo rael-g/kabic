@@ -1,0 +1,10 @@
+{
+  "convention": { "symbolPrefix": "ke_", "handleSuffix": "_handle", "factorySuffix": "_create", "paramsSuffix": "_params",
+    "commonManagedNamespace": "Probe", "commonBindingsNamespace": "Probe.Shared", "includeDirectoryName": "kernel_engine",
+    "names": { "csharp": [ { "match": "^out_(.+)$", "replace": "$1" } ] } },
+  "domains": [ { "name": "probe", "headers": ["src/c/kernel_engine/probe/probe.h"], "includeDirs": ["src/c"],
+    "apiJson": "src/csharp/ke_api.json", "namespace": "Probe", "nativeNamespace": "Probe.Native",
+    "outDir": "src/csharp/Probe/Generated", "providers": ["ke_probe"], "usings": [] } ],
+  "bindings": [ { "name": "Probe", "project": "src/csharp/Probe", "namespace": "Probe.Native",
+    "headers": ["src/c/kernel_engine/probe/probe.h"], "library": "ke_probe", "output": "Native/Generated/" } ]
+}

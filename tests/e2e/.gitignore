@@ -1,0 +1,6 @@
+build/
+bin/
+obj/
+*.g.cs
+Native/Generated/
+src/csharp/ke_api.json
