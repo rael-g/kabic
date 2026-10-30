@@ -367,12 +367,6 @@ internal static class GeneratorShapeCases
             callbacks: [Callback("ke_probe_body_fn", "ke_result",
                 Param("probe", "ke_probe *", "self"), Param("ctx", "void *", "context"))]);
 
-        Expect("a slot that only answers becomes a property, in the class and in the contract alike",
-            Vtable("ke_probe", "interface", Slot("root", "ke_entity", "property")),
-            contains: ["public ulong Root", "get => Handle->root(Handle);",
-                       "public interface IProbe : IDisposable", "    ulong Root { get; }"],
-            absent: ["public ulong Root()", "    ulong Root;", "public unsafe interface IProbe"]);
-
         Expect("a contract spelling a pointer keeps the keyword",
             Vtable("ke_probe", "interface", Slot("samples", "const uint32_t *")),
             contains: ["public unsafe interface IProbe : IDisposable", "    uint* Samples();"],

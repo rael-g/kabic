@@ -2056,24 +2056,6 @@ public static class CSharpWriter
             throw new InvalidOperationException(
                 $"{slot.Name}: [closure] is only projected on a fallible slot so far, not {cs.Shape}");
 
-        if (slot.Has("property"))
-        {
-            if (cs.PublicParams.Count > 0 || cs.Shape is not SlotShape.Plain)
-                throw new InvalidOperationException(
-                    $"{slot.Name}: [property] needs a slot that only answers -- no parameters and no"
-                    + $" failure channel, so there is nothing for a getter to drop. Got {cs.Shape}"
-                    + $" with {cs.PublicParams.Count} parameter(s).");
-
-            var pType = ReturnType(model, slot.Returns, convention);
-            Declare(o, decls, XmlDoc("    ", slot.Doc ?? slot.ReturnDoc, convention).TrimEnd(),
-                $"{pType} {name}", property: true);
-            o.Add("    {");
-            o.Add($"        get => {ReturnCast(model, slot.Returns, convention)}Handle->{slot.Name}(Handle);");
-            o.Add("    }");
-            o.Add("");
-            return;
-        }
-
         string Sig(IEnumerable<ApiParam> ps) => string.Join(", ", SigParts(ps));
 
         IEnumerable<ApiParam> NativeParams() => cs.Slot.Params
