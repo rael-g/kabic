@@ -84,3 +84,11 @@ Tools run in the distrobox `dev`.
 - Every commit builds alone.
 - Answer the owner in Brazilian Portuguese; code and documents are in English.
 - Status and plans live in `docs/kanban/`, which is not versioned.
+
+## Annotations
+
+A header that cannot be edited takes its tags from a YAML file named by the domain's `annotations`
+key: `symbol: { member: tags }`, where a symbol is a function, a callback or `struct.slot`, and a
+member is a parameter, a field or `return`. An unnamed parameter is `argN`, counted from one. An
+inline function pointer is the callback `function_parameter`, with lanes `argN`. A key that matches
+no declaration fails.
