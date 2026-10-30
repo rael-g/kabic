@@ -76,7 +76,7 @@ public static class Extractor
                     break;
 
                 case "FunctionDecl" when name is not null && name.StartsWith(symbolPrefix, StringComparison.Ordinal) && HasSymbol(node):
-                    if (TakesVaList(node)) Console.Error.WriteLine($"{name}: skipped, a va_list has no projection");
+                    if (TakesVaList(node)) Console.Error.WriteLine($"{name}: skipped, variable arguments have no projection");
                     else api.Functions.Add(ExtractFunction(node, name, errors, api));
                     break;
 
@@ -298,7 +298,8 @@ public static class Extractor
     static string UnnamedParameter(int index) => $"arg{index + 1}";
 
     static bool TakesVaList(JsonObject node) =>
-        ((node["inner"] as JsonArray) ?? []).Any(c => c!["kind"]?.GetValue<string>() == "ParmVarDecl"
+        node["type"]?.AsObject()["qualType"]?.GetValue<string>()?.Contains("...") == true
+        || ((node["inner"] as JsonArray) ?? []).Any(c => c!["kind"]?.GetValue<string>() == "ParmVarDecl"
             && c["type"]?.AsObject()["qualType"]?.GetValue<string>() is { } t
             && (t.Contains("va_list") || t.Contains("__va_list_tag")));
 

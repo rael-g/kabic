@@ -423,7 +423,7 @@ public static class ApiReader
 
     static List<string> WithText(string type, List<string> tags)
     {
-        if (CType.Of(type) is { Name: "char", Const: true, IsPointer: true } && !tags.Contains("utf8")) tags.Add("utf8");
+        if (CType.Of(type) is { Name: "char", Const: true, Pointers: 1 } && !tags.Contains("utf8")) tags.Add("utf8");
         return tags;
     }
 

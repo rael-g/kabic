@@ -535,6 +535,7 @@ public static class CSharpWriter
 
     static string CsParamType(ApiModel model, ApiParam p, Convention convention)
     {
+        if (p.Callback is not null) return "nint";
         if (model.HandleOf(p.Type) is { } handle) return Idioms.TypeName(handle, convention);
         var tagEnum = p.TagValue("enum");
         if (tagEnum is not null)
@@ -2440,6 +2441,7 @@ public static class CSharpWriter
                 ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
+            : p.Callback is not null ? $"({CsType(model, p.Type, convention).Replace("nint", "void*")}){Idioms.Ident(p.Name!)}"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"
