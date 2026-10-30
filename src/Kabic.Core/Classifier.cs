@@ -161,7 +161,7 @@ public static class Classifier
     {
         var result = new ClassifiedModel();
         var vtables = model.Structs
-            .Where(s => s.IsVtable && !s.External && !convention.IsHandleType(s.Name) && !convention.IsParamsType(s.Name))
+            .Where(s => s.IsVtable && !s.External && !convention.IsHandleType(s.Name) && !s.Has("bag"))
             .ToList();
 
         var callbackTypeNames = vtables

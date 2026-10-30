@@ -65,7 +65,7 @@ public static class Generation
         }
 
         foreach (var counted in model.Structs.Where(s => !s.External && !s.IsVtable
-            && !convention.IsParamsType(s.Name)
+            && !s.Has("bag")
             && !CSharpWriter.IsView(s)
             && !CSharpWriter.IsBorrowed(s)
             && CSharpWriter.SpannedFields(model, s, convention).Any()))

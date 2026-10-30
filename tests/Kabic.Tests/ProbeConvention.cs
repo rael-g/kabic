@@ -10,7 +10,7 @@ internal static class ProbeConvention
         .AddType(Languages.CSharp, "ke_quat", "System.Numerics.Quaternion")
         .AddType(Languages.CSharp, "ke_mat4", "System.Numerics.Matrix4x4")
         .AddNameRule(Languages.CSharp, "^out_(.+)$", "$1")
-        .Symbols("ke_", "_handle", "_create", "_params")
+        .Symbols("ke_", "_handle", "_create")
         .Bindings("kernel_engine", "KernelEngine.Common.Native")
         .Managed("KernelEngine.Common")
         .Result("ke_result", "KE_OK", "KernelEngine.Result.Native.ke_result", "KernelEngine.NativeResults")

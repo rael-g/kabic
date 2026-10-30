@@ -22,20 +22,6 @@ public sealed class Convention
     /// </summary>
     public required string FactorySuffix { get; init; }
 
-    /// <summary>
-    /// Suffix marking a parameter bag (<c>ke_runtime_system_params</c>) — a value the caller
-    /// fills in and passes by pointer to one call, never an interface. Holding a function
-    /// pointer does not make it one: a registration bag carries the callback being registered
-    /// (<c>execute</c>, <c>on_load</c>) right next to its plain data fields, so slot count
-    /// alone cannot tell the two apart, and mistaking a bag for a vtable emits a wrapper class
-    /// with <c>Borrow</c>/<c>Dispose</c> around what is not an object. The ABI guarantees this
-    /// suffix for every parameter bag, which is what makes it a sound discriminator.
-    /// </summary>
-    public required string ParamsSuffix { get; init; }
-
-    /// <summary>Whether a struct name marks a parameter bag rather than an interface.</summary>
-    public bool IsParamsType(string structName) => structName.EndsWith(ParamsSuffix);
-
     /// <summary>Boolean return-type spellings that mean "succeeded".</summary>
     public IReadOnlyList<string> BooleanReturnTypes => ["_Bool", "bool"];
 
@@ -187,8 +173,7 @@ public sealed class Convention
         static string Or(System.Text.Json.Nodes.JsonObject o, string key, string fallback) => o[key]?.GetValue<string>() ?? fallback;
 
         var builder = new ConventionBuilder()
-            .Symbols(Text(json, "symbolPrefix"), Text(json, "handleSuffix"), Text(json, "factorySuffix"),
-                Text(json, "paramsSuffix"))
+            .Symbols(Text(json, "symbolPrefix"), Text(json, "handleSuffix"), Text(json, "factorySuffix"))
             .Bindings(Or(json, "includeDirectoryName", "kernel_engine"), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
             .Managed(Text(json, "commonManagedNamespace"));

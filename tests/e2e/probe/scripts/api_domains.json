@@ -1,5 +1,5 @@
 {
-  "convention": { "symbolPrefix": "ke_", "handleSuffix": "_handle", "factorySuffix": "_create", "paramsSuffix": "_params",
+  "convention": { "symbolPrefix": "ke_", "handleSuffix": "_handle", "factorySuffix": "_create",
     "commonManagedNamespace": "Probe", "commonBindingsNamespace": "Probe.Shared", "includeDirectoryName": "kernel_engine",
     "names": { "csharp": [ { "match": "^out_(.+)$", "replace": "$1" } ] } },
   "domains": [ { "name": "probe", "headers": ["src/c/kernel_engine/probe/probe.h"], "includeDirs": ["src/c"],
