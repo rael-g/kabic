@@ -1165,35 +1165,6 @@ public static class CSharpWriter
             o.Add("    private static Exception? s_parkedCallbackException;");
         }
 
-        if (closureGroups.Any(c => c.Pairs.Any(c.Queues)))
-        {
-            o.Add("");
-            o.Add("    /// <summary>");
-            o.Add("    /// What retained handlers of this provider have thrown and not yet been told");
-            o.Add("    /// about. A retained handler outlives the call that registered it, so there is");
-            o.Add("    /// no call left to rethrow at; it reports failure through its own channel and");
-            o.Add("    /// leaves the exception here for whichever call observes that failure. A handler");
-            o.Add("    /// may run on any thread the engine calls it from, and may fail more than once");
-            o.Add("    /// before anyone asks, so nothing here is ever discarded unread.");
-            o.Add("    /// </summary>");
-            o.Add("    private readonly System.Collections.Concurrent.ConcurrentQueue<Exception>"
-                + " _callbackFailures = new();");
-            o.Add("");
-            o.Add("    /// <summary>");
-            o.Add("    /// Throws what retained handlers have reported since the last drain, as they");
-            o.Add("    /// threw it, or returns when none have. More than one may have failed before");
-            o.Add("    /// anyone asked, so they are reported together rather than the last one winning.");
-            o.Add("    /// </summary>");
-            o.Add("    private void DrainCallbackFailures()");
-            o.Add("    {");
-            o.Add("        var collected = new List<Exception>();");
-            o.Add("        while (_callbackFailures.TryDequeue(out var failure)) collected.Add(failure);");
-            o.Add("        if (collected.Count == 0) return;");
-            o.Add("        throw new InvalidOperationException(\"A handler registered with this"
-                + " provider threw\",");
-            o.Add("            collected.Count == 1 ? collected[0] : new AggregateException(collected));");
-            o.Add("    }");
-        }
         o.Add("");
         o.Add($"    private {vtable.Name}* Handle => _native != null ? _native");
         o.Add($"        : throw new ObjectDisposedException(nameof({typeName}));");
@@ -1267,7 +1238,7 @@ public static class CSharpWriter
                 RenderCallbackMethod(o, decls, vtable, cs, classified, typeName, convention);
                 continue;
             }
-            RenderSlotMethod(model, o, decls, cs, convention, typeName, Drains(model, slots, convention), owned);
+            RenderSlotMethod(model, o, decls, cs, convention, typeName, owned);
         }
 
 
@@ -1654,29 +1625,13 @@ public static class CSharpWriter
     /// delegate as the handle's target directly.
     /// </summary>
     internal sealed record ClosureGroup(ApiParam Ctx, IReadOnlyList<CallbackPair> Pairs, string StateType,
-        string ReturnType, string Owner, bool OwnerDrains)
+        string ReturnType, string Owner)
     {
         /// <summary>Whether more than one closure is reached through this context.</summary>
         public bool Shared => Pairs.Count > 1;
 
-        /// <summary>
-        /// Whether the trampoline has to reach the provider that registered the closure.
-        /// A retained handler reporting through a lane of its own outlives the call that
-        /// registered it, so the exception it threw has nowhere to be rethrown at that
-        /// call; it is queued on the provider instead, and the slot that observes the
-        /// failure raises it. Reaching the provider means the context must point at an
-        /// object holding it rather than at the bare delegate.
-        /// </summary>
-        public bool NeedsOwner => HandsBackProvider || Pairs.Any(Queues);
-
-        /// <summary>
-        /// Whether this handler's exception is the kind that has to wait on the provider:
-        /// one that outlives the call registering it, reports failure through a channel of
-        /// its own, and has a slot declared to answer for it. A handler running inside the
-        /// registering call is rethrown there instead, and needs no queue.
-        /// </summary>
-        public bool Queues(CallbackPair pair) => OwnerDrains
-            && pair.Lifetime == ClosureLifetime.Retained && pair.ByResult;
+        /// <summary>Whether the trampoline has to reach the provider that registered the closure.</summary>
+        public bool NeedsOwner => HandsBackProvider;
 
         /// <summary>
         /// Whether a handler of this group is called with the provider that registered it.
@@ -1739,7 +1694,7 @@ public static class CSharpWriter
     }
 
     static IReadOnlyList<ClosureGroup> ClosureGroups(ApiModel model, ClassifiedSlot cs, IReadOnlyList<CallbackPair> pairs,
-        string owner, bool ownerDrains, Convention convention)
+        string owner, Convention convention)
     {
         var slot = cs.Slot;
         var keyType = cs.ResultOut is { } resultOut ? OutElement(model, resultOut, convention)
@@ -1747,7 +1702,7 @@ public static class CSharpWriter
         var groups = pairs
             .GroupBy(p => p.Ctx)
             .Select(g => new ClosureGroup(g.Key, g.ToList(), $"{Idioms.Pascal(slot.Name)}Closures",
-                keyType, owner, ownerDrains))
+                keyType, owner))
             .ToList();
 
         foreach (var g in groups.Where(x => x.Shared))
@@ -1763,23 +1718,9 @@ public static class CSharpWriter
     static IReadOnlyList<ClosureGroup> VtableClosureGroups(ApiModel model, IEnumerable<ClassifiedSlot> slots,
         string owner, Convention convention)
     {
-        var drains = Drains(model, slots, convention);
         return slots.Where(Projected)
-            .SelectMany(s => ClosureGroups(model, s, CallbackPairs(model, s, convention), owner, drains, convention))
+            .SelectMany(s => ClosureGroups(model, s, CallbackPairs(model, s, convention), owner, convention))
             .ToList();
-    }
-
-    /// <summary>
-    /// Whether any slot of the vtable is declared as the one that answers for a retained
-    /// handler's failure. Without one there is no call to raise the exception at, so the
-    /// provider keeps no queue and the handler's own error channel stays its only report.
-    /// </summary>
-    static bool Drains(ApiModel model, IEnumerable<ClassifiedSlot> slots, Convention convention)
-    {
-        var all = slots.ToList();
-        return all.Any(s => s.Slot.Has("drains"))
-            && all.SelectMany(s => CallbackPairs(model, s, convention))
-                .Any(p => p.Lifetime == ClosureLifetime.Retained && p.ByResult);
     }
 
     /// <summary>
@@ -1914,13 +1855,7 @@ public static class CSharpWriter
         o.Add("        {");
         if (byResult)
         {
-            if (group.Queues(pair))
-            {
-                o.Add("            if (GCHandle.FromIntPtr((nint)ctx).Target is"
-                    + $" {group.StateType} failed)");
-                o.Add("                failed.Owner._callbackFailures.Enqueue(ex);");
-            }
-            else
+            if (pair.Lifetime != ClosureLifetime.Retained)
                 o.Add("            s_parkedCallbackException ??= ex;");
             o.Add($"            return {convention.ResultHelperClass}.ToCode(ex);");
         }
@@ -2040,7 +1975,7 @@ public static class CSharpWriter
         Idioms.Pascal(slot.Name);
 
     static void RenderSlotMethod(ApiModel model, List<string> o, List<MemberDecl>? decls,
-        ClassifiedSlot cs, Convention convention, string owner, bool ownerDrains,
+        ClassifiedSlot cs, Convention convention, string owner,
         IReadOnlyList<OwnedProjection>? owned = null)
     {
         var slot = cs.Slot;
@@ -2049,7 +1984,7 @@ public static class CSharpWriter
         var ownedReturn = owned?.FirstOrDefault(x =>
             x.Answers(slot.Returns) || (cs.ResultOut is { } ro && x.Answers(CTypes.Deref(ro.Type))));
         var callbacks = CallbackPairs(model, cs, convention);
-        var groups = ClosureGroups(model, cs, callbacks, owner, ownerDrains, convention);
+        var groups = ClosureGroups(model, cs, callbacks, owner, convention);
         var completion = CompletionOf(model, cs, convention, owned);
 
         if (callbacks.Count > 0 && cs.Shape is not SlotShape.Fallible)
@@ -2411,7 +2346,7 @@ public static class CSharpWriter
                     }
                     BuildBag();
                     var plainCall = $"Handle->{slot.Name}(Handle{call})";
-                    if (rooted.Count > 0 || (ownerDrains && slot.Has("drains")))
+                    if (rooted.Count > 0)
                         o.Add($"{fInd}{lane.DeclareForCheck}");
                     if (rooted.Count > 0)
                     {
@@ -2423,12 +2358,6 @@ public static class CSharpWriter
                         o.Add($"{fInd}}}");
                         foreach (var rp in rooted)
                             o.Add($"{fInd}_rooted[{Idioms.Ident(rp.TagValue("rooted")!)}] = {Idioms.Ident(rp.Name!)}Handle;");
-                    }
-                    else if (ownerDrains && slot.Has("drains"))
-                    {
-                        o.Add($"{fInd}if ({lane.Failed(plainCall)} && _callbackFailures.IsEmpty)");
-                        o.Add($"{fInd}    throw {lane.Exception};");
-                        o.Add($"{fInd}DrainCallbackFailures();");
                     }
                     else if (resultOut is not null)
                     {
