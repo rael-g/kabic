@@ -110,24 +110,6 @@ public static class Generation
             File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(callback.Name, convention)}Native.g.cs"),
                 CSharpWriter.RenderCallbackInterface(callback, ns, nativeNs, convention));
 
-        var nodeNames = new List<string>();
-        foreach (var component in model.Structs.Where(s => !s.IsVtable && !s.External && s.Has("node")))
-        {
-            var nodeName = component.TagValue("node")!;
-            nodeNames.Add(nodeName);
-            File.WriteAllText(Path.Combine(outDir, $"{nodeName}.g.cs"),
-                CSharpWriter.RenderNodeType(model, component, ns, usings, convention));
-        }
-
-        if (nodeNames.Count > 0)
-        {
-            if (r.Domain is null)
-                throw new InvalidOperationException("domain renders node types but no domain name was given");
-            var registrar = Idioms.TypeName(r.Domain, convention) + "NodeTypes";
-            File.WriteAllText(Path.Combine(outDir, $"{registrar}.g.cs"),
-                CSharpWriter.RenderNodeTypeRegistrar(registrar, nodeNames, ns));
-        }
-
         foreach (var (owner, fns) in classified.FreeFunctionGroups)
         {
             if (r.Library is null)

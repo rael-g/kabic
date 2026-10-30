@@ -477,28 +477,6 @@ internal static class GeneratorShapeCases
             absent: ["ke_component_access"],
             alongside: [ValueStruct("ke_component_access", ("cid", "uint32_t"), ("access", "uint32_t"))]);
 
-        ExpectNodeType("a node type backs its state with the component's own projection",
-            NodeStruct("ke_probe_component", "Probe3D",
-                ("position", "ke_vec3", []),
-                ("layers", "uint32_t", ["default:1"])),
-            contains: ["[GeneratedNodeComponent(typeof(ProbeComponent), \"probe\")]",
-                       "public partial class Probe3D : Node",
-                       "[NativeField(\"Position\", Component = typeof(ProbeComponent))]",
-                       "public partial Vector3 Position { get; set; }",
-                       "[NativeField(\"Layers\", Component = typeof(ProbeComponent))]"],
-            absent: ["typeof(ke_probe_component)", "ke_vec3", "_generatedState0.position"]);
-
-        ExpectNodeType("a node type declares no constructor, so one written beside it is its only one",
-            NodeStruct("ke_probe_component", "Probe3D", ("layers", "uint32_t", ["default:1"])),
-            contains: ["public partial class Probe3D : Node"],
-            absent: ["public Probe3D()", "Default;"]);
-
-        ExpectValueStruct("a node component is projected without saying [value] as well",
-            NodeStruct("ke_probe_component", "Probe3D", ("position", "ke_vec3", [])),
-            contains: ["public partial struct ProbeComponent", "public const string Name = \"probe\";",
-                       "public Vector3 Position;"],
-            absent: []);
-
         ExpectStructSpans("a counted pointer field of a native struct reads as a span",
             CountedStruct("ke_probe_segment",
                 ("entities", "const uint64_t *", "array_of:count"),
@@ -777,29 +755,6 @@ internal static class GeneratorShapeCases
             });
         }
 
-        void ExpectNodeType(string what, ApiStruct component, string[] contains, string[] absent,
-            ApiStruct[]? alongside = null)
-
-        {
-            Register(what, failures =>
-            {
-                var model = NewModel();
-                model.Structs.Add(component);
-                foreach (var other in alongside ?? []) model.Structs.Add(other);
-
-                var emitted = CSharpWriter.RenderNodeType(model, component, "Probe", [], ProbeConvention.Value);
-                if (Environment.GetEnvironmentVariable("KE_SHAPES_DUMP") == what) Console.WriteLine(emitted);
-
-                foreach (var needle in contains)
-                    if (!emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected to find \"{needle}\"");
-
-                foreach (var needle in absent)
-                    if (emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected NOT to find \"{needle}\"");
-            });
-        }
-
         void ExpectValueStruct(string what, ApiStruct s, string[] contains, string[] absent, string? throws = null,
             ApiStruct[]? alongside = null)
 
@@ -928,11 +883,6 @@ internal static class GeneratorShapeCases
 
         static ApiStruct TaggedValueStruct(string name, params (string Name, string Type, string[] Tags)[] fields) =>
             new(name, null, ["value"],
-                fields.Select(f => new ApiField(f.Name, f.Type, f.Tags, null)).ToList(), []);
-
-        static ApiStruct NodeStruct(string name, string node,
-            params (string Name, string Type, string[] Tags)[] fields) =>
-            new(name, null, [$"node:{node}"],
                 fields.Select(f => new ApiField(f.Name, f.Type, f.Tags, null)).ToList(), []);
 
         void ExpectStructSpans(string what, ApiStruct s, string[] contains, string[] absent, string? throws = null)

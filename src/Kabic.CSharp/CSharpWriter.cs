@@ -556,115 +556,6 @@ public static class CSharpWriter
     }
 
     /// <summary>
-    /// Emits only the declaration a game-facing node type needs: the
-    /// <see cref="GeneratedNodeComponentAttribute"/> marker, the partial property
-    /// signatures. Accessor bodies, the backing field with the <c>[default:]</c> values it starts
-    /// from, and <c>OnBind</c> are <c>KernelEngine.SourceGenerators</c>'s job —
-    /// the same generator a game-authored node type with no header uses, so this type and
-    /// a hand-written one are indistinguishable to it once both compile down to a
-    /// <c>partial</c> class with <c>partial</c> properties.
-    /// </summary>
-    public static string RenderNodeType(ApiModel model, ApiStruct component, string ns,
-        IEnumerable<string> extraUsings, Convention convention)
-    {
-        var nodeName = component.TagValue("node") ?? throw new InvalidOperationException($"{component.Name} has no [node:] tag");
-        var stateType = Idioms.TypeName(component.Name, convention);
-        var componentName = convention.ComponentNameFor(component.Name);
-
-        var baseName = BaseNodeOf(model, component) ?? "Node";
-
-        var o = new List<string> { Header };
-        foreach (var u in convention.Imports(Languages.CSharp)) o.Add($"using {u};");
-        foreach (var u in extraUsings) o.Add($"using {u};");
-        o.Add("");
-        o.Add($"namespace {ns};\n");
-        o.Add(component.Doc is not null ? XmlDoc("", component.Doc, convention).TrimEnd()
-            : $"/// <summary>Mirrors <c>{component.Name}</c>.</summary>");
-        o.Add($"[GeneratedNodeComponent(typeof({stateType}), \"{componentName}\")]");
-        o.Add($"public partial class {nodeName} : {baseName}");
-        o.Add("{");
-
-        foreach (var line in ComponentSurface(model, component, convention)) o.Add(line);
-
-        o.Add("}");
-        return string.Join('\n', o);
-    }
-
-    /// <summary>
-    /// Emits the one call that registers every node type this domain renders, so a
-    /// scene naming any of them resolves without a hand-kept list.
-    /// </summary>
-    public static string RenderNodeTypeRegistrar(string registrarName, IEnumerable<string> nodeNames, string ns)
-    {
-        var o = new List<string>
-        {
-            Header,
-            "using Microsoft.Extensions.DependencyInjection;",
-            "",
-            $"namespace {ns};",
-            "",
-            $"/// <summary>Registers every node type generated for this domain.</summary>",
-            $"public static class {registrarName}",
-            "{",
-            $"    /// <summary>Registers this domain's node types with the scene node registry.</summary>",
-            $"    public static IServiceCollection Add{registrarName}(this IServiceCollection services)",
-            "    {",
-        };
-        foreach (var n in nodeNames) o.Add($"        services.AddNodeType<{n}>();");
-        o.Add("        return services;");
-        o.Add("    }");
-        o.Add("}");
-        return string.Join('\n', o);
-    }
-
-    /// <summary>
-    /// The node type this one extends, or null when it extends <c>Node</c> itself.
-    /// </summary>
-    static string? BaseNodeOf(ApiModel model, ApiStruct component)
-    {
-        var spec = component.TagValue("base");
-        if (spec is null) return null;
-        if (spec.Contains('+'))
-            throw new InvalidOperationException($"{component.Name}: [base:] names one node type, not '{spec}'");
-        _ = model.Structs.FirstOrDefault(x => x.TagValue("node") == spec)
-            ?? throw new InvalidOperationException(
-                $"{component.Name} extends '{spec}', which no [node:] struct in this domain declares; "
-                + "add its header to the domain's composeHeaders");
-        return spec;
-    }
-
-    /// <summary>
-    /// One component's contribution to the node's flat property surface. Every property
-    /// names the component it belongs to, so the Roslyn generator routes it without having
-    /// to resolve a field name that two composed components could both declare.
-    /// </summary>
-    static IEnumerable<string> ComponentSurface(ApiModel model, ApiStruct c, Convention convention)
-    {
-        foreach (var f in c.Fields)
-        {
-            if (f.Has("idiom")) continue;
-
-            var propName = Idioms.Pascal(f.TagValue("name") ?? f.Name);
-            var propType = NodePropertyType(model, f, convention);
-            yield return "";
-            if (!string.IsNullOrEmpty(f.Doc)) yield return $"    /// <summary>{Escape(f.Doc)}</summary>";
-            yield return $"    [NativeField(\"{Idioms.Pascal(f.Name)}\", Component = "
-                + $"typeof({Idioms.TypeName(c.Name, convention)}))]";
-            yield return $"    public partial {propType} {propName} {{ get; set; }}";
-        }
-    }
-
-    static bool IsCharArray(string cType) =>
-        System.Text.RegularExpressions.Regex.IsMatch(cType.Trim(), @"^(const\s+)?char\s*\[\d+\]$");
-
-    static string NodePropertyType(ApiModel model, ApiField f, Convention convention) =>
-        IsCharArray(f.Type) ? "string" :
-        convention.HandleTypes.TryGetValue(f.Type.Trim(), out var h) ? h :
-        convention.Project(Languages.CSharp, model, f.Type) is { } projected ? projected
-        : model.Enums.Any(e => e.Name == f.Type.Trim()) ? Idioms.TypeName(f.Type.Trim(), convention)
-        : f.Has("bool") ? "bool" : CsType(model, f.Type, convention);
-
-    /// <summary>
     /// Renders every enum the model does not mark external as a C# enum, in one file under
     /// <paramref name="ns"/>.
     /// </summary>
@@ -907,7 +798,7 @@ public static class CSharpWriter
     /// </summary>
     static string ViewElement(ApiModel model, string cType, Convention convention) =>
         model.Structs.Any(v => v.Name == cType.Trim() && !v.IsVtable
-            && (v.Has("value") || v.Has("node") || v.Has("view")))
+            && (v.Has("value") || v.Has("view")))
             ? Idioms.TypeName(cType.Trim(), convention)
             : ValueTypeName(model, cType, convention);
 
@@ -1063,7 +954,7 @@ public static class CSharpWriter
     /// asserting a layout instead of naming one.
     /// </summary>
     public static bool IsValue(ApiStruct s) =>
-        !s.External && !s.IsVtable && (s.Has("value") || s.Has("node"));
+        !s.External && !s.IsVtable && s.Has("value");
 
     /// <summary>
     /// Whether a struct is one a caller builds and the native side only reads while a call
