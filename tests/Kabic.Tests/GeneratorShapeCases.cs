@@ -61,9 +61,9 @@ internal static class GeneratorShapeCases
 
         Expect("a result-returning slot that writes memory a projection owns answers with that projection",
             Vtable("ke_probe",
-                Slot("open", "ke_result", Param("self", "ke_probe *", "self"),
+                Slot("open", "ke_result", Param("self", "ke_probe *"),
                     Param("out_bundle", "ke_probe_bundle **", "out")),
-                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *", "self"),
+                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
             contains: ["public Bundle Open(ke_probe* self)",
                        "ke_probe_bundle* resultOut = default;",
@@ -344,7 +344,7 @@ internal static class GeneratorShapeCases
             absent: ["_callbackFailures", "ke_probe* probe"],
             aliases: new() { ["ke_probe_body_fn"] = "ke_result (*)(ke_probe *, void *)" },
             callbacks: [Callback("ke_probe_body_fn", "ke_result",
-                Param("probe", "ke_probe *", "self"), Param("ctx", "void *", "context"))]);
+                Param("probe", "ke_probe *"), Param("ctx", "void *", "context"))]);
 
         Expect("a contract spelling a pointer keeps the keyword",
             Vtable("ke_probe", "interface", Slot("samples", "const uint32_t *")),
@@ -499,8 +499,8 @@ internal static class GeneratorShapeCases
 
         Expect("a slot hands out and takes back the projection of a [view], casting at the ABI",
             Vtable("ke_probe",
-                Slot("open", "ke_probe_bundle *", Param("self", "ke_probe *", "self")),
-                Slot("close", "void", Param("self", "ke_probe *", "self"),
+                Slot("open", "ke_probe_bundle *", Param("self", "ke_probe *")),
+                Slot("close", "void", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
             contains: ["public ProbeBundle* Open(", "return (ProbeBundle*)Handle->open(",
                        "ProbeBundle* bundle)", "(ke_probe_bundle*)bundle"],
@@ -509,9 +509,9 @@ internal static class GeneratorShapeCases
 
         Expect("[releases] pairs a handed-out pointer with the object that gives it back",
             Vtable("ke_probe",
-                Slot("open", "ke_result", Param("self", "ke_probe *", "self"),
+                Slot("open", "ke_result", Param("self", "ke_probe *"),
                     Param("out_bundle", "ke_probe_bundle **", "out")),
-                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *", "self"),
+                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
             contains: ["public unsafe sealed class Bundle : IDisposable",
                        "public ProbeBundle Data => _native is null",
@@ -523,8 +523,8 @@ internal static class GeneratorShapeCases
 
         Expect("owned memory handed out with no failure channel is refused",
             Vtable("ke_probe",
-                Slot("open", "ke_probe_bundle *", Param("self", "ke_probe *", "self")),
-                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *", "self"),
+                Slot("open", "ke_probe_bundle *", Param("self", "ke_probe *")),
+                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
             contains: [], absent: [],
             structs: [ViewJson("ke_probe_bundle")],
@@ -532,11 +532,11 @@ internal static class GeneratorShapeCases
 
         Expect("a completion handed the result code fails the Task with the code's exception",
             Vtable("ke_probe",
-                Slot("open_async", "ke_task *", Param("self", "ke_probe *", "self"),
+                Slot("open_async", "ke_task *", Param("self", "ke_probe *"),
                     Param("path", "const char *", "utf8"),
                     Param("on_done", "ke_probe_done_func", "completion:user_data"),
                     Param("user_data", "void *")),
-                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *", "self"),
+                Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
             contains: ["public Task<Bundle> OpenAsync(ke_probe* self, string path)",
                        "private static void OpenAsyncOnDoneTrampoline(KernelEngine.Result.Native.ke_result arg0, ke_probe_bundle* arg1, void* ctx)",
@@ -551,7 +551,7 @@ internal static class GeneratorShapeCases
 
         Expect("an answer nothing claims ownership of is refused, not handed over as a pointer",
             Vtable("ke_probe",
-                Slot("open_async", "ke_task *", Param("self", "ke_probe *", "self"),
+                Slot("open_async", "ke_task *", Param("self", "ke_probe *"),
                     Param("on_done", "ke_probe_done_func", "completion:user_data"),
                     Param("user_data", "void *"))),
             contains: [], absent: [],
@@ -564,7 +564,7 @@ internal static class GeneratorShapeCases
 
         Expect("an operation that answers later is refused a result code of its own",
             Vtable("ke_probe",
-                Slot("open_async", "ke_result", Param("self", "ke_probe *", "self"),
+                Slot("open_async", "ke_result", Param("self", "ke_probe *"),
                     Param("on_done", "ke_probe_done_func", "completion:user_data"),
                     Param("user_data", "void *"))),
             contains: [], absent: [],
@@ -575,7 +575,7 @@ internal static class GeneratorShapeCases
 
         Expect("[provider] asks for another domain's projection, not the pointer inside it",
             Vtable("ke_probe",
-                Slot("attach", "void", Param("self", "ke_probe *", "self"),
+                Slot("attach", "void", Param("self", "ke_probe *"),
                     Param("pool", "ke_task_pool *", "provider"))),
             contains: ["Attach(ke_probe* self, INativeTaskPool pool)", "pool.Native"],
             absent: ["ke_task_pool* pool", "ke_task_pool *pool"]);

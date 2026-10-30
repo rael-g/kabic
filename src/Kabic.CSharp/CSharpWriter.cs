@@ -375,7 +375,7 @@ public static class CSharpWriter
                 $"{release.Name}: [releases] must name the projection that owns what this slot takes"
                 + " back, as [releases:<name>]");
 
-        var released = release.Params.Where(p => !p.Has("self")).ToList();
+        var released = release.Params.Where(p => !model.Structs.Any(s => s.IsVtable && s.Name == StripQualifiers(CTypes.Deref(p.Type)).Trim())).ToList();
         if (released.Count != 1)
             throw new InvalidOperationException(
                 $"{release.Name}: [releases:{typeName}] releases the one pointer this slot takes back,"
@@ -1415,8 +1415,11 @@ public static class CSharpWriter
     }
 
     /// <summary>How a lane is spelled in the delegate the caller implements.</summary>
+    static bool IsOwnerLane(ApiParam lane, string owner, Convention convention) =>
+        CTypes.IsPointer(lane.Type) && Idioms.TypeName(StripQualifiers(CTypes.Deref(lane.Type)).Trim(), convention) == owner;
+
     static string ManagedLane(ApiModel model, ApiParam lane, string selfType, Convention convention) =>
-        lane.Has("self") ? selfType
+        IsOwnerLane(lane, selfType, convention) ? selfType
         : lane.Has("ctx") ? "nint"
         : lane.Has("utf8") ? "string"
         : IsBoolType(lane.Type, convention) ? "bool"
@@ -1625,21 +1628,13 @@ public static class CSharpWriter
     /// delegate as the handle's target directly.
     /// </summary>
     internal sealed record ClosureGroup(ApiParam Ctx, IReadOnlyList<CallbackPair> Pairs, string StateType,
-        string ReturnType, string Owner)
+        string ReturnType, string Owner, bool HandsBackProvider)
     {
         /// <summary>Whether more than one closure is reached through this context.</summary>
         public bool Shared => Pairs.Count > 1;
 
         /// <summary>Whether the trampoline has to reach the provider that registered the closure.</summary>
         public bool NeedsOwner => HandsBackProvider;
-
-        /// <summary>
-        /// Whether a handler of this group is called with the provider that registered it.
-        /// The ABI spells that lane as a pointer to the same object the call was made on,
-        /// which managed code already holds a wrapper for; handing the wrapper back is the
-        /// only projection that keeps the handler on the managed surface.
-        /// </summary>
-        public bool HandsBackProvider => Pairs.Any(p => p.Callback.Lanes.Any(l => l.Has("self")));
 
         /// <summary>
         /// Whether the context points at a generated state object rather than the delegate itself.
@@ -1702,7 +1697,8 @@ public static class CSharpWriter
         var groups = pairs
             .GroupBy(p => p.Ctx)
             .Select(g => new ClosureGroup(g.Key, g.ToList(), $"{Idioms.Pascal(slot.Name)}Closures",
-                keyType, owner))
+                keyType, owner,
+                g.Any(p => p.Callback.Lanes.Any(l => IsOwnerLane(l, owner, convention)))))
             .ToList();
 
         foreach (var g in groups.Where(x => x.Shared))
@@ -1811,7 +1807,7 @@ public static class CSharpWriter
         var ps = lanes.Select((l, i) => i == pair.CtxLane
             ? "void* ctx"
             : $"{BlittableLane(model, l.Type, convention)} arg{i}");
-        var args = string.Join(", ", CarriedLanes(pair).Select(i => lanes[i].Has("self")
+        var args = string.Join(", ", CarriedLanes(pair).Select(i => IsOwnerLane(lanes[i], group.Owner, convention)
             ? "state.Owner"
             : lanes[i].Has("utf8")
             ? $"Marshal.PtrToStringUTF8((nint)arg{i}) ?? \"\""
