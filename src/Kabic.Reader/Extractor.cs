@@ -84,8 +84,8 @@ public static class Extractor
                     break;
 
                 case "VarDecl" when name is not null && !compose
-                    && ExtractTable(node, name, bytes) is { } table:
-                    api.Tables.Add(table);
+                    && ExtractData(node, name, bytes) is { } data:
+                    api.Data.Add(data);
                     break;
 
                 case "TypedefDecl" when name is not null:
@@ -316,16 +316,13 @@ public static class Extractor
         { ReturnTags = retTags };
     }
 
-    static ApiTable? ExtractTable(JsonObject node, string name, byte[] bytes)
+    static ApiData? ExtractData(JsonObject node, string name, byte[] bytes)
     {
+        if (node["init"] is null || node["storageClass"]?.GetValue<string>() == "extern") return null;
         var type = node["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "";
-        if (type.IndexOf('[') is var bracket && bracket < 0) return null;
-        if ((node["inner"] as JsonArray)?.FirstOrDefault(c => c!["kind"]?.GetValue<string>() == "InitListExpr") is not JsonObject list)
-            return null;
-        var element = type[..bracket].Trim();
-        var readOnly = element.StartsWith("const ", StringComparison.Ordinal);
-        if (readOnly) element = element["const ".Length..];
-        return new ApiTable(name, element, readOnly, ((JsonArray)list["inner"]!).Select(r => ExtractValue(r!.AsObject(), bytes)).ToList());
+        var readOnly = type.StartsWith("const ", StringComparison.Ordinal);
+        return new ApiData(name, readOnly ? type["const ".Length..] : type, readOnly,
+            ExtractValue(((JsonArray)node["inner"]!)[^1]!.AsObject(), bytes));
     }
 
     static ApiValue ExtractValue(JsonObject node, byte[] bytes)

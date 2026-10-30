@@ -650,20 +650,26 @@ internal static class GeneratorShapeCases
             });
         }
 
-        Register("a const array of records becomes a readonly array in C# and a const in Zig", failures =>
+        Register("initialized data keeps its shape in C# and in Zig, whatever the shape", failures =>
         {
             var model = NewModel();
             model.Enums.Add(new ApiEnum("ke_kind", null, [new ApiEnumValue("KE_KIND_B", "0", true, null)]));
             model.Structs.Add(new ApiStruct("ke_row", null, [],
                 [new ApiField("kind", "ke_kind", [], null), new ApiField("at", "uint32_t", [], null), new ApiField("size", "uint32_t", [], null)], []));
-            model.Tables.Add(new ApiTable("ke_rows", "ke_row", true,
-                [new ApiValue(ApiValueKind.List, "", [new(ApiValueKind.Name, "KE_KIND_B", []), new(ApiValueKind.OffsetOf, "ke_row, at", []), new(ApiValueKind.SizeOf, "float", [])])]));
-            var cs = CSharpWriter.RenderTables(model, "Probe", ProbeConvention.Value);
+            model.Data.Add(new ApiData("ke_rows", "ke_row[1]", true,
+                new(ApiValueKind.List, "", [new(ApiValueKind.List, "", [new(ApiValueKind.Name, "KE_KIND_B", []), new(ApiValueKind.OffsetOf, "ke_row, at", []), new(ApiValueKind.SizeOf, "float", [])])])));
+            model.Data.Add(new ApiData("ke_grid", "float[1][2]", true,
+                new(ApiValueKind.List, "", [new(ApiValueKind.List, "", [new(ApiValueKind.Number, "1.5", []), new(ApiValueKind.Number, "2", [])])])));
+            model.Data.Add(new ApiData("ke_origin", "ke_row", false,
+                new(ApiValueKind.List, "", [new(ApiValueKind.Name, "KE_KIND_B", []), new(ApiValueKind.Number, "0", []), new(ApiValueKind.Number, "4", [])])));
+            model.Data.Add(new ApiData("ke_limit", "int", true, new(ApiValueKind.Number, "3", [])));
+            var cs = CSharpWriter.RenderData(model, "Probe", ProbeConvention.Value);
             var zig = Kabic.Zig.ZigWriter.Render(model, new Dictionary<string, string>(), false);
-            foreach (var needle in new[] { "public static readonly Row[] Rows =", "Marshal.OffsetOf<Row>(\"At\")", "(uint)sizeof(float)" })
-                if (!cs.Contains(needle)) failures.Add($"expected in C#: {needle}");
-            foreach (var needle in new[] { "pub const ke_rows = [_]ke_row{", "@offsetOf(ke_row, \"at\")", "@sizeOf(f32)" })
-                if (!zig.Contains(needle)) failures.Add($"expected in Zig: {needle}");
+            foreach (var needle in new[] { "public static readonly Row[] Rows =", "Marshal.OffsetOf<Row>(\"At\")", "(uint)sizeof(float)",
+                         "public static readonly float[][] Grid = [[1.5f, 2]];", "public static Row Origin = new() {", "public static readonly int Limit = 3;" })
+                if (!cs.Contains(needle)) failures.Add($"expected in C#: {needle}\n{cs}");
+            foreach (var needle in new[] { "pub const ke_rows:", "@offsetOf(ke_row, \"at\")", "@sizeOf(f32)", "pub const ke_grid:", "pub var ke_origin:", "pub const ke_limit: c_int = 3;" })
+                if (!zig.Contains(needle)) failures.Add($"expected in Zig: {needle}\n{zig}");
         });
 
         void ExpectValueStruct(string what, ApiStruct s, string[] contains, string[] absent, string? throws = null,

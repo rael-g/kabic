@@ -79,7 +79,11 @@ public sealed class ZigWriter
             body.AppendLine();
         }
 
-        foreach (var table in model.Tables) RenderTable(body, table);
+        foreach (var data in model.Data)
+        {
+            body.AppendLine($"pub {(data.ReadOnly ? "const" : "var")} {data.Name}: {Spell(data.Type, null)} = {DataValue(data.Type, data.Value)};");
+            body.AppendLine();
+        }
 
         var refused = model.Functions.Where(_ => !factory).Select(f => f.Name).Concat(model.Variables.Select(v => v.Name)).ToList();
         if (refused.Count > 0)
@@ -103,27 +107,23 @@ public sealed class ZigWriter
         return head.Append(body).ToString().TrimEnd('\n').ReplaceLineEndings("\n") + "\n";
     }
 
-    void RenderTable(StringBuilder sb, ApiTable table)
+    string DataValue(string type, ApiValue v)
     {
-        var fields = model.Structs.FirstOrDefault(s => s.Name == table.Element)?.Fields
-            ?? throw new NotSupportedException($"{table.Name}: {table.Element} is not declared in this package");
-        sb.AppendLine($"pub {(table.ReadOnly ? "const" : "var")} {table.Name} = [_]{Named(table.Element, byValue: true)}{{");
-        foreach (var row in table.Rows)
-            sb.AppendLine("    .{ " + string.Join(", ", fields.Zip(row.Items, (f, v) => $".{Ident(f.Name)} = {TableValue(v)}")) + " },");
-        sb.AppendLine("};");
-        sb.AppendLine();
+        var bare = Bare(type);
+        if (CTypes.FixedArray(type) is { } array)
+            return ".{ " + string.Join(", ", v.Items.Select(i => DataValue(array.Element, i))) + " }";
+        if (model.Structs.FirstOrDefault(s => s.Name == bare) is { } record)
+            return ".{ " + string.Join(", ", record.Fields.Zip(v.Items, (f, i) => $".{Ident(f.Name)} = {DataValue(f.Type, i)}")) + " }";
+        return v.Kind switch
+        {
+            ApiValueKind.Name => Value(v.Text),
+            ApiValueKind.OffsetOf => v.Text.Split(',', StringSplitOptions.TrimEntries) is [var owner, var member]
+                ? $"@offsetOf({Named(owner, byValue: true)}, \"{member}\")" : throw new NotSupportedException($"offsetof({v.Text})"),
+            ApiValueKind.SizeOf => $"@sizeOf({Spell(v.Text, null)})",
+            ApiValueKind.List => throw new NotSupportedException($"a list initializes {type}, which is no array or struct here"),
+            _ => v.Text,
+        };
     }
-
-    string TableValue(ApiValue v) => v.Kind switch
-    {
-        ApiValueKind.Number => v.Text,
-        ApiValueKind.String => v.Text,
-        ApiValueKind.Name => Value(v.Text),
-        ApiValueKind.OffsetOf => v.Text.Split(',', StringSplitOptions.TrimEntries) is [var type, var member]
-            ? $"@offsetOf({Named(type, byValue: true)}, \"{member}\")" : throw new NotSupportedException($"offsetof({v.Text})"),
-        ApiValueKind.SizeOf => $"@sizeOf({Spell(v.Text, null)})",
-        _ => ".{ " + string.Join(", ", v.Items.Select(TableValue)) + " }",
-    };
 
     /// <summary>A value an enum or a macro of this root or of another defines, reached as a type is.</summary>
     string Value(string name) =>

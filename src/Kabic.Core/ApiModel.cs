@@ -161,9 +161,10 @@ public enum ApiValueKind { Number, String, Name, OffsetOf, SizeOf, List }
 public record ApiValue(ApiValueKind Kind, string Text, IReadOnlyList<ApiValue> Items);
 
 /// <summary>
-/// An array defined at file scope: its name, its element type, whether it is const, and its rows.
+/// A variable the headers define with an initializer: its name, its C type without const, whether
+/// it is const, and its value.
 /// </summary>
-public record ApiTable(string Name, string Element, bool ReadOnly, IReadOnlyList<ApiValue> Rows);
+public record ApiData(string Name, string Type, bool ReadOnly, ApiValue Value);
 
 /// <summary>A function the header declares, with its return type and its parameters.</summary>
 public record ApiFunction(string Name, string Returns, string? Doc, string? ReturnDoc, IReadOnlyList<ApiParam> Params)
@@ -217,8 +218,8 @@ public class ApiModel
     /// <summary>The constants the headers define as macros, in the order they define them.</summary>
     public List<ApiConstant> Constants { get; } = [];
 
-    /// <summary>The file-scope arrays the headers define with an initializer, in definition order.</summary>
-    public List<ApiTable> Tables { get; } = [];
+    /// <summary>The variables the headers define with an initializer, in definition order.</summary>
+    public List<ApiData> Data { get; } = [];
 
     /// <summary>
     /// Function-pointer typedefs, keyed by the name a parameter is declared with.
@@ -316,11 +317,10 @@ public static class ApiReader
 
         foreach (var o in root["opaques"]?.AsArray() ?? []) m.Opaques.Add(o!.GetValue<string>());
 
-        foreach (var n in root["tables"]?.AsArray() ?? [])
+        foreach (var n in root["data"]?.AsArray() ?? [])
         {
             var o = n!.AsObject();
-            m.Tables.Add(new ApiTable(Str(o, "name")!, Str(o, "element")!, o["readonly"]!.GetValue<bool>(),
-                o["rows"]!.AsArray().Select(r => ReadValue(r!.AsObject())).ToList()));
+            m.Data.Add(new ApiData(Str(o, "name")!, Str(o, "type")!, o["readonly"]!.GetValue<bool>(), ReadValue(o["value"]!.AsObject())));
         }
 
         foreach (var c in root["constants"]?.AsArray() ?? [])
