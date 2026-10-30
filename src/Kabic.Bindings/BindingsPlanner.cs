@@ -277,7 +277,8 @@ public static class BindingsPlanner
         foreach (var e in model.Enums.Where(e => !e.External))
         {
             yield return $"{e.Name}={Idioms.TypeName(e.Name, convention)}";
-            foreach (var v in e.Values) yield return $"{e.Name}::{v.Name}={Idioms.EnumMember(v.Name, e.Name)}";
+            foreach (var v in e.Values.DistinctBy(v => Idioms.EnumMember(v.Name, e.Name)))
+                yield return $"{e.Name}::{v.Name}={Idioms.EnumMember(v.Name, e.Name)}";
         }
         foreach (var s in model.Structs.Where(CSharpWriter.IsValue))
         {

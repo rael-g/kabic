@@ -92,7 +92,7 @@ public static class Extractor
                 case "TypedefDecl" when name is not null:
                     {
                         var target = node["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "";
-                        if (!target.StartsWith("struct ") && !target.StartsWith("union ") && !target.StartsWith("enum ") && target != name)
+                        if (target.EndsWith('*') || !target.StartsWith("struct ") && !target.StartsWith("union ") && !target.StartsWith("enum ") && target != name)
                             api.TypeAliases[name] = target;
                         if (ExtractCallback(node, name) is { } callback) api.Callbacks.Add(callback);
                         break;

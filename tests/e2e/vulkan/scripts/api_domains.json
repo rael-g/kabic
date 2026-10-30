@@ -1,0 +1,56 @@
+{
+ "convention": {
+  "symbolPrefix": "vk",
+  "commonManagedNamespace": "Vulkan",
+  "commonBindingsNamespace": "Vulkan.Shared",
+  "includeDirectoryName": "kernel_engine",
+  "resultType": "VkResult",
+  "resultOk": "VkSuccess",
+  "resultManagedType": "global::Vulkan.Native.VkResult",
+  "resultHelperClass": "global::Vulkan.Results",
+  "names": {
+   "csharp": []
+  }
+ },
+ "domains": [
+  {
+   "name": "vulkan",
+   "headers": [
+    "src/c/kernel_engine/vulkan/vulkan_core.h"
+   ],
+   "includeDirs": [
+    "src/c"
+   ],
+   "apiJson": "src/csharp/ke_api.json",
+   "namespace": "Vulkan",
+   "nativeNamespace": "Vulkan.Native",
+   "outDir": "src/csharp/Vulkan/Generated",
+   "library": "vulkan",
+   "usings": []
+  }
+ ],
+ "bindings": [
+  {
+   "name": "Vulkan",
+   "project": "src/csharp/Vulkan",
+   "namespace": "Vulkan.Native",
+   "headers": [
+    "src/c/kernel_engine/vulkan/vulkan_core.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_av1std.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_av1std_decode.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_av1std_encode.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_h264std.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_h264std_decode.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_h264std_encode.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_h265std.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_h265std_decode.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_h265std_encode.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_vp9std.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codec_vp9std_decode.h",
+    "src/c/kernel_engine/vk_video/vulkan_video_codecs_common.h"
+   ],
+   "library": "vulkan",
+   "output": "Native/Generated/"
+  }
+ ]
+}

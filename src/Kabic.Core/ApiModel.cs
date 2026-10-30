@@ -379,6 +379,15 @@ public static class ApiReader
             var o = v!.AsObject();
             m.Variables.Add(new ApiVariable(Str(o, "name")!, Str(o, "type")!, Str(o, "doc")));
         }
+
+        string Seen(string type) => m.TypeAliases.GetValueOrDefault(CType.Of(type).Name) is { } target && target.EndsWith('*') && !type.Contains('(')
+            ? target + new string('*', CType.Of(type).Pointers) : type;
+        for (var i = 0; i < m.Functions.Count; i++)
+            m.Functions[i] = m.Functions[i] with
+            {
+                Returns = m.Functions[i].Returns == Convention.TaggedResult ? Convention.TaggedResult : Seen(m.Functions[i].Returns),
+                Params = m.Functions[i].Params.Select(p => p with { Type = Seen(p.Type) }).ToList(),
+            };
         return m;
     }
 

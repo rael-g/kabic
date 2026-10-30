@@ -184,7 +184,8 @@ public static class CSharpWriter
     /// already holds rather than the native spelling of the same bytes.
     /// </summary>
     static string SequenceElement(ApiModel model, SequencePair s, Convention convention) =>
-        ValueTypeName(model, StripQualifiers(CTypes.Deref(s.Seq.Type)), convention);
+        CTypes.IsPointer(CTypes.Deref(s.Seq.Type)) ? "nint"
+        : ValueTypeName(model, StripQualifiers(CTypes.Deref(s.Seq.Type)), convention);
 
     /// <summary>
     /// The pinned pointer a sequence parameter hands the vtable. A <c>[value]</c> element is

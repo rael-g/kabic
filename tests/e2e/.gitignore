@@ -9,3 +9,6 @@ src/csharp/ke_api.json
 zlib/src/csharp/Zlib/Native/
 sqlite/src/csharp/Sqlite/Native/
 sqlite/src/csharp/ke_api.json
+vulkan/src/csharp/Vulkan/Native/
+vulkan/src/csharp/ke_api.json
+vulkan/src/csharp/Vulkan/Generated/
