@@ -151,6 +151,20 @@ public record ApiConstant(string Name, string Type, string? Value, IReadOnlyList
 /// <summary>One member of a record constant: its name and its decimal value.</summary>
 public record ApiConstantField(string Name, string Value);
 
+/// <summary>What a value of an initializer is.</summary>
+public enum ApiValueKind { Number, String, Name, OffsetOf, SizeOf, List }
+
+/// <summary>
+/// One value of an initializer. <see cref="Text"/> is a literal, the name a value refers to, the
+/// <c>type, member</c> of an offsetof or the type of a sizeof; a list holds <see cref="Items"/>.
+/// </summary>
+public record ApiValue(ApiValueKind Kind, string Text, IReadOnlyList<ApiValue> Items);
+
+/// <summary>
+/// An array defined at file scope: its name, its element type, whether it is const, and its rows.
+/// </summary>
+public record ApiTable(string Name, string Element, bool ReadOnly, IReadOnlyList<ApiValue> Rows);
+
 /// <summary>A function the header declares, with its return type and its parameters.</summary>
 public record ApiFunction(string Name, string Returns, string? Doc, string? ReturnDoc, IReadOnlyList<ApiParam> Params)
 {
@@ -203,8 +217,8 @@ public class ApiModel
     /// <summary>The constants the headers define as macros, in the order they define them.</summary>
     public List<ApiConstant> Constants { get; } = [];
 
-    /// <summary>The names of the static constants the headers define, such as field tables.</summary>
-    public List<string> Statics { get; } = [];
+    /// <summary>The file-scope arrays the headers define with an initializer, in definition order.</summary>
+    public List<ApiTable> Tables { get; } = [];
 
     /// <summary>
     /// Function-pointer typedefs, keyed by the name a parameter is declared with.
@@ -302,7 +316,12 @@ public static class ApiReader
 
         foreach (var o in root["opaques"]?.AsArray() ?? []) m.Opaques.Add(o!.GetValue<string>());
 
-        foreach (var n in root["statics"]?.AsArray() ?? []) m.Statics.Add(n!.GetValue<string>());
+        foreach (var n in root["tables"]?.AsArray() ?? [])
+        {
+            var o = n!.AsObject();
+            m.Tables.Add(new ApiTable(Str(o, "name")!, Str(o, "element")!, o["readonly"]!.GetValue<bool>(),
+                o["rows"]!.AsArray().Select(r => ReadValue(r!.AsObject())).ToList()));
+        }
 
         foreach (var c in root["constants"]?.AsArray() ?? [])
         {
@@ -342,6 +361,10 @@ public static class ApiReader
         }
         return m;
     }
+
+    static ApiValue ReadValue(System.Text.Json.Nodes.JsonObject o) =>
+        new(Enum.Parse<ApiValueKind>(Str(o, "kind")!), Str(o, "text") ?? "",
+            o["items"]?.AsArray().Select(i => ReadValue(i!.AsObject())).ToList() ?? []);
 
     static ApiSlot ReadSlot(System.Text.Json.Nodes.JsonObject o) => new(Str(o, "name")!, Str(o, "returns")!,
         o["tags"]?.AsArray().Select(t => t!.GetValue<string>()).ToList() ?? [], Str(o, "doc"),

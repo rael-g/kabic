@@ -79,6 +79,8 @@ public sealed class ZigWriter
             body.AppendLine();
         }
 
+        foreach (var table in model.Tables) RenderTable(body, table);
+
         var refused = model.Functions.Where(_ => !factory).Select(f => f.Name).Concat(model.Variables.Select(v => v.Name)).ToList();
         if (refused.Count > 0)
             throw new NotSupportedException(
@@ -100,6 +102,28 @@ public sealed class ZigWriter
         if (usesStd || imported.Count > 0) head.AppendLine();
         return head.Append(body).ToString().TrimEnd('\n').ReplaceLineEndings("\n") + "\n";
     }
+
+    void RenderTable(StringBuilder sb, ApiTable table)
+    {
+        var fields = model.Structs.FirstOrDefault(s => s.Name == table.Element)?.Fields
+            ?? throw new NotSupportedException($"{table.Name}: {table.Element} is not declared in this package");
+        sb.AppendLine($"pub {(table.ReadOnly ? "const" : "var")} {table.Name} = [_]{Named(table.Element, byValue: true)}{{");
+        foreach (var row in table.Rows)
+            sb.AppendLine("    .{ " + string.Join(", ", fields.Zip(row.Items, (f, v) => $".{Ident(f.Name)} = {TableValue(v)}")) + " },");
+        sb.AppendLine("};");
+        sb.AppendLine();
+    }
+
+    string TableValue(ApiValue v) => v.Kind switch
+    {
+        ApiValueKind.Number => v.Text,
+        ApiValueKind.String => v.Text,
+        ApiValueKind.Name => Value(v.Text),
+        ApiValueKind.OffsetOf => v.Text.Split(',', StringSplitOptions.TrimEntries) is [var type, var member]
+            ? $"@offsetOf({Named(type, byValue: true)}, \"{member}\")" : throw new NotSupportedException($"offsetof({v.Text})"),
+        ApiValueKind.SizeOf => $"@sizeOf({Spell(v.Text, null)})",
+        _ => ".{ " + string.Join(", ", v.Items.Select(TableValue)) + " }",
+    };
 
     /// <summary>A value an enum or a macro of this root or of another defines, reached as a type is.</summary>
     string Value(string name) =>

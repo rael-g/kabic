@@ -547,6 +547,40 @@ public static class CSharpWriter
         return PointerToView(model, p.Type, convention) ?? CsType(model, p.Type, convention);
     }
 
+    /// <summary>Renders the arrays the headers define as one static class under <paramref name="ns"/>.</summary>
+    public static string RenderTables(ApiModel model, string ns, Convention convention)
+    {
+        var o = new List<string> { Header, $"namespace {ns};\n", "/// <summary>The arrays the headers define.</summary>", "public static unsafe class Tables", "{" };
+        foreach (var table in model.Tables)
+        {
+            var element = model.Structs.FirstOrDefault(s => s.Name == table.Element)
+                ?? throw new InvalidOperationException($"{table.Name}: {table.Element} is not declared in this domain");
+            var type = Idioms.TypeName(table.Element, convention);
+            o.Add($"    /// <summary>Mirrors <c>{table.Name}</c>.</summary>");
+            o.Add($"    public static {(table.ReadOnly ? "readonly " : "")}{type}[] {Idioms.Pascal(convention.StripPrefix(table.Name))} =");
+            o.Add("    [");
+            foreach (var row in table.Rows)
+                o.Add("        new() { " + string.Join(", ", element.Fields.Zip(row.Items,
+                    (f, v) => $"{Idioms.Pascal(f.Name)} = {TableValue(model, v, convention)}")) + " },");
+            o.Add("    ];");
+        }
+        o.Add("}");
+        return string.Join('\n', o);
+    }
+
+    static string TableValue(ApiModel model, ApiValue v, Convention convention) => v.Kind switch
+    {
+        ApiValueKind.Number => v.Text.Contains('.') ? v.Text + "f" : v.Text,
+        ApiValueKind.String => v.Text,
+        ApiValueKind.Name => model.Enums.FirstOrDefault(e => e.Values.Any(x => x.Name == v.Text)) is { } e
+            ? $"{Idioms.TypeName(e.Name, convention)}.{Idioms.EnumMember(v.Text, e.Name)}" : v.Text,
+        ApiValueKind.OffsetOf => v.Text.Split(',', StringSplitOptions.TrimEntries) is [var type, var member]
+            ? $"(uint)System.Runtime.InteropServices.Marshal.OffsetOf<{Idioms.TypeName(type, convention)}>(\"{Idioms.Pascal(member)}\")"
+            : throw new InvalidOperationException($"offsetof({v.Text})"),
+        ApiValueKind.SizeOf => $"(uint)sizeof({CsType(model, v.Text, convention)})",
+        _ => "[" + string.Join(", ", v.Items.Select(i => TableValue(model, i, convention))) + "]",
+    };
+
     /// <summary>
     /// Renders every enum the model does not mark external as a C# enum, in one file under
     /// <paramref name="ns"/>.

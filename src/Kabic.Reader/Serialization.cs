@@ -11,7 +11,7 @@ public static class Serialization
 {
     /// <summary>
     /// Writes the model as one JSON object, with the enum, struct, vtable, function and callback
-    /// arrays and the type aliases, adding the opaque records, the statics, the constants and the variables when there are any.
+    /// arrays and the type aliases, adding the opaque records, the tables, the constants and the variables when there are any.
     /// </summary>
     public static JsonObject ToJson(this ApiModel m)
     {
@@ -27,8 +27,14 @@ public static class Serialization
         };
         if (m.Opaques.Count > 0)
             json["opaques"] = new JsonArray(m.Opaques.Select(o => (JsonNode)o).ToArray());
-        if (m.Statics.Count > 0)
-            json["statics"] = new JsonArray(m.Statics.Select(n => (JsonNode)n).ToArray());
+        if (m.Tables.Count > 0)
+            json["tables"] = new JsonArray(m.Tables.Select(n => (JsonNode)new JsonObject
+            {
+                ["name"] = n.Name,
+                ["element"] = n.Element,
+                ["readonly"] = n.ReadOnly,
+                ["rows"] = new JsonArray(n.Rows.Select(r => (JsonNode)r.ToJson()).ToArray()),
+            }).ToArray());
         if (m.Constants.Count > 0)
             json["constants"] = new JsonArray(m.Constants.Select(c =>
             {
@@ -52,6 +58,14 @@ public static class Serialization
     /// <summary>
     /// Writes a parameter as an object with its name, type, tags and documentation.
     /// </summary>
+    public static JsonObject ToJson(this ApiValue v)
+    {
+        var o = new JsonObject { ["kind"] = v.Kind.ToString(), ["text"] = v.Text };
+        if (v.Items.Count > 0) o["items"] = new JsonArray(v.Items.Select(i => (JsonNode)i.ToJson()).ToArray());
+        return o;
+    }
+
+    /// <summary>The description of one parameter.</summary>
     public static JsonObject ToJson(this ApiParam p) => new()
     {
         ["name"] = p.Name,

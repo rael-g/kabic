@@ -82,6 +82,12 @@ public static class Generation
             File.WriteAllText(Path.Combine(outDir, $"{counted.Name}.Spans.g.cs"),
                 CSharpWriter.RenderStructSpans(model, counted, nativeNs, convention));
 
+        if (model.Tables.Count > 0)
+        {
+            Directory.CreateDirectory(contractDir);
+            File.WriteAllText(Path.Combine(contractDir, "Tables.g.cs"), CSharpWriter.RenderTables(model, ns, convention));
+        }
+
         foreach (var provider in classified.Providers)
         {
             var typeName = Idioms.TypeName(provider.Name, convention);

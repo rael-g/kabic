@@ -650,6 +650,22 @@ internal static class GeneratorShapeCases
             });
         }
 
+        Register("a const array of records becomes a readonly array in C# and a const in Zig", failures =>
+        {
+            var model = NewModel();
+            model.Enums.Add(new ApiEnum("ke_kind", null, [new ApiEnumValue("KE_KIND_B", "0", true, null)]));
+            model.Structs.Add(new ApiStruct("ke_row", null, [],
+                [new ApiField("kind", "ke_kind", [], null), new ApiField("at", "uint32_t", [], null), new ApiField("size", "uint32_t", [], null)], []));
+            model.Tables.Add(new ApiTable("ke_rows", "ke_row", true,
+                [new ApiValue(ApiValueKind.List, "", [new(ApiValueKind.Name, "KE_KIND_B", []), new(ApiValueKind.OffsetOf, "ke_row, at", []), new(ApiValueKind.SizeOf, "float", [])])]));
+            var cs = CSharpWriter.RenderTables(model, "Probe", ProbeConvention.Value);
+            var zig = Kabic.Zig.ZigWriter.Render(model, new Dictionary<string, string>(), false);
+            foreach (var needle in new[] { "public static readonly Row[] Rows =", "Marshal.OffsetOf<Row>(\"At\")", "(uint)sizeof(float)" })
+                if (!cs.Contains(needle)) failures.Add($"expected in C#: {needle}");
+            foreach (var needle in new[] { "pub const ke_rows = [_]ke_row{", "@offsetOf(ke_row, \"at\")", "@sizeOf(f32)" })
+                if (!zig.Contains(needle)) failures.Add($"expected in Zig: {needle}");
+        });
+
         void ExpectValueStruct(string what, ApiStruct s, string[] contains, string[] absent, string? throws = null,
             ApiStruct[]? alongside = null)
 

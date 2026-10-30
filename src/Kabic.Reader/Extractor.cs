@@ -83,8 +83,9 @@ public static class Extractor
                         DocParser.Parse(node).Summary is { Length: > 0 } doc ? doc : null));
                     break;
 
-                case "VarDecl" when name is not null && !compose && node["storageClass"]?.GetValue<string>() == "static":
-                    api.Statics.Add(name);
+                case "VarDecl" when name is not null && !compose
+                    && ExtractTable(node, name, bytes) is { } table:
+                    api.Tables.Add(table);
                     break;
 
                 case "TypedefDecl" when name is not null:
@@ -313,6 +314,44 @@ public static class Extractor
         return new ApiFunction(name, returns, summary.Length > 0 ? summary : null,
             retDoc.Length > 0 ? retDoc : null, parameters)
         { ReturnTags = retTags };
+    }
+
+    static ApiTable? ExtractTable(JsonObject node, string name, byte[] bytes)
+    {
+        var type = node["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "";
+        if (type.IndexOf('[') is var bracket && bracket < 0) return null;
+        if ((node["inner"] as JsonArray)?.FirstOrDefault(c => c!["kind"]?.GetValue<string>() == "InitListExpr") is not JsonObject list)
+            return null;
+        var element = type[..bracket].Trim();
+        var readOnly = element.StartsWith("const ", StringComparison.Ordinal);
+        if (readOnly) element = element["const ".Length..];
+        return new ApiTable(name, element, readOnly, ((JsonArray)list["inner"]!).Select(r => ExtractValue(r!.AsObject(), bytes)).ToList());
+    }
+
+    static ApiValue ExtractValue(JsonObject node, byte[] bytes)
+    {
+        var kind = node["kind"]?.GetValue<string>();
+        var inner = node["inner"] as JsonArray;
+        switch (kind)
+        {
+            case "InitListExpr":
+                return new ApiValue(ApiValueKind.List, "", (inner ?? []).Select(i => ExtractValue(i!.AsObject(), bytes)).ToList());
+            case "IntegerLiteral" or "FloatingLiteral":
+                return new ApiValue(ApiValueKind.Number, node["value"]!.ToString(), []);
+            case "StringLiteral":
+                return new ApiValue(ApiValueKind.String, node["value"]!.GetValue<string>(), []);
+            case "DeclRefExpr":
+                return new ApiValue(ApiValueKind.Name, node["referencedDecl"]!["name"]!.GetValue<string>(), []);
+            case "OffsetOfExpr":
+                var begin = node["range"]!["begin"]!;
+                var at = (begin["offset"] ?? begin["expansionLoc"]!["offset"])!.GetValue<int>();
+                var text = System.Text.Encoding.UTF8.GetString(bytes, at, bytes.Length - at);
+                return new ApiValue(ApiValueKind.OffsetOf, text[(text.IndexOf('(') + 1)..text.IndexOf(')')].Trim(), []);
+            case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof" && node["argType"] is JsonObject arg:
+                return new ApiValue(ApiValueKind.SizeOf, arg["qualType"]!.GetValue<string>(), []);
+        }
+        if (inner is [JsonObject only]) return ExtractValue(only, bytes);
+        throw new NotSupportedException($"an initializer holds a {kind}, which has no projection");
     }
 
     static string SliceRange(byte[] bytes, JsonObject node)
