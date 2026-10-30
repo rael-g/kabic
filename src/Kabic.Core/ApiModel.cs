@@ -244,6 +244,17 @@ public class ApiModel
     /// </summary>
     public Dictionary<string, string> TypeAliases { get; } = [];
 
+    /// <summary>
+    /// The handle a type is, or null: an opaque record behind one pointer more than
+    /// <paramref name="outer"/>, or a typedef of a pointer behind <paramref name="outer"/>.
+    /// </summary>
+    public string? HandleOf(string type, int outer = 0)
+    {
+        var parsed = CType.Of(type);
+        if (Opaques.Contains(parsed.Name) && parsed.Pointers == outer + 1) return parsed.Name;
+        return parsed.Pointers == outer && TypeAliases.TryGetValue(parsed.Name, out var target) && target.EndsWith('*') && !target.Contains('(') ? parsed.Name : null;
+    }
+
     /// <summary>The <c>[owner]</c> struct that holds <paramref name="vtable"/>, or null.</summary>
     public ApiStruct? OwnerOf(string vtable) =>
         Structs.FirstOrDefault(s => s.Has("owner") && s.Fields.Any(f => Bare(f.Type) == vtable));
@@ -380,14 +391,6 @@ public static class ApiReader
             m.Variables.Add(new ApiVariable(Str(o, "name")!, Str(o, "type")!, Str(o, "doc")));
         }
 
-        string Seen(string type) => m.TypeAliases.GetValueOrDefault(CType.Of(type).Name) is { } target && target.EndsWith('*') && !type.Contains('(')
-            ? target + new string('*', CType.Of(type).Pointers) : type;
-        for (var i = 0; i < m.Functions.Count; i++)
-            m.Functions[i] = m.Functions[i] with
-            {
-                Returns = m.Functions[i].Returns == Convention.TaggedResult ? Convention.TaggedResult : Seen(m.Functions[i].Returns),
-                Params = m.Functions[i].Params.Select(p => p with { Type = Seen(p.Type) }).ToList(),
-            };
         return m;
     }
 

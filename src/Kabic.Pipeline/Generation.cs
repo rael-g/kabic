@@ -90,6 +90,7 @@ public static class Generation
 
         if (classified.Functions.Count > 0)
         {
+            File.WriteAllText(Path.Combine(outDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
             var domain = r.Domain ?? "functions";
             File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(domain, convention)}.Functions.g.cs"),
                 CSharpWriter.RenderFunctions(model, classified, domain, ns, nativeNs, usings, convention));

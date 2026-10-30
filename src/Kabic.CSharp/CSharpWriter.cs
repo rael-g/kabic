@@ -184,7 +184,8 @@ public static class CSharpWriter
     /// already holds rather than the native spelling of the same bytes.
     /// </summary>
     static string SequenceElement(ApiModel model, SequencePair s, Convention convention) =>
-        CTypes.IsPointer(CTypes.Deref(s.Seq.Type)) ? "nint"
+        model.HandleOf(s.Seq.Type, 1) is { } handle ? Idioms.TypeName(handle, convention)
+        : CTypes.IsPointer(CTypes.Deref(s.Seq.Type)) ? "nint"
         : ValueTypeName(model, StripQualifiers(CTypes.Deref(s.Seq.Type)), convention);
 
     /// <summary>
@@ -198,6 +199,7 @@ public static class CSharpWriter
         var n = Idioms.Ident(s.Seq.Name!);
         if (s.Seq.Has("utf8")) return $"(sbyte**){n}Ptr";
         if (BorrowedOf(model, s.Seq) is not null) return $"{n}Ptr";
+        if (model.HandleOf(s.Seq.Type, 1) is { } handle) return $"({NativeHandle(model, handle, convention)}*){n}Ptr";
         var native = CsType(model, CTypes.Deref(s.Seq.Type), convention);
         return SequenceElement(model, s, convention) == native ? $"{n}Ptr" : $"({native}*){n}Ptr";
     }
@@ -261,7 +263,7 @@ public static class CSharpWriter
             var inner = CTypes.Deref(t).Trim();
             return CsType(model, inner, convention) + "*";
         }
-        var resolved = model.ResolveAlias(t);
+        var resolved = CTypes.Unqualified(model.ResolveAlias(t));
         return FunctionPointerType(model, resolved, convention) ?? Idioms.CsPrimitive(resolved, convention);
     }
 
@@ -299,7 +301,8 @@ public static class CSharpWriter
     /// depending on which side of the slot it sits on.
     /// </summary>
     static string ReturnType(ApiModel model, string cType, Convention convention) =>
-        CType.Of(cType) is { Name: "char", Const: true, Pointers: 1 } ? "string"
+        model.HandleOf(cType) is { } handle ? Idioms.TypeName(handle, convention)
+        : CType.Of(cType) is { Name: "char", Const: true, Pointers: 1 } ? "string"
         : model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
             : Pointee(model, cType) is { } s && ByValue(cType, s) ? Idioms.TypeName(s.Name, convention)
@@ -465,7 +468,9 @@ public static class CSharpWriter
     /// caller gets back is the object it handed over, not the number standing for it.
     /// </summary>
     static string OutElement(ApiModel model, ApiParam p, Convention convention) =>
-        p.Has("rooted") ? "object?" : OutLocal(model, p, convention);
+        p.Has("rooted") ? "object?"
+        : model.HandleOf(p.Type, 1) is { } handle ? Idioms.TypeName(handle, convention)
+        : OutLocal(model, p, convention);
 
     /// <summary>
     /// The local the call writes through, spelled as the ABI declares it. This is the type
@@ -474,7 +479,7 @@ public static class CSharpWriter
     static string OutLocal(ApiModel model, ApiParam p, Convention convention) =>
         p.TagValue("enum") is { } named
             ? Idioms.TypeName(named, convention)
-            : CTypes.IsPointer(CTypes.Deref(p.Type)) && Pointee(model, CTypes.Deref(p.Type)) is null ? "nint"
+            : model.HandleOf(p.Type, 1) is not null || (CTypes.IsPointer(CTypes.Deref(p.Type)) && Pointee(model, CTypes.Deref(p.Type)) is null) ? "nint"
             : CsType(model, CTypes.Deref(p.Type), convention);
 
     /// <summary>
@@ -482,8 +487,9 @@ public static class CSharpWriter
     /// itself; a rooted one resolves to the object, with a null pointer meaning no object
     /// rather than a handle to reconstruct.
     /// </summary>
-    static string OutRead(ApiParam p, string local) =>
-        p.Has("rooted")
+    static string OutRead(ApiModel model, ApiParam p, string local, Convention convention) =>
+        model.HandleOf(p.Type, 1) is { } handle ? $"new {Idioms.TypeName(handle, convention)}({local})"
+        : p.Has("rooted")
             ? $"{local} == 0 ? null : System.Runtime.InteropServices.GCHandle.FromIntPtr({local}).Target"
             : local;
 
@@ -497,7 +503,7 @@ public static class CSharpWriter
     {
         var t = cType.Trim();
         if (!CTypes.IsPointer(t)) return CsType(model, t, convention);
-        var inner = CTypes.Deref(t).Trim();
+        var inner = CTypes.Unqualified(model.ResolveAlias(CTypes.Deref(t).Trim()));
         return (inner is "void" ? "void" : NativePointerType(model, inner, convention)) + "*";
     }
 
@@ -529,6 +535,7 @@ public static class CSharpWriter
 
     static string CsParamType(ApiModel model, ApiParam p, Convention convention)
     {
+        if (model.HandleOf(p.Type) is { } handle) return Idioms.TypeName(handle, convention);
         var tagEnum = p.TagValue("enum");
         if (tagEnum is not null)
         {
@@ -541,6 +548,22 @@ public static class CSharpWriter
             return Idioms.TypeName(p.Type.Trim(), convention);
         var passed = Passed(model, p.Type, convention) ?? CsType(model, p.Type, convention);
         return IsOptionalValue(model, p) ? passed + "?" : passed;
+    }
+
+    static string NativeHandle(ApiModel model, string type, Convention convention) =>
+        NativePointerType(model, model.TypeAliases.GetValueOrDefault(CType.Of(type).Name) ?? type, convention);
+
+    /// <summary>The handles the headers declare, one distinct type each.</summary>
+    public static string RenderHandles(ApiModel model, string ns, Convention convention)
+    {
+        var names = model.Opaques.Concat(model.TypeAliases.Keys.Where(a => model.HandleOf(a) is not null)).Distinct();
+        var o = new List<string> { Header, $"namespace {ns};\n" };
+        foreach (var name in names)
+        {
+            o.Add($"/// <summary>A handle to <c>{name}</c>.</summary>");
+            o.Add($"public readonly record struct {Idioms.TypeName(name, convention)}(nint Value);\n");
+        }
+        return string.Join('\n', o);
     }
 
     static bool IsOptionalValue(ApiModel model, ApiParam p) =>
@@ -2031,7 +2054,7 @@ public static class CSharpWriter
                     {
                         o.Add($"{roInd}{Call(slot, nativeArgs)};");
                     }
-                    o.Add($"{roInd}return {OutRead(cs.OutParam!, "result")};");
+                    o.Add($"{roInd}return {OutRead(model, cs.OutParam!, "result", convention)};");
                     CloseScopes(o, roDepth, roSeqAt, roClosers);
                     o.Add("    }");
                     o.Add("");
@@ -2073,7 +2096,7 @@ public static class CSharpWriter
                     {
                         o.Add($"{tuInd}{Call(slot, callArgs)};");
                     }
-                    o.Add($"{tuInd}return ({string.Join(", ", cs.OutParams.Zip(locals, OutRead))});");
+                    o.Add($"{tuInd}return ({string.Join(", ", cs.OutParams.Zip(locals, (p, n) => OutRead(model, p, n, convention)))});");
                     CloseScopes(o, tuDepth, tuSeqAt, tuClosers);
                     o.Add("    }");
                     o.Add("");
@@ -2115,7 +2138,7 @@ public static class CSharpWriter
                     o.Add($"{tInd}var found = {tryCall};");
                     foreach (var op in outs)
                         o.Add($"{tInd}{Idioms.Ident(WrittenName(op, convention))} = "
-                            + $"{OutRead(op, $"{Idioms.Ident(WrittenName(op, convention))}Local")};");
+                            + $"{OutRead(model, op, $"{Idioms.Ident(WrittenName(op, convention))}Local", convention)};");
                     o.Add($"{tInd}return found;");
                     CloseScopes(o, tDepth, tSeqAt, tClosers);
                     o.Add("    }");
@@ -2249,7 +2272,7 @@ public static class CSharpWriter
                                 var field = g.Retained;
                                 if (g.RetainByReturn)
                                     o.Add($"{fInd}if ({g.Handle}.IsAllocated) {field}["
-                                        + (resultOut is not null ? OutRead(resultOut, "resultOut") : "ok") + $"] = {g.Handle};");
+                                        + (resultOut is not null ? OutRead(model, resultOut, "resultOut", convention) : "ok") + $"] = {g.Handle};");
                                 else if (g.RetainKey is { } key)
                                 {
                                     var k = Idioms.Ident(key.Name!);
@@ -2264,7 +2287,7 @@ public static class CSharpWriter
                                 }
                             }
                         }
-                        if (resultOut is not null) o.Add($"{fInd}return {OutRead(resultOut, "resultOut")};");
+                        if (resultOut is not null) o.Add($"{fInd}return {OutRead(model, resultOut, "resultOut", convention)};");
                         CloseScopes(o, fDepth, fSeqAt, fClosers);
                         o.Add("    }");
                         o.Add("");
@@ -2293,7 +2316,7 @@ public static class CSharpWriter
                     {
                         o.Add($"{fInd}{OutLocal(model, resultOut, convention)} resultOut = {(cs.Sequences.FirstOrDefault(s => s.Count == resultOut) is { } capacity ? $"({OutLocal(model, resultOut, convention)}){Idioms.Ident(capacity.Seq.Name!)}.Length" : "default")};");
                         o.Add($"{fInd}{lane.ThrowIfFailed(plainCall)}");
-                        var value = OutRead(resultOut, "resultOut");
+                        var value = OutRead(model, resultOut, "resultOut", convention);
                         o.Add($"{fInd}return {(ownedReturn is null ? value : $"new {ownedReturn.TypeName}(this, ({ownedReturn.View}){value})")};");
                     }
                     else
@@ -2350,6 +2373,11 @@ public static class CSharpWriter
                             + (cs.Sequences.FirstOrDefault(s => s.Count == op) is { } capacity
                                 ? $" = ({OutLocal(model, op, convention)}){Idioms.Ident(capacity.Seq.Name!)}.Length;" : ";"));
                     var pCall = Call(slot, call);
+                    if (model.HandleOf(slot.Returns) is not null)
+                    {
+                        pCall = $"new {retType}((nint){pCall})";
+                        needsCast = "";
+                    }
                     if (retType == "string")
                     {
                         pCall = $"Marshal.PtrToStringUTF8((nint){pCall}) ?? \"\"";
@@ -2380,7 +2408,7 @@ public static class CSharpWriter
                         o.Add($"{pInd}return {needsCast}{pCall};");
                     foreach (var op in cs.TrailingOuts)
                         o.Add($"{pInd}{Idioms.Ident(WrittenName(op, convention))} = "
-                            + $"{OutRead(op, $"{Idioms.Ident(WrittenName(op, convention))}Local")};");
+                            + $"{OutRead(model, op, $"{Idioms.Ident(WrittenName(op, convention))}Local", convention)};");
                     if (retType != "void" && pHolds) o.Add($"{pInd}return result;");
                     CloseScopes(o, pDepth, pSeqAt, pClosers);
                     o.Add("    }");
@@ -2414,6 +2442,7 @@ public static class CSharpWriter
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"
             : p.Has("enum") && CTypes.IsPointer(p.Type) ? $"({p.Type.Trim()}){Idioms.Ident(p.Name!)}"
             : p.Has("enum") ? $"({Idioms.CsPrimitive(p.Type, convention)}){Idioms.Ident(p.Name!)}"
+            : model.HandleOf(p.Type) is not null ? $"({NativeHandle(model, p.Type, convention)}){Idioms.Ident(p.Name!)}.Value"
             : UntypedPointer(p.Type) is string cast ? $"({cast}){Idioms.Ident(p.Name!)}"
             : CTypes.IsPointer(p.Type) ? PassedArgument(model, p, convention)
             : Idioms.Ident(p.Name!);
