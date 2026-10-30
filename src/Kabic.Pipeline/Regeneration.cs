@@ -35,7 +35,10 @@ public static class Regeneration
     {
         List<string> Rooted(IEnumerable<string> paths) => paths.Select(p => Path.Combine(rootDir, p)).ToList();
         return new Extraction.Request(Rooted(spec.Headers), Rooted(spec.IncludeDirs),
-            Rooted(spec.AuxHeaders), zig, convention);
+            Rooted(spec.AuxHeaders), zig, convention)
+        {
+            Annotations = spec.Annotations is { } annotations ? Path.Combine(rootDir, annotations) : null,
+        };
     }
 
     /// <summary>

@@ -17,7 +17,8 @@ public sealed record DomainSpec(
     string? AbstractionsOutDir,
     IReadOnlyList<string> Providers,
     IReadOnlyList<string> Usings,
-    string? Library)
+    string? Library,
+    string? Annotations = null)
 {
     /// <summary>
     /// Reads the manifest at the given path and returns its domains in manifest order.
@@ -45,6 +46,7 @@ public sealed record DomainSpec(
             d["abstractionsOutDir"]?.GetValue<string>(),
             Strings(d["providers"]),
             Strings(d["usings"]),
-            d["library"]?.GetValue<string>());
+            d["library"]?.GetValue<string>(),
+            d["annotations"]?.GetValue<string>());
     }
 }

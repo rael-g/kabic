@@ -1,0 +1,15 @@
+sqlite3_row_fn:
+  ctx: context
+
+sqlite3_open:
+  return: result
+  ppDb: out
+
+sqlite3_close:
+  return: result
+
+sqlite3_exec:
+  return: result
+  callback: closure:ctx
+  ctx: context
+  errmsg: out

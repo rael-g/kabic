@@ -21,7 +21,11 @@ public static class Extraction
         IReadOnlyList<string> IncludeDirs,
         IReadOnlyList<string> AuxHeaders,
         string? Zig,
-        Convention Convention);
+        Convention Convention)
+    {
+        /// <summary>The annotation file merged into what the headers declare, when there is one.</summary>
+        public string? Annotations { get; init; }
+    }
 
     /// <summary>
     /// Extracts the API of the request and returns it as indented JSON. Throws
@@ -76,6 +80,7 @@ public static class Extraction
         if (errors.Count > 0)
             throw new InvalidOperationException(string.Join('\n', errors.Select(e => $"ERROR: {e}")));
 
+        if (request.Annotations is { } annotations) Annotations.Apply(api, annotations);
         return api.ToJson().ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 

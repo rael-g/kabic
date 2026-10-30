@@ -9,7 +9,7 @@ typedef struct sqlite3 sqlite3;
 
 /**
  * Called once per row.
- * @param ctx [context] Opaque.
+ * @param ctx Opaque.
  * @param columns Column count.
  * @param values Column values.
  * @param names Column names.
@@ -20,15 +20,15 @@ typedef int (*sqlite3_row_fn)(void *ctx, int columns, char **values, char **name
 /**
  * Opens a database.
  * @param filename Path.
- * @param ppDb [out] The database.
- * @return [result] 0 on success.
+ * @param ppDb The database.
+ * @return 0 on success.
  */
 int sqlite3_open(const char *filename, sqlite3 **ppDb);
 
 /**
  * Closes a database.
  * @param db The database.
- * @return [result] 0 on success.
+ * @return 0 on success.
  */
 int sqlite3_close(sqlite3 *db);
 
@@ -36,10 +36,10 @@ int sqlite3_close(sqlite3 *db);
  * Runs statements.
  * @param db The database.
  * @param sql Statements.
- * @param callback [closure:ctx] Per row.
- * @param ctx [context] Opaque.
- * @param errmsg [out] Error text.
- * @return [result] 0 on success.
+ * @param callback Per row.
+ * @param ctx Opaque.
+ * @param errmsg Error text.
+ * @return 0 on success.
  */
 int sqlite3_exec(sqlite3 *db, const char *sql, sqlite3_row_fn callback, void *ctx, char **errmsg);
 

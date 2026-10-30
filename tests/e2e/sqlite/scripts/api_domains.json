@@ -3,7 +3,7 @@
     "names": { "csharp": [] } },
   "domains": [ { "name": "sqlite", "headers": ["src/c/kernel_engine/sqlite/sqlite_api.h"], "includeDirs": ["src/c"],
     "apiJson": "src/csharp/ke_api.json", "namespace": "Sqlite", "nativeNamespace": "Sqlite.Native",
-    "outDir": "src/csharp/Sqlite/Generated", "library": "sqlite3", "usings": [] } ],
+    "outDir": "src/csharp/Sqlite/Generated", "library": "sqlite3", "annotations": "sqlite.yaml", "usings": [] } ],
   "bindings": [ { "name": "Sqlite", "project": "src/csharp/Sqlite", "namespace": "Sqlite.Native",
     "headers": ["src/c/kernel_engine/sqlite/sqlite_api.h"], "library": "sqlite3", "output": "Native/Generated/" } ]
 }
