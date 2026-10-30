@@ -151,6 +151,7 @@ public static class ClangSharpRunner
     {
         var namespaces = job.Remaps
             .Select(pair => pair.Split('=', 2)[1].Trim())
+            .Where(target => target.Contains('.'))
             .Select(target => target[..target.LastIndexOf('.')])
             .Append(job.UsesCommon ? job.CommonNamespace : "")
             .Where(ns => ns.Length > 0 && ns != job.Namespace)

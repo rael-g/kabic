@@ -258,6 +258,7 @@ public static class CSharpWriter
     /// </summary>
     static string CsType(ApiModel model, string cType, Convention convention)
     {
+        if (model.Structs.Any(s => s.Name == StripQualifiers(cType).Trim() && IsValue(s))) return Idioms.TypeName(StripQualifiers(cType).Trim(), convention);
         var t = cType.Trim();
         if (t is "void *" or "void*") return "nint";
         if (CTypes.IsPointer(t))
@@ -548,104 +549,18 @@ public static class CSharpWriter
     }
 
     /// <summary>
-    /// Renders every enum the model does not mark external as a C# enum, in one file under
-    /// <paramref name="ns"/>.
+    /// The <c>[default:]</c> values of a struct, as a partial of the struct ClangSharp emits.
     /// </summary>
-    public static string RenderEnums(ApiModel model, string ns, Convention convention)
+    public static string RenderDefault(ApiModel model, ApiStruct s, string nativeNs, Convention convention)
     {
-        var o = new List<string> { Header, $"namespace {ns};\n" };
-        foreach (var e in model.Enums.Where(e => !e.External))
-        {
-            o.Add(e.Doc is not null
-                ? XmlDoc("", e.Doc, convention).TrimEnd()
-                : $"/// <summary>Mirrors <c>{e.Name}</c>.</summary>");
-            o.Add($"public enum {Idioms.TypeName(e.Name, convention)}");
-            o.Add("{");
-            foreach (var v in e.Values)
-            {
-                if (!string.IsNullOrEmpty(v.Doc)) o.Add($"    /// <summary>{Escape(v.Doc)}</summary>");
-                var name = Idioms.EnumMember(v.Name, e.Name);
-                var val = v.IsInt ? v.RawValue : Idioms.EnumMember(v.RawValue, e.Name);
-                o.Add($"    {name} = {val},");
-            }
-            o.Add("}");
-            o.Add("");
-        }
-        return string.Join('\n', o);
-    }
-
-    /// <summary>
-    /// Emits the structs a header marked <c>[value]</c>: plain data a caller holds and hands
-    /// back, as opposed to the handles, parameter bags and vtables that are the ABI's own
-    /// plumbing. The alternative in this codebase has been a second hand-written spelling
-    /// plus a reinterpret cast between the two, where the only thing asserting the layouts
-    /// agree is the sentence next to the cast.
-    /// </summary>
-    public static string RenderStruct(ApiModel model, ApiStruct s, string ns,
-        IEnumerable<string> extraUsings, Convention convention)
-    {
-        var inlineArrays = s.Fields
-            .Select(f => (Field: f, Array: ValueArray(model, s, f, convention)))
-            .Where(x => x.Array is not null)
-            .Select(x => (x.Field, Array: x.Array!.Value))
-            .ToList();
-
-        var borrowsAType = s.Fields.Any(f => NamesForeignDeclaration(model, f, convention));
-
-        var o = new List<string> { Header };
-        if (inlineArrays.Count > 0) o.Add("using System.Runtime.CompilerServices;");
-        o.Add("using System.Runtime.InteropServices;");
-        if (borrowsAType) foreach (var u in extraUsings) o.Add($"using {u};");
-        o.Add("");
-        o.Add($"namespace {ns};\n");
-        o.Add(s.Doc is not null
-            ? XmlDoc("", s.Doc, convention).TrimEnd()
-            : $"/// <summary>Mirrors <c>{s.Name}</c>.</summary>");
-        o.Add("[StructLayout(LayoutKind.Sequential)]");
-        o.Add($"public partial struct {Idioms.TypeName(s.Name, convention)}");
-        o.Add("{");
-        foreach (var (f, array) in inlineArrays)
-        {
-            o.Add($"    /// <summary>Elements <c>{Idioms.Pascal(f.Name)}</c> has room for, as the ABI"
-                + " fixes it. A caller composing the field from a set it does not control checks this"
-                + " first -- there is no element past it to write.</summary>");
-            o.Add($"    public const int {Idioms.Pascal(f.Name)}Capacity = {array.Arity};");
-            o.Add("");
-        }
-        foreach (var f in s.Fields)
-        {
-            if (!string.IsNullOrEmpty(f.Doc)) o.Add($"    /// <summary>{Escape(f.Doc)}</summary>");
-            o.Add($"    public {ValueFieldType(model, s, f, convention)} {Idioms.Pascal(f.Name)};");
-        }
-
-
-        var seeded = s.Fields.Where(f => f.TagValue("default") is not null).ToList();
-        if (seeded.Count > 0)
-        {
-            var typeName = Idioms.TypeName(s.Name, convention);
-            o.Add("");
-            o.Add($"    /// <summary>The value every <c>[default:]</c> field of <c>{s.Name}</c> declares."
-                + " A zero-initialized instance is not the same thing: zero is a value the ABI reads as"
-                + " itself, so a field whose neutral value is not zero has to be seeded.</summary>");
-            o.Add($"    public static {typeName} Default => new()");
-            o.Add("    {");
-            foreach (var f in seeded) o.Add($"        {ValueDefault(model, s, f, convention)}");
-            o.Add("    };");
-        }
-
-        foreach (var (f, array) in inlineArrays)
-        {
-            o.Add("");
-            o.Add($"    /// <summary>The <c>{f.Type.Trim()}</c> of <c>{Idioms.Pascal(f.Name)}</c> laid"
-                + " out inline, so the field occupies the bytes the ABI reads it from.</summary>");
-            o.Add($"    [InlineArray({Idioms.Pascal(f.Name)}Capacity)]");
-            o.Add($"    public partial struct {array.Buffer}");
-            o.Add("    {");
-            o.Add($"        public {array.Element} Element;");
-            o.Add("    }");
-        }
+        var typeName = Idioms.TypeName(s.Name, convention);
+        var o = new List<string> { Header, $"namespace {nativeNs};\n", $"public partial struct {typeName}", "{",
+            $"    /// <summary>The value every <c>[default:]</c> field of <c>{s.Name}</c> declares.</summary>",
+            $"    public static {typeName} Default => new()", "    {" };
+        foreach (var f in s.Fields.Where(f => f.TagValue("default") is not null))
+            o.Add($"        {ValueDefault(model, s, f, convention)}");
+        o.Add("    };");
         o.Add("}");
-        o.Add("");
         return string.Join('\n', o);
     }
 

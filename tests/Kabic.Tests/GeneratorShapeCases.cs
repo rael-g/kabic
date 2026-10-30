@@ -351,68 +351,6 @@ internal static class GeneratorShapeCases
             contains: ["public unsafe interface IProbe : IDisposable", "    uint* Samples();"],
             absent: ["public interface IProbe : IDisposable"]);
 
-        ExpectValueStruct("a value struct is emitted with its layout pinned",
-            ValueStruct("ke_vertex", ("x", "float"), ("y", "float"), ("z", "float")),
-            contains: ["[StructLayout(LayoutKind.Sequential)]", "public partial struct Vertex",
-                       "public float X;", "public float Y;", "public float Z;"],
-            absent: ["MemoryMarshal", "Unsafe.As"]);
-
-        ExpectValueStruct("a value struct refuses a pointer field",
-            ValueStruct("ke_mesh_data", ("vertices", "ke_vertex *")),
-            contains: [], absent: [],
-            throws: "makes the lifetime of that data someone else's question");
-
-        ExpectValueStruct("a value struct's math fields take the managed math types",
-            ValueStruct("ke_transform", ("position", "ke_vec3"), ("rotation", "ke_quat"), ("scale", "ke_vec3")),
-            contains: ["public System.Numerics.Vector3 Position;", "public System.Numerics.Quaternion Rotation;",
-                       "public System.Numerics.Vector3 Scale;"],
-            absent: ["ke_vec3", "ke_quat"]);
-
-        ExpectValueStruct("a value struct's fixed char array stays the bytes it is",
-            ValueStruct("ke_named", ("name", "char [64]")),
-            contains: ["public const int NameCapacity = 64;", "public NameBuffer Name;",
-                       "[InlineArray(NameCapacity)]", "public partial struct NameBuffer",
-                       "public sbyte Element;"],
-            absent: ["public string Name;"]);
-
-        ExpectValueStruct("a value struct's matrix field takes the managed matrix type",
-            ValueStruct("ke_world_transform", ("matrix", "ke_mat4")),
-            contains: ["public System.Numerics.Matrix4x4 Matrix;"],
-            absent: ["ke_mat4"]);
-
-        ExpectValueStruct("a value struct seeds the defaults the header states",
-            TaggedValueStruct("ke_surface_component",
-                ("base_color", "ke_vec4", ["default:1 1 1 1"]),
-                ("roughness", "float", ["default:1"]),
-                ("layers", "uint32_t", ["default:1"]),
-                ("offset", "ke_vec2", [])),
-            contains: ["public static SurfaceComponent Default => new()",
-                       "BaseColor = new System.Numerics.Vector4(1f, 1f, 1f, 1f),", "Roughness = 1f,", "Layers = 1,"],
-            absent: ["Offset ="]);
-
-        ExpectValueStruct("a value struct that is not a component carries no registered name",
-            ValueStruct("ke_vertex_position", ("x", "float")),
-            contains: [], absent: ["public const string Name"]);
-
-        ExpectValueStruct("a value struct refuses a default on an array field",
-            TaggedValueStruct("ke_named_default", ("name", "char [64]", ["default:none"])),
-            contains: [], absent: [],
-            throws: "states one value and the field holds an array");
-
-        ExpectValueStruct("a value struct's fixed array of value structs takes an inline-array buffer",
-            ValueStruct("ke_query_decl", ("terms", "ke_component_access[8]"), ("term_count", "uint32_t")),
-            contains: ["using System.Runtime.CompilerServices;", "public const int TermsCapacity = 8;",
-                       "public TermsBuffer Terms;", "public uint TermCount;", "[InlineArray(TermsCapacity)]",
-                       "public partial struct TermsBuffer", "public ComponentAccess Element;"],
-            absent: ["public ke_component_access", "public ComponentAccess Terms;"],
-            alongside: [ValueStruct("ke_component_access", ("cid", "uint32_t"), ("access", "uint32_t"))]);
-
-        ExpectValueStruct("a value struct naming another value struct takes its mirror",
-            ValueStruct("ke_query_term", ("access", "ke_component_access")),
-            contains: ["public ComponentAccess Access;"],
-            absent: ["ke_component_access"],
-            alongside: [ValueStruct("ke_component_access", ("cid", "uint32_t"), ("access", "uint32_t"))]);
-
         ExpectStructSpans("a counted pointer field of a native struct reads as a span",
             CountedStruct("ke_probe_segment",
                 ("entities", "const uint64_t *", "array_of:count"),
@@ -450,7 +388,7 @@ internal static class GeneratorShapeCases
                        "var declsPins = new System.Buffers.MemoryHandle[decls.Length];",
                        "var declsNative = new ke_probe_decl[decls.Length];",
                        "declsPins[declsAt] = decls[declsAt].Terms.Pin();",
-                       "declsNative[declsAt].terms = (ke_probe_term*)declsPins[declsAt].Pointer;",
+                       "declsNative[declsAt].terms = (ProbeTerm*)declsPins[declsAt].Pointer;",
                        "declsNative[declsAt].term_count = (uint)decls[declsAt].Terms.Length;",
                        "fixed (ke_probe_decl* declsPtr = declsNative)",
                        "finally", "declsPins[declsAt].Dispose();",
@@ -668,45 +606,6 @@ internal static class GeneratorShapeCases
                 if (!zig.Contains(needle)) failures.Add($"expected in Zig: {needle}\n{zig}");
         });
 
-        void ExpectValueStruct(string what, ApiStruct s, string[] contains, string[] absent, string? throws = null,
-            ApiStruct[]? alongside = null)
-
-        {
-            Register(what, failures =>
-            {
-                var model = NewModel();
-                model.Structs.Add(s);
-                foreach (var other in alongside ?? []) model.Structs.Add(other);
-
-                string emitted;
-                try
-                {
-                    emitted = CSharpWriter.RenderStruct(model, s, "Probe", [], ProbeConvention.Value);
-                }
-                catch (Exception ex)
-                {
-                    if (throws is null) failures.Add($"{what}: the writer threw {ex.GetType().Name}: {ex.Message}");
-                    else if (!ex.Message.Contains(throws, StringComparison.Ordinal))
-                        failures.Add($"{what}: refused for the wrong reason: {ex.Message}");
-                    return;
-                }
-                if (throws is not null)
-                {
-                    failures.Add($"{what}: expected the writer to refuse, it emitted instead");
-                    return;
-                }
-                if (Environment.GetEnvironmentVariable("KE_SHAPES_DUMP") == what) Console.WriteLine(emitted);
-
-                foreach (var needle in contains)
-                    if (!emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected to find \"{needle}\"");
-
-                foreach (var needle in absent)
-                    if (emitted.Contains(needle, StringComparison.Ordinal))
-                        failures.Add($"{what}: expected NOT to find \"{needle}\"");
-            });
-        }
-
         void ExpectFreeFunctions(string what, JsonObject[] functions, string[] contains, string[] absent)
 
         {
@@ -793,10 +692,6 @@ internal static class GeneratorShapeCases
         static ApiStruct ValueStruct(string name, params (string Name, string Type)[] fields) =>
             new(name, null, ["value"],
                 fields.Select(f => new ApiField(f.Name, f.Type, [], null)).ToList(), []);
-
-        static ApiStruct TaggedValueStruct(string name, params (string Name, string Type, string[] Tags)[] fields) =>
-            new(name, null, ["value"],
-                fields.Select(f => new ApiField(f.Name, f.Type, f.Tags, null)).ToList(), []);
 
         void ExpectStructSpans(string what, ApiStruct s, string[] contains, string[] absent, string? throws = null)
 

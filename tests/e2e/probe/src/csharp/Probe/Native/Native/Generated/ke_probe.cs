@@ -11,5 +11,5 @@ public unsafe partial struct ke_probe
     public delegate* unmanaged[Cdecl]<ke_probe*, uint, float> weight_of;
 
     [NativeTypeName("void (*)(struct ke_probe *, const ke_probe_item *, uint32_t)")]
-    public delegate* unmanaged[Cdecl]<ke_probe*, ke_probe_item*, uint, void> fill;
+    public delegate* unmanaged[Cdecl]<ke_probe*, ProbeItem*, uint, void> fill;
 }

@@ -1,3 +1,5 @@
+using Kabic.CSharp;
+using Kabic.Pipeline;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -253,6 +255,25 @@ public static class BindingsPlanner
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass));
         }
 
-        return jobs;
+        return jobs.Select(j => j with { Remaps = [.. j.Remaps, .. Idiomatic(j, convention)] }).ToList();
+    }
+
+    static IEnumerable<string> Idiomatic(BindingJob job, Convention convention)
+    {
+        string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
+        var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
+            job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], [], null, convention)))!.AsObject());
+        foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
+            yield return $"{cType}={target}";
+        foreach (var e in model.Enums.Where(e => !e.External))
+        {
+            yield return $"{e.Name}={Idioms.TypeName(e.Name, convention)}";
+            foreach (var v in e.Values) yield return $"{e.Name}::{v.Name}={Idioms.EnumMember(v.Name, e.Name)}";
+        }
+        foreach (var s in model.Structs.Where(CSharpWriter.IsValue))
+        {
+            yield return $"{s.Name}={Idioms.TypeName(s.Name, convention)}";
+            foreach (var f in s.Fields) yield return $"{s.Name}::{f.Name}={Idioms.Pascal(f.Name)}";
+        }
     }
 }

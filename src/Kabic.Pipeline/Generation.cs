@@ -46,19 +46,9 @@ public static class Generation
 
         Directory.CreateDirectory(outDir);
 
-        if (model.Enums.Any(e => !e.External))
-        {
-            Directory.CreateDirectory(contractDir);
-            var enumsFile = r.Domain is null ? "Enums.g.cs" : $"{Idioms.TypeName(r.Domain, convention)}.Enums.g.cs";
-            File.WriteAllText(Path.Combine(contractDir, enumsFile), CSharpWriter.RenderEnums(model, ns, convention));
-        }
-
-        foreach (var value in model.Structs.Where(CSharpWriter.IsValue))
-        {
-            Directory.CreateDirectory(contractDir);
-            File.WriteAllText(Path.Combine(contractDir, $"{Idioms.TypeName(value.Name, convention)}.g.cs"),
-                CSharpWriter.RenderStruct(model, value, ns, usings, convention));
-        }
+        foreach (var value in model.Structs.Where(CSharpWriter.IsValue).Where(s => s.Fields.Any(f => f.Has("default"))))
+            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(value.Name, convention)}.Default.g.cs"),
+                CSharpWriter.RenderDefault(model, value, nativeNs, convention));
 
         foreach (var borrowed in model.Structs.Where(CSharpWriter.IsBorrowed))
         {
