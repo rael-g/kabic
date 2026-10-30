@@ -258,7 +258,7 @@ public static class CSharpWriter
     /// </summary>
     static string CsType(ApiModel model, string cType, Convention convention)
     {
-        if (model.Structs.Any(s => s.Name == StripQualifiers(cType).Trim() && IsValue(s))) return Idioms.TypeName(StripQualifiers(cType).Trim(), convention);
+        if (model.Structs.Any(s => s.Name == StripQualifiers(cType).Trim() && !s.IsVtable && s.Has("value"))) return Idioms.TypeName(StripQualifiers(cType).Trim(), convention);
         var t = cType.Trim();
         if (t is "void *" or "void*") return "nint";
         if (CTypes.IsPointer(t))

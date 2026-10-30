@@ -1,0 +1,231 @@
+{
+  "enums": [
+    {
+      "name": "ke_probe_kind",
+      "doc": null,
+      "values": [
+        {
+          "name": "KE_PROBE_KIND_NEAR",
+          "value": 0,
+          "doc": null
+        },
+        {
+          "name": "KE_PROBE_KIND_FAR",
+          "value": 1,
+          "doc": null
+        }
+      ],
+      "external": true
+    }
+  ],
+  "structs": [
+    {
+      "name": "ke_probe_item",
+      "doc": null,
+      "tags": [
+        "value"
+      ],
+      "fields": [
+        {
+          "name": "id",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        },
+        {
+          "name": "weight",
+          "type": "float",
+          "tags": [
+            "default:1"
+          ],
+          "doc": null
+        },
+        {
+          "name": "kind",
+          "type": "ke_probe_kind",
+          "tags": [],
+          "doc": null
+        }
+      ],
+      "external": true
+    },
+    {
+      "name": "ke_other_pair",
+      "doc": null,
+      "tags": [
+        "value"
+      ],
+      "fields": [
+        {
+          "name": "first",
+          "type": "ke_probe_item",
+          "tags": [],
+          "doc": null
+        },
+        {
+          "name": "kind",
+          "type": "ke_probe_kind",
+          "tags": [],
+          "doc": null
+        }
+      ]
+    }
+  ],
+  "vtables": [
+    {
+      "name": "ke_probe",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "handle",
+          "type": "void *",
+          "tags": [],
+          "doc": null
+        }
+      ],
+      "slots": [
+        {
+          "name": "count",
+          "returns": "uint32_t",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "weight_of",
+          "returns": "float",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "id",
+              "type": "uint32_t",
+              "tags": [],
+              "doc": null
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "fill",
+          "returns": "void",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "items",
+              "type": "const ke_probe_item *",
+              "tags": [],
+              "doc": null
+            },
+            {
+              "name": "item_count",
+              "type": "uint32_t",
+              "tags": [],
+              "doc": null
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        }
+      ],
+      "external": true
+    },
+    {
+      "name": "ke_probe_handle",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "ref",
+          "type": "ke_probe *",
+          "tags": [],
+          "doc": null
+        }
+      ],
+      "slots": [
+        {
+          "name": "destroy",
+          "returns": "void",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [],
+          "receiver": "ke_probe *"
+        }
+      ],
+      "external": true
+    },
+    {
+      "name": "ke_other",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "handle",
+          "type": "void *",
+          "tags": [],
+          "doc": null
+        }
+      ],
+      "slots": [
+        {
+          "name": "kind_of",
+          "returns": "ke_probe_kind",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "item",
+              "type": "const ke_probe_item *",
+              "tags": [],
+              "doc": null
+            }
+          ],
+          "receiver": "struct ke_other *"
+        },
+        {
+          "name": "pair",
+          "returns": "ke_other_pair",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [],
+          "receiver": "struct ke_other *"
+        }
+      ]
+    },
+    {
+      "name": "ke_other_handle",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "ref",
+          "type": "ke_other *",
+          "tags": [],
+          "doc": null
+        }
+      ],
+      "slots": [
+        {
+          "name": "destroy",
+          "returns": "void",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [],
+          "receiver": "ke_other *"
+        }
+      ]
+    }
+  ],
+  "functions": [],
+  "callbacks": [],
+  "type_aliases": {}
+}

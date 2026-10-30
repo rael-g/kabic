@@ -255,7 +255,16 @@ public static class BindingsPlanner
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass));
         }
 
-        return jobs.Select(j => j with { Remaps = [.. j.Remaps, .. Idiomatic(j, convention)] }).ToList();
+        var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention).ToList());
+        var renamed = idiomatic.Values.SelectMany(r => r).Select(r => r.Split('=', 2))
+            .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).ToDictionary(r => r[0], r => r[1]);
+        return jobs.Select(j => j with { Remaps = [.. j.Remaps.Select(r => Renamed(r, renamed)), .. idiomatic[j]] }).ToList();
+    }
+
+    static string Renamed(string remap, IReadOnlyDictionary<string, string> renamed)
+    {
+        var (source, target) = (remap.Split('=', 2)[0], remap.Split('=', 2)[1]);
+        return renamed.TryGetValue(source, out var name) ? $"{source}={target[..(target.LastIndexOf('.') + 1)]}{name}" : remap;
     }
 
     static IEnumerable<string> Idiomatic(BindingJob job, Convention convention)
