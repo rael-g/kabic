@@ -62,6 +62,52 @@
           "doc": null
         }
       ]
+    },
+    {
+      "name": "ke_probe_batch",
+      "doc": "Items a call hands out.",
+      "tags": [
+        "view"
+      ],
+      "fields": [
+        {
+          "name": "items",
+          "type": "const ke_probe_item *",
+          "tags": [
+            "array_of:item_count"
+          ],
+          "doc": null
+        },
+        {
+          "name": "item_count",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        }
+      ]
+    },
+    {
+      "name": "ke_probe_label",
+      "doc": "A name the call reads.",
+      "tags": [
+        "borrowed"
+      ],
+      "fields": [
+        {
+          "name": "ids",
+          "type": "const uint32_t *",
+          "tags": [
+            "array_of:id_count"
+          ],
+          "doc": null
+        },
+        {
+          "name": "id_count",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        }
+      ]
     }
   ],
   "vtables": [
@@ -176,6 +222,110 @@
             }
           ],
           "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "batch",
+          "returns": "const ke_probe_batch *",
+          "tags": [],
+          "doc": null,
+          "return_doc": "The current batch.",
+          "params": [],
+          "return_tags": [
+            "view"
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "tag",
+          "returns": "void",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "label",
+              "type": "const ke_probe_label *",
+              "tags": [
+                "borrowed"
+              ],
+              "doc": "Read during the call."
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "load",
+          "returns": "void",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "id",
+              "type": "uint32_t",
+              "tags": [],
+              "doc": null
+            },
+            {
+              "name": "on_done",
+              "type": "ke_probe_done_fn",
+              "tags": [
+                "completion:ctx"
+              ],
+              "doc": "Called once."
+            },
+            {
+              "name": "ctx",
+              "type": "void *",
+              "tags": [
+                "context"
+              ],
+              "doc": "Opaque."
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "bind",
+          "returns": "ke_result",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "id",
+              "type": "uint32_t",
+              "tags": [],
+              "doc": null
+            },
+            {
+              "name": "instance",
+              "type": "void *",
+              "tags": [
+                "rooted:id"
+              ],
+              "doc": "Kept until unbind."
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "unbind",
+          "returns": "void",
+          "tags": [
+            "unroots:id"
+          ],
+          "doc": "Drops the binding.",
+          "return_doc": null,
+          "params": [
+            {
+              "name": "id",
+              "type": "uint32_t",
+              "tags": [],
+              "doc": null
+            }
+          ],
+          "receiver": "struct ke_probe *"
         }
       ]
     },
@@ -251,9 +401,37 @@
           "doc": "Item."
         }
       ]
+    },
+    {
+      "name": "ke_probe_done_fn",
+      "returns": "void",
+      "doc": null,
+      "lanes": [
+        {
+          "name": "ctx",
+          "type": "void *",
+          "tags": [
+            "context"
+          ],
+          "doc": "Opaque."
+        },
+        {
+          "name": "code",
+          "type": "ke_result",
+          "tags": [],
+          "doc": "Outcome."
+        },
+        {
+          "name": "value",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": "The result."
+        }
+      ]
     }
   ],
   "type_aliases": {
-    "ke_probe_visit_fn": "void (*)(void *, uint32_t)"
+    "ke_probe_visit_fn": "void (*)(void *, uint32_t)",
+    "ke_probe_done_fn": "void (*)(void *, ke_result, uint32_t)"
   }
 }

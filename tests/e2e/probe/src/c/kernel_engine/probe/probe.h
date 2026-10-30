@@ -29,6 +29,27 @@ typedef struct ke_probe_item
     ke_probe_kind kind;
 } ke_probe_item;
 
+/// [view] Items a call hands out.
+typedef struct ke_probe_batch
+{
+    const ke_probe_item *items; ///< [array_of:item_count]
+    uint32_t item_count;
+} ke_probe_batch;
+
+/// [borrowed] A name the call reads.
+typedef struct ke_probe_label
+{
+    const uint32_t *ids; ///< [array_of:id_count]
+    uint32_t id_count;
+} ke_probe_label;
+
+/**
+ * @param ctx [context] Opaque.
+ * @param code Outcome.
+ * @param value The result.
+ */
+typedef void (*ke_probe_done_fn)(void *ctx, ke_result code, uint32_t value);
+
 typedef struct ke_probe
 {
     void *handle;
@@ -46,6 +67,19 @@ typedef struct ke_probe
      * @param ctx [context] Opaque.
      */
     ke_result (*each)(struct ke_probe *self, ke_probe_visit_fn visit, void *ctx);
+    /** @return [view] The current batch. */
+    const ke_probe_batch *(*batch)(struct ke_probe *self);
+    /** @param label [borrowed] Read during the call. */
+    void (*tag)(struct ke_probe *self, const ke_probe_label *label);
+    /**
+     * @param on_done [completion:ctx] Called once.
+     * @param ctx [context] Opaque.
+     */
+    void (*load)(struct ke_probe *self, uint32_t id, ke_probe_done_fn on_done, void *ctx);
+    /** @param instance [rooted:id] Kept until unbind. */
+    ke_result (*bind)(struct ke_probe *self, uint32_t id, void *instance);
+    /** [unroots:id] Drops the binding. */
+    void (*unbind)(struct ke_probe *self, uint32_t id);
 } ke_probe;
 
 /// [owner]

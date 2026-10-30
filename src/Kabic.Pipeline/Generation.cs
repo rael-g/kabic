@@ -54,14 +54,14 @@ public static class Generation
         {
             Directory.CreateDirectory(contractDir);
             File.WriteAllText(Path.Combine(contractDir, $"{Idioms.TypeName(borrowed.Name, convention)}.g.cs"),
-                CSharpWriter.RenderBorrowed(model, borrowed, ns, usings, convention));
+                CSharpWriter.RenderBorrowed(model, borrowed, ns, [.. usings, nativeNs], convention));
         }
 
         foreach (var view in model.Structs.Where(CSharpWriter.IsView))
         {
             Directory.CreateDirectory(contractDir);
             File.WriteAllText(Path.Combine(contractDir, $"{Idioms.TypeName(view.Name, convention)}.g.cs"),
-                CSharpWriter.RenderView(model, view, ns, usings, convention));
+                CSharpWriter.RenderView(model, view, ns, [.. usings, nativeNs], convention));
         }
 
         foreach (var counted in model.Structs.Where(s => !s.External && !s.IsVtable

@@ -642,20 +642,6 @@ public static class CSharpWriter
             : ValueTypeName(model, cType, convention);
 
     /// <summary>
-    /// Whether a field of a <c>[view]</c> is read as a type some other domain declares,
-    /// pointer or not. A counted pointer is the one shape where the element is named after
-    /// dereferencing, so asking the field's own spelling would miss exactly the case the
-    /// projection exists to compose.
-    /// </summary>
-    static bool ViewNamesForeignDeclaration(ApiModel model, ApiField f, Convention convention)
-    {
-        if (NamesForeignDeclaration(model, f, convention)) return true;
-        if (!CTypes.IsPointer(f.Type)) return false;
-        var element = StripQualifiers(CTypes.Deref(f.Type)).Trim();
-        return model.Structs.Any(v => v.Name == element && v.External);
-    }
-
-    /// <summary>
     /// Emits the projection a <c>[view]</c> struct is read through. Every field is private:
     /// a pointer and the count bounding it are one sequence, and a caller given the pair
     /// re-derives bounds the declaration had already stated, while a fixed char array read
@@ -670,8 +656,7 @@ public static class CSharpWriter
 
         var o = new List<string> { Header };
         o.Add("using System.Runtime.InteropServices;");
-        if (s.Fields.Any(f => ViewNamesForeignDeclaration(model, f, convention)))
-            foreach (var u in extraUsings) o.Add($"using {u};");
+        foreach (var u in extraUsings) o.Add($"using {u};");
         o.Add("");
         o.Add($"namespace {ns};\n");
         o.Add(s.Doc is not null
