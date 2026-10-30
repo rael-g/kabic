@@ -51,7 +51,7 @@ internal static class GeneratorShapeCases
             functions: [Function("ke_probe_create", "ke_result", Param("size", "uint32_t"),
                 Param("out_probe", "ke_probe_handle *", "out"))],
             contains: ["(uint size)", "ke_probe_handle handle;",
-                       "KernelEngine.NativeResults.ThrowIfFailed(Probe.Native.NativeMethods.probe_create(size, &handle), \"ke_probe_create\");"],
+                       "KernelEngine.NativeResults.ThrowIfFailed(global::Probe.Native.NativeMethods.probe_create(size, &handle), \"ke_probe_create\");"],
             absent: ["&err", "outProbe"]);
 
         Expect("a shutdown slot with no failure lane is called with its handle alone",

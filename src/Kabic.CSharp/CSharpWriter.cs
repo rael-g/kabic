@@ -1111,7 +1111,7 @@ public static class CSharpWriter
                 ?? throw new InvalidOperationException(
                     $"{factory.Name}: a factory returns {convention.ResultType} and writes its handle through its last parameter");
             o.Add($"        {madeHandle} handle;");
-            o.Add($"        {convention.ResultHelperClass}.ThrowIfFailed({nativeNs}.NativeMethods.{convention.StripPrefix(factory.Name)}({(call.Length > 0 ? call + ", " : "")}&handle), \"{factory.Name}\");");
+            o.Add($"        {convention.ResultHelperClass}.ThrowIfFailed(global::{nativeNs}.NativeMethods.{convention.StripPrefix(factory.Name)}({(call.Length > 0 ? call + ", " : "")}&handle), \"{factory.Name}\");");
             o.Add("        _native = handle.@ref;");
             o.Add("        _destroy = handle.destroy;");
             if (initCall is not null) o.Add(initCall);

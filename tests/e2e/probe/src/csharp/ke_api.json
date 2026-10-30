@@ -1,6 +1,22 @@
 {
   "enums": [
     {
+      "name": "ke_result",
+      "doc": null,
+      "values": [
+        {
+          "name": "KE_OK",
+          "value": 0,
+          "doc": null
+        },
+        {
+          "name": "KE_RESULT_GENERAL",
+          "value": 1,
+          "doc": null
+        }
+      ]
+    },
+    {
       "name": "ke_probe_kind",
       "doc": null,
       "values": [
@@ -97,14 +113,66 @@
             {
               "name": "items",
               "type": "const ke_probe_item *",
-              "tags": [],
-              "doc": null
+              "tags": [
+                "array_of:item_count"
+              ],
+              "doc": "Items."
             },
             {
               "name": "item_count",
               "type": "uint32_t",
               "tags": [],
+              "doc": "Count."
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "read",
+          "returns": "ke_result",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "id",
+              "type": "uint32_t",
+              "tags": [],
               "doc": null
+            },
+            {
+              "name": "out_value",
+              "type": "float *",
+              "tags": [
+                "out"
+              ],
+              "doc": "Value."
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
+          "name": "each",
+          "returns": "ke_result",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "visit",
+              "type": "ke_probe_visit_fn",
+              "tags": [
+                "closure:ctx"
+              ],
+              "doc": "Called per item."
+            },
+            {
+              "name": "ctx",
+              "type": "void *",
+              "tags": [
+                "context"
+              ],
+              "doc": "Opaque."
             }
           ],
           "receiver": "struct ke_probe *"
@@ -138,7 +206,54 @@
       ]
     }
   ],
-  "functions": [],
-  "callbacks": [],
-  "type_aliases": {}
+  "functions": [
+    {
+      "name": "ke_probe_create",
+      "returns": "ke_result",
+      "doc": "Makes a probe.",
+      "return_doc": null,
+      "params": [
+        {
+          "name": "capacity",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": "Items."
+        },
+        {
+          "name": "out_handle",
+          "type": "ke_probe_handle *",
+          "tags": [
+            "out"
+          ],
+          "doc": "The probe."
+        }
+      ]
+    }
+  ],
+  "callbacks": [
+    {
+      "name": "ke_probe_visit_fn",
+      "returns": "void",
+      "doc": null,
+      "lanes": [
+        {
+          "name": "ctx",
+          "type": "void *",
+          "tags": [
+            "context"
+          ],
+          "doc": "Opaque."
+        },
+        {
+          "name": "id",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": "Item."
+        }
+      ]
+    }
+  ],
+  "type_aliases": {
+    "ke_probe_visit_fn": "void (*)(void *, uint32_t)"
+  }
 }
