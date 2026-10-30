@@ -211,7 +211,7 @@ public static class Classifier
                 && vtables.Any(v => model.OwnerOf(v.Name)?.Name == made))
                 continue;
 
-            var firstParamType = fn.Params.FirstOrDefault()?.Type.Replace("const ", "").Replace("struct ", "").TrimEnd('*', ' ');
+            var firstParamType = (fn.Params.FirstOrDefault() is { } first ? CType.Of(first.Type).Name : null);
             var owner = firstParamType is not null && model.Structs.Any(s => s.Name == firstParamType) ? firstParamType : null;
             owner ??= vtables.Select(v => v.Name).FirstOrDefault(n => fn.Returns.Trim() == n);
             if (owner is null) continue;
@@ -239,8 +239,7 @@ public static class Classifier
                 $"{slot.Name}.{expanded.Name}: [expand] rebuilds a struct the call passes by "
                 + $"reference, but {expanded.Type.Trim()} is not a pointer");
 
-        var bagName = CTypes.Deref(expanded.Type).Trim()
-            .Replace("const ", "").Replace("struct ", "").Trim();
+        var bagName = CType.Of(expanded.Type).Name;
         var bag = model.Structs.FirstOrDefault(s => s.Name == bagName)
             ?? throw new InvalidOperationException(
                 $"{slot.Name}.{expanded.Name}: [expand] needs the fields of {bagName}, "
@@ -292,7 +291,7 @@ public static class Classifier
                 throw new InvalidOperationException(
                     $"{slot.Name}.{blob.Name}: [bytes_of] bounds the bytes a pointer reaches, and "
                     + $"{blob.Type.Trim()} is not one");
-            if (CTypes.Deref(blob.Type).Replace("const ", "").Trim() is not "void")
+            if (CType.Of(blob.Type) is not { Name: "void", Pointers: 1 })
                 throw new InvalidOperationException(
                     $"{slot.Name}.{blob.Name}: [bytes_of] is how an opaque payload names the type it "
                     + $"carries, and {blob.Type.Trim()} already names one -- a typed sequence is "

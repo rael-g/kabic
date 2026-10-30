@@ -243,13 +243,7 @@ public static class CSharpWriter
                 + " A default has to be a constant the caller sees, not an expression.");
     }
 
-    static string StripQualifiers(string cType)
-    {
-        var t = cType.Trim();
-        if (t.StartsWith("const ", StringComparison.Ordinal)) t = t["const ".Length..];
-        if (t.StartsWith("struct ", StringComparison.Ordinal)) t = t["struct ".Length..];
-        return t.Trim();
-    }
+    static string StripQualifiers(string cType) => CTypes.Unqualified(cType);
 
     /// <summary>
     /// A C type mapped to C#. Typedef aliases resolve first; pointers recurse so
@@ -264,8 +258,6 @@ public static class CSharpWriter
         if (CTypes.IsPointer(t))
         {
             var inner = CTypes.Deref(t).Trim();
-            if (inner.StartsWith("const ")) inner = inner["const ".Length..];
-            if (inner.StartsWith("struct ")) inner = inner["struct ".Length..];
             return CsType(model, inner, convention) + "*";
         }
         var resolved = model.ResolveAlias(t);
@@ -503,8 +495,6 @@ public static class CSharpWriter
         var t = cType.Trim();
         if (!CTypes.IsPointer(t)) return CsType(model, t, convention);
         var inner = CTypes.Deref(t).Trim();
-        if (inner.StartsWith("const ", StringComparison.Ordinal)) inner = inner["const ".Length..];
-        if (inner.StartsWith("struct ", StringComparison.Ordinal)) inner = inner["struct ".Length..];
         return (inner is "void" ? "void" : NativePointerType(model, inner, convention)) + "*";
     }
 
@@ -1338,7 +1328,7 @@ public static class CSharpWriter
     /// </summary>
     static string BlittableLane(ApiModel model, string type, Convention convention)
     {
-        var t = type.Trim().Replace("const ", "").Replace("struct ", "").Trim();
+        var t = CTypes.Unqualified(type);
         var stars = t.Count(c => c == '*');
         var basis = model.ResolveAlias(t.TrimEnd('*', ' '));
         if (stars == 0 && IsBoolType(basis, convention)) return "bool";
@@ -1936,7 +1926,7 @@ public static class CSharpWriter
                         ? $"{cb.Delegate}? {Idioms.Ident(p.Name!)}"
                     : cs.Sequences.FirstOrDefault(s => s.Seq == p) is { } asSpan
                         ? (p.Has("utf8") ? $"ReadOnlySpan<string> {Idioms.Ident(p.Name!)}"
-                            : $"{(p.Type.TrimStart().StartsWith("const ", StringComparison.Ordinal) ? "ReadOnlySpan" : "Span")}<{SequenceElement(model, asSpan, convention)}> {Idioms.Ident(p.Name!)}")
+                            : $"{(CType.Of(p.Type).Const ? "ReadOnlySpan" : "Span")}<{SequenceElement(model, asSpan, convention)}> {Idioms.Ident(p.Name!)}")
                     : cs.Blobs.Any(b => b.Blob == p)
                         ? $"in {BlobTypeParam(p)} {Idioms.Ident(p.Name!)}"
                     : cs.TrailingOuts.Contains(p)

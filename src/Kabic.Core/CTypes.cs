@@ -17,6 +17,10 @@ public static class CTypes
     /// <returns><see langword="true"/> when the type ends in a star.</returns>
     public static bool IsPointer(string cType) => cType.TrimEnd().EndsWith('*');
 
+    /// <summary><paramref name="cType"/> without its <c>const</c> and <c>struct</c>, pointers kept.</summary>
+    public static string Unqualified(string cType) =>
+        System.Text.RegularExpressions.Regex.Replace(cType, @"\b(const|struct)\s+", "").Trim();
+
     /// <summary>
     /// The type with its qualifiers and declaration spacing removed
     /// (<c>"const struct ke_system_ctx *"</c> -&gt; <c>"ke_system_ctx*"</c>), which is the
@@ -25,7 +29,7 @@ public static class CTypes
     /// </summary>
     public static string Normalize(string cType)
     {
-        var t = cType.Replace("const ", "").Replace("struct ", "").Trim();
+        var t = Unqualified(cType);
         return t.TrimEnd('*', ' ') + new string('*', t.Count(c => c == '*'));
     }
 
@@ -54,7 +58,7 @@ public static class CTypes
     /// </summary>
     public static string Deref(string cType)
     {
-        var t = cType.Trim().Replace("const ", "").Replace("struct ", "").TrimEnd();
+        var t = Unqualified(cType);
         return t.EndsWith('*') ? t[..^1].TrimEnd() : t;
     }
 

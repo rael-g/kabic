@@ -104,7 +104,7 @@ public sealed class Convention
 
     /// <summary>How <paramref name="language"/> spells <paramref name="cType"/>, or null when the map holds no such type.</summary>
     public string? Project(string language, string cType) =>
-        TypeMap.GetValueOrDefault(language)?.GetValueOrDefault(cType.Replace("const ", "").Replace("struct ", "").Trim());
+        TypeMap.GetValueOrDefault(language)?.GetValueOrDefault(CTypes.Unqualified(cType));
 
     /// <summary>
     /// Reads the <c>convention</c> object of a manifest into a <see cref="ConventionBuilder"/> and

@@ -126,7 +126,7 @@ public static class Idioms
     /// </summary>
     public static string CsForeignType(string cType, Convention convention)
     {
-        var t = cType.Trim().Replace("const ", "").Replace("struct ", "");
+        var t = CTypes.Unqualified(cType);
         return Prim.TryGetValue(t.TrimEnd('*', ' '), out var prim) && !t.Contains('*')
             ? prim
             : t.TrimEnd('*', ' ') + (t.Contains('*') ? "*" : "");

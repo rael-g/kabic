@@ -130,7 +130,7 @@ public sealed class FactoriesExtension : IKabicExtension
 
     private static FactoryArgument? Dependency(ExtensionContext context, ApiParam param)
     {
-        var type = param.Type.Replace("const ", "").Replace("struct ", "").Trim();
+        var type = CTypes.Unqualified(param.Type);
         if (!type.EndsWith('*')) return null;
         var target = type.TrimEnd('*', ' ');
         var domain = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == target && !s.External && s.IsVtable));
@@ -142,7 +142,7 @@ public sealed class FactoriesExtension : IKabicExtension
     private static FactoryArgument? Argument(ExtensionContext context, ApiField field)
     {
         var name = Idioms.Ident(field.Name);
-        var type = field.Type.Replace("const ", "").Replace("struct ", "").Trim();
+        var type = CTypes.Unqualified(field.Type);
         if (field.Has("provider") && type.EndsWith('*'))
         {
             var target = type.TrimEnd('*', ' ');
