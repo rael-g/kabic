@@ -1,0 +1,9 @@
+{
+  "convention": { "symbolPrefix": "", "commonManagedNamespace": "Zlib", "commonBindingsNamespace": "Zlib.Shared", "includeDirectoryName": "kernel_engine",
+    "names": { "csharp": [] } },
+  "domains": [ { "name": "zlib", "headers": ["src/c/kernel_engine/zlib/zlib_api.h"], "includeDirs": ["src/c"],
+    "apiJson": "src/csharp/ke_api.json", "namespace": "Zlib", "nativeNamespace": "Zlib.Native",
+    "outDir": "src/csharp/Zlib/Generated", "library": "z", "usings": [] } ],
+  "bindings": [ { "name": "Zlib", "project": "src/csharp/Zlib", "namespace": "Zlib.Native",
+    "headers": ["src/c/kernel_engine/zlib/zlib_api.h"], "library": "z", "output": "Native/Generated/" } ]
+}
