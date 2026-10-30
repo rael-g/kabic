@@ -561,7 +561,7 @@ public static class CSharpWriter
         foreach (var name in names)
         {
             o.Add($"/// <summary>A handle to <c>{name}</c>.</summary>");
-            o.Add($"public readonly record struct {Idioms.TypeName(name, convention)}(nint Value);\n");
+            o.Add($"public readonly record struct {Idioms.TypeName(name, convention)}(nint Address);\n");
         }
         return string.Join('\n', o);
     }
@@ -2442,7 +2442,7 @@ public static class CSharpWriter
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"
             : p.Has("enum") && CTypes.IsPointer(p.Type) ? $"({p.Type.Trim()}){Idioms.Ident(p.Name!)}"
             : p.Has("enum") ? $"({Idioms.CsPrimitive(p.Type, convention)}){Idioms.Ident(p.Name!)}"
-            : model.HandleOf(p.Type) is not null ? $"({NativeHandle(model, p.Type, convention)}){Idioms.Ident(p.Name!)}.Value"
+            : model.HandleOf(p.Type) is not null ? $"({NativeHandle(model, p.Type, convention)}){Idioms.Ident(p.Name!)}.Address"
             : UntypedPointer(p.Type) is string cast ? $"({cast}){Idioms.Ident(p.Name!)}"
             : CTypes.IsPointer(p.Type) ? PassedArgument(model, p, convention)
             : Idioms.Ident(p.Name!);
