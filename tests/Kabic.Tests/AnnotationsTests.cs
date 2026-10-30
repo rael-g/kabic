@@ -25,7 +25,7 @@ public sealed class AnnotationsTests
         var model = Model();
         Apply(model, "open:\n  return: result\n  out_db: out\n");
         Assert.True(model.Functions[0].Params[0].Has("out"));
-        Assert.Equal(Convention.TaggedResult, model.Functions[0].Returns);
+        Assert.Contains("result", model.Functions[0].ReturnTags);
     }
 
     [Theory]

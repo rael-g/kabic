@@ -205,7 +205,7 @@ internal static class ZigShapeCases
             model.Functions.Add(new ApiFunction("ke_probe_create", "ke_result", "Creates a probe.", null, [
                 P("params", "const ke_probe_params *"), P("out_probe", "ke_probe_handle *", "out"),
             ]));
-            var emitted = ZigWriter.Render(model, new Dictionary<string, string> { ["ke_result"] = "result", ["ke_probe_handle"] = "probe" }, factory: true);
+            var emitted = ZigWriter.Render(model, new Dictionary<string, string> { ["ke_result"] = "result", ["ke_probe_handle"] = "probe" });
             const string expected = "/// Creates a probe.\npub extern fn ke_probe_create(params: ?*const ke_probe_params, out_probe: ?*probe.ke_probe_handle) result.ke_result;";
             if (!emitted.Contains(expected, StringComparison.Ordinal))
                 failures.Add($"a factory header: expected to find \"{expected}\"");

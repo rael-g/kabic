@@ -22,14 +22,12 @@ public sealed class ZigWriter
     readonly IReadOnlyDictionary<string, string> foreign;
     readonly SortedSet<string> imported = [];
     readonly HashSet<string> local;
-    readonly bool factory;
     bool usesStd;
 
-    ZigWriter(ApiModel model, IReadOnlyDictionary<string, string> foreign, bool factory)
+    ZigWriter(ApiModel model, IReadOnlyDictionary<string, string> foreign)
     {
         this.model = model;
         this.foreign = foreign;
-        this.factory = factory;
         local = [
             .. model.Structs.Where(s => !s.External).Select(s => s.Name),
             .. model.Enums.Where(e => !e.External).Select(e => e.Name),
@@ -41,12 +39,10 @@ public sealed class ZigWriter
     /// <summary>
     /// Renders the headers of one include root. <paramref name="foreign"/> maps each type
     /// another root declares to the name that root's module is imported as; a type found in
-    /// neither this model nor the map is refused. A contract declares no function; the factory
-    /// headers of a plugin, when <paramref name="factory"/> is set, declare each function the
-    /// plugin exports, which the module declares as external.
+    /// neither this model nor the map is refused. A function is declared as external.
     /// </summary>
-    public static string Render(ApiModel model, IReadOnlyDictionary<string, string> foreign, bool factory = false) =>
-        new ZigWriter(model, foreign, factory).Render();
+    public static string Render(ApiModel model, IReadOnlyDictionary<string, string> foreign) =>
+        new ZigWriter(model, foreign).Render();
 
     string Render()
     {
@@ -97,7 +93,7 @@ public sealed class ZigWriter
         {
             Doc(body, f.Doc, "");
             var ps = f.Params.Select((p, i) => $"{Ident(p.Name ?? $"arg{i}")}: {Spell(p.Type, Lane.Of(p))}");
-            body.AppendLine($"pub extern fn {f.Name}({string.Join(", ", ps)}) {Spell(f.Returns, null)};");
+            body.AppendLine($"pub extern fn {f.Name}({string.Join(", ", ps)}) {Spell(f.CReturns ?? f.Returns, null)};");
             body.AppendLine();
         }
 
@@ -193,7 +189,7 @@ public sealed class ZigWriter
     {
         var names = slot.Params.Select((p, i) => ParamName(s, p, i)).ToList();
         var ps = slot.Params.Select((p, i) => $", {names[i]}: {Spell(p.Type, Lane.Of(p))}");
-        var returned = Spell(slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null);
+        var returned = Spell(slot.CReturns ?? slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null);
         sb.AppendLine();
         Doc(sb, slot.Doc, inner);
         sb.AppendLine($"{inner}pub fn {Ident(slot.Name)}(self: *{s.Name}{string.Concat(ps)}) {returned} {{");
@@ -222,7 +218,7 @@ public sealed class ZigWriter
         var lanes = slot.Params.Select(p => (p.Type, (ApiParam?)p))
             .Prepend((slot.Receiver ?? $"{s.Name} *", null));
         var field = IsMethod(s, slot) ? slot.Name + SlotSuffix : Ident(slot.Name);
-        sb.AppendLine($"{inner}{field}: {FnPointer(lanes, slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null)} = null,");
+        sb.AppendLine($"{inner}{field}: {FnPointer(lanes, slot.CReturns ?? slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null)} = null,");
     }
 
     /// <summary>

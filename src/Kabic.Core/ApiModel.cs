@@ -25,6 +25,9 @@ public record ApiParam(string? Name, string Type, IReadOnlyList<string> Tags, st
 /// </summary>
 public record ApiSlot(string Name, string Returns, IReadOnlyList<string> Tags, string? Doc, string? ReturnDoc, IReadOnlyList<ApiParam> Params)
 {
+    /// <summary>The return type C declares, where <c>Returns</c> holds the tagged result.</summary>
+    public string? CReturns { get; init; }
+
     /// <summary>
     /// The tags the slot's <c>@return</c> block declared. A return is not a parameter and
     /// cannot carry one of its own, so what the returned value means beyond its type —
@@ -175,6 +178,9 @@ public record ApiData(string Name, string Type, bool ReadOnly, ApiValue Value);
 /// <summary>A function the header declares, with its return type and its parameters.</summary>
 public record ApiFunction(string Name, string Returns, string? Doc, string? ReturnDoc, IReadOnlyList<ApiParam> Params)
 {
+    /// <summary>The return type C declares, where <c>Returns</c> holds the tagged result.</summary>
+    public string? CReturns { get; init; }
+
     /// <summary>The tags the function's <c>@return</c> block declared.</summary>
     public IReadOnlyList<string> ReturnTags { get; init; } = [];
 }
@@ -389,6 +395,7 @@ public static class ApiReader
                 o["params"]!.AsArray().Select(p => ReadParam(p!.AsObject())).ToList())
             {
                 ReturnTags = ReadTags(o, "return_tags"),
+                CReturns = Str(o, "returns"),
             });
         }
         foreach (var v in root["variables"]?.AsArray() ?? [])
@@ -412,6 +419,7 @@ public static class ApiReader
         Str(o, "return_doc"), o["params"]!.AsArray().Select(p => ReadParam(p!.AsObject())).ToList())
     {
         ReturnTags = ReadTags(o, "return_tags"),
+        CReturns = Str(o, "returns"),
         Receiver = Str(o, "receiver"),
     };
 

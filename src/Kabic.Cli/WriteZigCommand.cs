@@ -9,35 +9,18 @@ using Kabic.Zig;
 namespace Kabic.Cli;
 
 /// <summary>
-/// Implements the command that writes one Zig package per contract domain and one per plugin's
-/// factory headers.
+/// Implements the command that writes one Zig package per domain of the manifest.
 /// </summary>
 internal static class WriteZigCommand
 {
-    const string ContractsRoot = "src/c";
-
-    const string PluginsRoot = "src/zig";
-
     const string PackagesRoot = "src/zig/abi";
 
-    const string FactoryPackageDir = "abi";
-
-    const string FactorySuffix = "_factory";
-
-    const string FactoryPackagePrefix = "abi_";
-
-    const string PluginPrefix = "ke_";
-
-    static readonly string[] SharedIncludes = ["src/zig/common/include"];
-
-    /// <summary>
-    /// The headers under one include root and where their package is written. A domain's root is
-    /// its contract directory; a plugin's is its <c>include</c> directory.
-    /// </summary>
-    sealed record Unit(string Key, string Package, string IncludeRoot, string PackageDir, bool Factory)
+    /// <summary>A domain of the manifest and where its package is written.</summary>
+    sealed record Unit(DomainSpec Spec, string PackageDir)
     {
-        public List<string> Headers { get; } = Directory.GetFiles(IncludeRoot, "*.h", SearchOption.AllDirectories)
-            .Order(StringComparer.Ordinal).ToList();
+        public string Key => Spec.Name;
+
+        public string Package => ZigPackage.DomainPackage(Spec.Name);
     }
 
     /// <summary>
@@ -59,8 +42,7 @@ internal static class WriteZigCommand
         {
             if (Write(options, scratch) is var code and not 0) return code;
             var generated = Files(scratch, [""]);
-            var committed = Files(options.Root, [PackagesRoot, .. Units(options.Root).Where(u => u.Factory)
-                .Select(u => Slashed(Path.GetRelativePath(options.Root, u.PackageDir)))]);
+            var committed = Files(options.Root, [PackagesRoot]);
             var drift = generated.Union(committed).Order(StringComparer.Ordinal)
                 .Where(rel => !generated.Contains(rel) || !committed.Contains(rel)
                     || !File.ReadAllBytes(Path.Combine(scratch, rel)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(options.Root, rel))))
@@ -84,38 +66,15 @@ internal static class WriteZigCommand
 
     static string Slashed(string path) => path.Replace('\\', '/');
 
-    static List<Unit> Units(string root)
-    {
-        var contracts = Path.Combine(root, ContractsRoot);
-        var domains = Directory.GetDirectories(contracts).Order(StringComparer.Ordinal)
-            .Select(d => new Unit(Path.GetFileName(d), ZigPackage.DomainPackage(Path.GetFileName(d)), d, Path.Combine(root, PackagesRoot, Path.GetFileName(d)), false));
-        var shared = SharedIncludes.Select(s => Path.GetFullPath(Path.Combine(root, s))).ToHashSet();
-        var plugins = Directory.GetDirectories(Path.Combine(root, PluginsRoot), "include", SearchOption.AllDirectories)
-            .Where(d => Directory.Exists(Path.Combine(d, "kernel_engine")) && !shared.Contains(Path.GetFullPath(d)))
-            .Where(d => !Slashed(Path.GetRelativePath(root, d)).Split('/').Any(part => part.StartsWith('.')))
-            .Select(d => Path.GetDirectoryName(d)!)
-            .Order(StringComparer.Ordinal)
-            .Select(p => (Dir: p, Name: PluginName(p)))
-            .Select(p => new Unit(p.Name + FactorySuffix, FactoryPackagePrefix + p.Name, Path.Combine(p.Dir, "include"),
-                Path.Combine(p.Dir, FactoryPackageDir), true));
-        return [.. domains, .. plugins];
-    }
-
-    /// <summary>The package name the plugin at <paramref name="dir"/> declares, without its prefix.</summary>
-    static string PluginName(string dir)
-    {
-        var zon = Path.Combine(dir, "build.zig.zon");
-        var name = File.Exists(zon) ? Regex.Match(File.ReadAllText(zon), @"\.name\s*=\s*\.(\w+)").Groups[1].Value : "";
-        if (name.Length == 0) throw new InvalidOperationException($"{zon} names no package");
-        return name.StartsWith(PluginPrefix, StringComparison.Ordinal) ? name[PluginPrefix.Length..] : name;
-    }
+    static List<Unit> Units(Options options) =>
+        DomainSpec.Load(options.Manifest).OrderBy(d => d.Name, StringComparer.Ordinal)
+            .Select(d => new Unit(d, Path.Combine(options.Root, PackagesRoot, d.Name))).ToList();
 
     static int Write(Options options, string into)
     {
         var root = options.Root;
         var convention = ConventionLoader.Load(options.Manifest);
-        var units = Units(root);
-        var includeDirs = units.Select(u => u.IncludeRoot).Concat(SharedIncludes.Select(d => Path.Combine(root, d))).ToList();
+        var units = Units(options);
 
         var models = new System.Collections.Concurrent.ConcurrentDictionary<string, ApiModel>();
         var failures = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
@@ -123,7 +82,7 @@ internal static class WriteZigCommand
         {
             try
             {
-                var json = Extraction.Run(new Extraction.Request(unit.Headers, includeDirs, [], options.Zig, convention));
+                var json = Regeneration.ExtractOne(unit.Spec, root, options.Zig, convention);
                 models[unit.Key] = ApiReader.Read(JsonNode.Parse(json)!.AsObject());
             }
             catch (Exception e) { failures[unit.Key] = e.Message; }
@@ -134,7 +93,7 @@ internal static class WriteZigCommand
         foreach (var unit in units)
         {
             var m = models[unit.Key];
-            foreach (var name in m.Structs.Select(s => s.Name).Concat(m.Enums.Select(e => e.Name))
+            foreach (var name in m.Structs.Where(s => !s.External).Select(s => s.Name).Concat(m.Enums.Where(e => !e.External).Select(e => e.Name))
                          .Concat(m.TypeAliases.Keys))
                 owner.TryAdd(name, unit.Key);
         }
@@ -150,10 +109,10 @@ internal static class WriteZigCommand
         foreach (var unit in units)
         {
             var foreign = owner.Where(kv => kv.Value != unit.Key).ToDictionary();
-            try { texts[unit.Key] = ZigWriter.Render(models[unit.Key], foreign, unit.Factory); }
+            try { texts[unit.Key] = ZigWriter.Render(models[unit.Key], foreign); }
             catch (NotSupportedException e) { failures[unit.Key] = e.Message; continue; }
             imports[unit.Key] = foreign.Values.Distinct().Where(k => texts[unit.Key].Contains($"@import(\"{k}\")"))
-                .Concat(Included(unit, units)).Where(k => k != unit.Key)
+                .Concat(Included(root, unit, units)).Where(k => k != unit.Key)
                 .Distinct().Order(StringComparer.Ordinal).ToList();
         }
         if (Report(failures)) return 2;
@@ -163,10 +122,10 @@ internal static class WriteZigCommand
         {
             var dir = Path.Combine(into, Path.GetRelativePath(root, unit.PackageDir));
             var package = new ZigPackage(unit.Key, unit.Package,
-                unit.Headers.Select(h => Slashed(Path.GetRelativePath(unit.IncludeRoot, h))).ToList(),
+                unit.Spec.Headers.Select(h => IncludeName(unit.Spec, h)).ToList(),
                 imports[unit.Key].Select(k => new ZigImport(k, byKey[k].Package, Slashed(Path.GetRelativePath(unit.PackageDir, byKey[k].PackageDir)))).ToList(),
-                Reached(unit.Key, imports).Select(k => byKey[k].IncludeRoot).Concat(SharedIncludes.Select(d => Path.Combine(root, d)))
-                    .Select(d => Slashed(Path.GetRelativePath(unit.PackageDir, d))).ToList());
+                Reached(unit.Key, imports).SelectMany(k => byKey[k].Spec.IncludeDirs).Distinct()
+                    .Select(d => Slashed(Path.GetRelativePath(unit.PackageDir, Path.Combine(root, d)))).ToList());
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, $"{unit.Key}.zig"), texts[unit.Key]);
             File.WriteAllText(Path.Combine(dir, "build.zig"), package.BuildZig());
@@ -193,12 +152,17 @@ internal static class WriteZigCommand
         return [.. seen];
     }
 
-    /// <summary>The units whose include root holds a header the headers of <paramref name="unit"/> include.</summary>
-    static IEnumerable<string> Included(Unit unit, IReadOnlyList<Unit> units) =>
-        unit.Headers.SelectMany(File.ReadLines)
-            .Select(l => Regex.Match(l, @"^\s*#\s*include\s*[<""](kernel_engine/[^>""]+)[>""]"))
+    /// <summary>A header as an <c>#include</c> reaches it through its domain's include directories.</summary>
+    static string IncludeName(DomainSpec spec, string header) =>
+        spec.IncludeDirs.Select(d => Slashed(Path.GetRelativePath(d, header)))
+            .Where(rel => !rel.StartsWith("..", StringComparison.Ordinal)).DefaultIfEmpty(Path.GetFileName(header)).MinBy(rel => rel.Length)!;
+
+    /// <summary>The units declaring a header the headers of <paramref name="unit"/> include.</summary>
+    static IEnumerable<string> Included(string root, Unit unit, IReadOnlyList<Unit> units) =>
+        unit.Spec.Headers.SelectMany(h => File.ReadLines(Path.Combine(root, h)))
+            .Select(l => Regex.Match(l, @"^\s*#\s*include\s*[<""]([^>""]+)[>""]"))
             .Where(m => m.Success)
-            .SelectMany(m => units.Where(u => File.Exists(Path.Combine(u.IncludeRoot, m.Groups[1].Value))).Select(u => u.Key).Take(1));
+            .SelectMany(m => units.Where(u => u.Spec.Headers.Any(h => IncludeName(u.Spec, h) == m.Groups[1].Value)).Select(u => u.Key).Take(1));
 
     static bool Report(IReadOnlyDictionary<string, string> failures)
     {

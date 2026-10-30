@@ -27,3 +27,7 @@ dotnet run --project src/Kabic -- bindings --root "$vulkan"
 dotnet run --project src/Kabic -- generate --root "$vulkan"
 cp -L "${VULKAN_SO:-/usr/lib/x86_64-linux-gnu/libvulkan.so.1}" "$vulkan/build/libvulkan.so"
 dotnet run --project "$root/tests/e2e/vulkanrun/VulkanRun.csproj"
+for fixture in "$probe" "$zlib" "$sqlite"; do
+  dotnet run --project src/Kabic -- write zig --root "$fixture"
+  (cd "$fixture/src/zig/abi" && zig build test --global-cache-dir "$fixture/build/zig-global")
+done

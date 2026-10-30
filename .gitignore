@@ -7,3 +7,4 @@ artifacts/
 .idea/
 *.user
 docs/kanban/
+tests/e2e/*/src/zig/

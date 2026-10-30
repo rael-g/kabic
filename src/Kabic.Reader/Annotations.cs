@@ -35,7 +35,6 @@ public static class Annotations
             var f = model.Functions[at];
             model.Functions[at] = f with
             {
-                Returns = Tags(members, "return").Contains("result") ? Convention.TaggedResult : f.Returns,
                 ReturnTags = [.. f.ReturnTags, .. Tags(members, "return")],
                 Params = Merged(symbol, f.Params, members, stale),
             };
@@ -67,7 +66,6 @@ public static class Annotations
         {
             Slots = record.Slots.Select(s => s != slot ? s : s with
             {
-                Returns = Tags(members, "return").Contains("result") ? Convention.TaggedResult : s.Returns,
                 ReturnTags = [.. s.ReturnTags, .. Tags(members, "return")],
                 Params = Merged(symbol, s.Params, members, stale),
             }).ToList(),

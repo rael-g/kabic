@@ -5,8 +5,7 @@ using System.Text;
 using Kabic;
 
 /// <summary>
-/// The Zig package of the headers of one include root, a contract domain or a plugin's factory
-/// headers: the module of their ABI under the name <c>abi</c>, the packages it imports as
+/// The Zig package of the headers of one domain: the module of their ABI under the name <c>abi</c>, the packages it imports as
 /// dependencies, and a test that lays every record, alias, enum value and constant beside the
 /// translation of the headers and fails where the two differ.
 /// </summary>
@@ -21,7 +20,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
     IReadOnlyList<string> IncludeDirs)
 {
     /// <summary>The package name of the package of the contract domain <paramref name="domain"/>.</summary>
-    public static string DomainPackage(string domain) => $"ke_abi_{domain}";
+    public static string DomainPackage(string domain) => $"abi_{domain}";
 
     /// <summary>The <c>build.zig</c> of the package.</summary>
     public string BuildZig()
@@ -129,7 +128,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
     }
 
     /// <summary>The package name of the package that gathers every package.</summary>
-    public const string AllName = "ke_abi";
+    public const string AllName = "abi";
 
     /// <summary>
     /// The <c>build.zig</c> of the package that gathers every package: its <c>test</c> step runs
@@ -143,7 +142,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         sb.AppendLine("pub fn build(b: *std.Build) void {");
         sb.AppendLine("    const target = b.standardTargetOptions(.{});");
         sb.AppendLine("    const optimize = b.standardOptimizeOption(.{});");
-        sb.AppendLine("    const tests = b.step(\"test\", \"Check the ABI of every contract domain and factory header against the headers\");");
+        sb.AppendLine("    const tests = b.step(\"test\", \"Check the ABI of every domain against the headers\");");
         sb.AppendLine("    inline for (.{");
         foreach (var p in packages) sb.AppendLine($"        \"{p.Package}\",");
         sb.AppendLine("    }) |name| {");
@@ -182,7 +181,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
     static ulong Fingerprint(string name)
     {
         var checksum = Crc32(Encoding.UTF8.GetBytes(name));
-        var id = Crc32(Encoding.UTF8.GetBytes("kernel_engine/" + name));
+        var id = Crc32(Encoding.UTF8.GetBytes("kabic/" + name));
         if (id is 0 or uint.MaxValue) id = 1;
         return ((ulong)checksum << 32) | id;
     }

@@ -526,7 +526,7 @@ internal static class GeneratorShapeCases
             model.Data.Add(new ApiData("ke_origin", "ke_row", false,
                 new(ApiValueKind.List, "", [new(ApiValueKind.Name, "KE_KIND_B", []), new(ApiValueKind.Number, "0", []), new(ApiValueKind.Number, "4", [])])));
             model.Data.Add(new ApiData("ke_limit", "int", true, new(ApiValueKind.Number, "3", [])));
-            var zig = Kabic.Zig.ZigWriter.Render(model, new Dictionary<string, string>(), false);
+            var zig = Kabic.Zig.ZigWriter.Render(model, new Dictionary<string, string>());
             foreach (var needle in new[] { "pub const ke_rows:", "@offsetOf(ke_row, \"at\")", "@sizeOf(f32)", "pub const ke_grid:", "pub var ke_origin:", "pub const ke_limit: c_int = 3;" })
                 if (!zig.Contains(needle)) failures.Add($"expected in Zig: {needle}\n{zig}");
         });
