@@ -539,8 +539,12 @@ public static class CSharpWriter
         if (p.Has("rooted")) return "object";
         if (model.Enums.Any(e => e.Name == p.Type.Trim()))
             return Idioms.TypeName(p.Type.Trim(), convention);
-        return Passed(model, p.Type, convention) ?? CsType(model, p.Type, convention);
+        var passed = Passed(model, p.Type, convention) ?? CsType(model, p.Type, convention);
+        return IsOptionalValue(model, p) ? passed + "?" : passed;
     }
+
+    static bool IsOptionalValue(ApiModel model, ApiParam p) =>
+        p.Has("optional") && Pointee(model, p.Type) is { } target && ByValue(p.Type, target);
 
     static ApiStruct? Pointee(ApiModel model, string cType) =>
         CType.Of(cType) is { IsPointer: true } type ? model.Structs.FirstOrDefault(s => s.Name == type.Name) : null;
@@ -564,6 +568,8 @@ public static class CSharpWriter
     {
         var name = Idioms.Ident(p.Name!);
         var native = NativePointerType(model, p.Type, convention);
+        if (IsOptionalValue(model, p))
+            return $"{name}.HasValue ? ({native})Unsafe.AsPointer(ref Unsafe.AsRef(in Nullable.GetValueRefOrDefaultRef(in {name}))) : null";
         return Pointee(model, p.Type) is { } target
             ? target.IsVtable && !target.Has("bag") ? $"{name}.Native" : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
             : $"({native}){name}";

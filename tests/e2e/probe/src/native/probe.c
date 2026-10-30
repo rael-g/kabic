@@ -42,6 +42,7 @@ static void load(ke_probe *self, uint32_t id, ke_probe_done_fn on_done, void *ct
 }
 static ke_result bind(ke_probe *self, uint32_t id, void *instance) { (void)self; (void)id; bound = instance; return KE_OK; }
 static void unbind(ke_probe *self, uint32_t id) { (void)self; (void)id; bound = NULL; }
+static uint32_t count_of(ke_probe *self, const ke_probe_item *item) { (void)self; return item ? item->id : stored_count; }
 static void destroy(ke_probe *self) { free(self); }
 
 __attribute__((visibility("default"))) ke_result ke_probe_create(uint32_t capacity, ke_probe_handle *out_handle)
@@ -59,6 +60,7 @@ __attribute__((visibility("default"))) ke_result ke_probe_create(uint32_t capaci
     p->load = load;
     p->bind = bind;
     p->unbind = unbind;
+    p->count_of = count_of;
     out_handle->ref = p;
     out_handle->destroy = destroy;
     return KE_OK;

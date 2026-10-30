@@ -28,6 +28,9 @@ public unsafe partial struct ke_probe
     [NativeTypeName("void (*)(struct ke_probe *, uint32_t, ke_probe_done_fn, void *)")]
     public delegate* unmanaged[Cdecl]<ke_probe*, uint, delegate* unmanaged[Cdecl]<void*, Result, uint, void>, void*, void> load;
 
+    [NativeTypeName("uint32_t (*)(struct ke_probe *, const ke_probe_item *)")]
+    public delegate* unmanaged[Cdecl]<ke_probe*, ProbeItem*, uint> count_of;
+
     [NativeTypeName("ke_result (*)(struct ke_probe *, uint32_t, void *)")]
     public delegate* unmanaged[Cdecl]<ke_probe*, uint, void*, Result> bind;
 

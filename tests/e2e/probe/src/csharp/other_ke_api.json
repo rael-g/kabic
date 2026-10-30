@@ -308,6 +308,24 @@
           "receiver": "struct ke_probe *"
         },
         {
+          "name": "count_of",
+          "returns": "uint32_t",
+          "tags": [],
+          "doc": null,
+          "return_doc": null,
+          "params": [
+            {
+              "name": "item",
+              "type": "const ke_probe_item *",
+              "tags": [
+                "optional"
+              ],
+              "doc": "Null counts every item."
+            }
+          ],
+          "receiver": "struct ke_probe *"
+        },
+        {
           "name": "bind",
           "returns": "ke_result",
           "tags": [],

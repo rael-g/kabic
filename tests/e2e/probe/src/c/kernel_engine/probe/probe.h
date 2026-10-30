@@ -79,6 +79,8 @@ typedef struct ke_probe
      * @param ctx [context] Opaque.
      */
     void (*load)(struct ke_probe *self, uint32_t id, ke_probe_done_fn on_done, void *ctx);
+    /** @param item [optional] Null counts every item. */
+    uint32_t (*count_of)(struct ke_probe *self, const ke_probe_item *item);
     /** @param instance [rooted:id] Kept until unbind. */
     ke_result (*bind)(struct ke_probe *self, uint32_t id, void *instance);
     /** [unroots:id] Drops the binding. */
