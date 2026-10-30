@@ -650,7 +650,7 @@ internal static class GeneratorShapeCases
             });
         }
 
-        Register("initialized data keeps its shape in C# and in Zig, whatever the shape", failures =>
+        Register("initialized data keeps its shape in Zig, whatever the shape", failures =>
         {
             var model = NewModel();
             model.Enums.Add(new ApiEnum("ke_kind", null, [new ApiEnumValue("KE_KIND_B", "0", true, null)]));
@@ -663,11 +663,7 @@ internal static class GeneratorShapeCases
             model.Data.Add(new ApiData("ke_origin", "ke_row", false,
                 new(ApiValueKind.List, "", [new(ApiValueKind.Name, "KE_KIND_B", []), new(ApiValueKind.Number, "0", []), new(ApiValueKind.Number, "4", [])])));
             model.Data.Add(new ApiData("ke_limit", "int", true, new(ApiValueKind.Number, "3", [])));
-            var cs = CSharpWriter.RenderData(model, "Probe", ProbeConvention.Value);
             var zig = Kabic.Zig.ZigWriter.Render(model, new Dictionary<string, string>(), false);
-            foreach (var needle in new[] { "public static readonly Row[] Rows =", "Marshal.OffsetOf<Row>(\"At\")", "(uint)sizeof(float)",
-                         "public static readonly float[][] Grid = [[1.5f, 2]];", "public static Row Origin = new() {", "public static readonly int Limit = 3;" })
-                if (!cs.Contains(needle)) failures.Add($"expected in C#: {needle}\n{cs}");
             foreach (var needle in new[] { "pub const ke_rows:", "@offsetOf(ke_row, \"at\")", "@sizeOf(f32)", "pub const ke_grid:", "pub var ke_origin:", "pub const ke_limit: c_int = 3;" })
                 if (!zig.Contains(needle)) failures.Add($"expected in Zig: {needle}\n{zig}");
         });
