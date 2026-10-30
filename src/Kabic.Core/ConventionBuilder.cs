@@ -7,7 +7,7 @@ namespace Kabic;
 public sealed class ConventionBuilder
 {
     string symbolPrefix = "", handleSuffix = "", factorySuffix = "", paramsSuffix = "";
-    string outParamPrefix = "out_";
+    readonly Dictionary<string, List<(System.Text.RegularExpressions.Regex, string)>> nameRules = [];
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
     string commonManagedNamespace = "";
     string resultAbiHeader = "";
@@ -27,10 +27,10 @@ public sealed class ConventionBuilder
         return this;
     }
 
-    /// <summary>The prefix of a parameter written back.</summary>
-    public ConventionBuilder OutParams(string prefix)
+    /// <summary>Appends a rule rewriting a name in <paramref name="language"/>.</summary>
+    public ConventionBuilder AddNameRule(string language, string pattern, string replacement)
     {
-        outParamPrefix = prefix;
+        (nameRules.TryGetValue(language, out var rules) ? rules : nameRules[language] = []).Add((new(pattern), replacement));
         return this;
     }
 
@@ -118,7 +118,7 @@ public sealed class ConventionBuilder
         HandleSuffix = handleSuffix,
         FactorySuffix = factorySuffix,
         ParamsSuffix = paramsSuffix,
-        OutParamPrefix = outParamPrefix,
+        NameRules = nameRules.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<(System.Text.RegularExpressions.Regex, string)>)kv.Value.ToList()),
         IncludeDirectoryName = includeDirectoryName,
         CommonBindingsNamespace = commonBindingsNamespace,
         BindingsMethodsClass = bindingsMethodsClass,

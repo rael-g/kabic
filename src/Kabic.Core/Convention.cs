@@ -138,10 +138,19 @@ public sealed class Convention
         name.StartsWith(SymbolPrefix) ? name[SymbolPrefix.Length..] : name;
 
     /// <summary>
-    /// Prefix of a parameter the callee writes back (<c>out_size</c>), which must carry the
-    /// <c>[out]</c> tag.
+    /// How each language rewrites a name, by language: regular expressions in order, the first
+    /// that matches applying. A rule carries no meaning; it is a spelling.
     /// </summary>
-    public string OutParamPrefix { get; init; } = "out_";
+    public IReadOnlyDictionary<string, IReadOnlyList<(System.Text.RegularExpressions.Regex Pattern, string Replacement)>> NameRules { get; init; } =
+        new Dictionary<string, IReadOnlyList<(System.Text.RegularExpressions.Regex, string)>>();
+
+    /// <summary><paramref name="name"/> rewritten by the first rule of <paramref name="language"/> that matches.</summary>
+    public string Spell(string language, string name)
+    {
+        foreach (var (pattern, replacement) in NameRules.GetValueOrDefault(language) ?? [])
+            if (pattern.IsMatch(name)) return pattern.Replace(name, replacement);
+        return name;
+    }
 
     /// <summary>
     /// Name of the directory under which a public header lives
@@ -229,7 +238,6 @@ public sealed class Convention
         var builder = new ConventionBuilder()
             .Symbols(Text(json, "symbolPrefix"), Text(json, "handleSuffix"), Text(json, "factorySuffix"),
                 Text(json, "paramsSuffix"))
-            .OutParams(Or(json, "outParamPrefix", "out_"))
             .Bindings(Or(json, "includeDirectoryName", "kernel_engine"), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
             .Managed(Text(json, "commonManagedNamespace"))
@@ -246,6 +254,9 @@ public sealed class Convention
             builder.AddHandleType(cType, managed!.GetValue<string>());
         foreach (var (symbol, name) in json["typeNameOverrides"]?.AsObject() ?? [])
             builder.AddTypeName(symbol, name!.GetValue<string>());
+        foreach (var (language, rules) in json["names"]?.AsObject() ?? [])
+            foreach (var rule in rules!.AsArray())
+                builder.AddNameRule(language, rule!["match"]!.GetValue<string>(), rule["replace"]!.GetValue<string>());
         foreach (var name in json["packs"]?.AsArray() ?? [])
             builder.Use(pack(name!.GetValue<string>()));
         return builder.Build();

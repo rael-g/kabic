@@ -21,7 +21,6 @@ public static class KabicCli
             ["drift"] = o => DriftCommand.Run(o, extensions),
             ["bindings"] = BindingsCommand.CheckDrift,
             ["reconstruction"] = o => ReconstructionCheck.Execute(o, extensions),
-            ["out-params"] = OutParamsCheck.Execute,
             ["zig"] = WriteZigCommand.CheckDrift,
         };
 

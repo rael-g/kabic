@@ -331,17 +331,16 @@ public static class Classifier
                     + " dereference, and a rooted pointer is the one thing it never does.");
 
         var written = allOut.Concat(returnCount is null ? [] : new[] { returnCount }).ToList();
-        var stripped = written.Where(p => p.Name!.StartsWith(convention.OutParamPrefix, StringComparison.Ordinal)
-                                       && p.Name!.Length > convention.OutParamPrefix.Length)
-            .Select(p => (Param: p, Bare: p.Name![convention.OutParamPrefix.Length..])).ToList();
+        var stripped = written.Select(p => (Param: p, Bare: convention.Spell(Languages.CSharp, p.Name!)))
+            .Where(s => s.Bare != s.Param.Name).ToList();
         foreach (var (p, bare) in stripped)
         {
             var taken = slot.Params.FirstOrDefault(q => q != p && q.Name == bare)
                 ?? stripped.FirstOrDefault(other => other.Param != p && other.Bare == bare).Param;
             if (taken is not null)
                 throw new InvalidOperationException(
-                    $"{slot.Name}.{p.Name}: a written-back parameter is projected without the out_ that"
-                    + $" only marked its direction, and {taken.Name} already answers to {bare}. Two"
+                    $"{slot.Name}.{p.Name}: a written-back parameter is projected as {bare},"
+                    + $" and {taken.Name} already answers to {bare}. Two"
                     + " parameters reaching the caller under one name is not something to resolve by"
                     + " picking one, so rename the declaration instead.");
         }

@@ -431,15 +431,8 @@ public static class CSharpWriter
         o.Add("");
     }
 
-    /// <summary>
-    /// What to call a parameter the callee writes. A leading <c>out_</c> is how C marks the
-    /// direction, and the projection already marks it -- as <c>out</c>, as a tuple element,
-    /// or by returning it -- so carrying the prefix across would spell it twice.
-    /// </summary>
-    static string WrittenName(ApiParam p) =>
-        p.Name!.StartsWith("out_", StringComparison.Ordinal) && p.Name!.Length > "out_".Length
-            ? p.Name!["out_".Length..]
-            : p.Name!;
+    /// <summary>What to call a parameter the callee writes: its name as the convention spells it.</summary>
+    static string WrittenName(ApiParam p, Convention convention) => convention.Spell(Languages.CSharp, p.Name!);
 
     /// <summary>
     /// The type parameter standing for an opaque payload. Named after the parameter it
@@ -2252,7 +2245,7 @@ public static class CSharpWriter
                     : cs.Blobs.Any(b => b.Blob == p)
                         ? $"in {BlobTypeParam(p)} {Idioms.Ident(p.Name!)}"
                     : cs.TrailingOuts.Contains(p)
-                        ? $"out {OutElement(model, p, convention)} {Idioms.Ident(WrittenName(p))}"
+                        ? $"out {OutElement(model, p, convention)} {Idioms.Ident(WrittenName(p, convention))}"
                         : $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"))
                 .ToList();
 
@@ -2351,13 +2344,13 @@ public static class CSharpWriter
                 {
                     var ins = cs.PublicParams.Where(p => !cs.OutParams.Contains(p)).ToList();
                     var sig = Sig(ins);
-                    var names = cs.OutParams.Select(p => Idioms.Pascal(WrittenName(p))).ToList();
+                    var names = cs.OutParams.Select(p => Idioms.Pascal(WrittenName(p, convention))).ToList();
                     var types = cs.OutParams.Select(p => OutElement(model, p, convention)).ToList();
                     var retTuple = string.Join(", ", types.Zip(names, (t, n) => $"{t} {n}"));
-                    var locals = cs.OutParams.Select(p => Idioms.Ident(WrittenName(p))).ToList();
+                    var locals = cs.OutParams.Select(p => Idioms.Ident(WrittenName(p, convention))).ToList();
                     var nativeArgs = NativeParams()
                         .Select(p => cs.OutParams.Contains(p)
-                            ? OutAddress(model, p, convention, Idioms.Ident(WrittenName(p))) : CallArg(p));
+                            ? OutAddress(model, p, convention, Idioms.Ident(WrittenName(p, convention))) : CallArg(p));
                     var callArgs = string.Concat(nativeArgs.Select(a => ", " + a));
 
                     Declare(o, decls, XmlDoc("    ", slot.Doc, convention, ins.Select(p => (Idioms.Ident(p.Name!), p.Doc)),
@@ -2394,15 +2387,15 @@ public static class CSharpWriter
                     var ins = cs.PublicParams.Where(p => !p.Has("out")).ToList();
                     var outs = cs.OutParams;
                     var sigParts = SigParts(ins)
-                        .Concat(outs.Select(p => $"out {OutElement(model, p, convention)} {Idioms.Ident(WrittenName(p))}"));
+                        .Concat(outs.Select(p => $"out {OutElement(model, p, convention)} {Idioms.Ident(WrittenName(p, convention))}"));
 
                     var tryName = name.StartsWith("Try") ? name : $"Try{name}";
                     Declare(o, decls, XmlDoc("    ", slot.Doc, convention,
                         cs.PublicParams.Select(p =>
-                            (Idioms.Ident(outs.Contains(p) ? WrittenName(p) : p.Name!), p.Doc)), slot.ReturnDoc).TrimEnd(),
+                            (Idioms.Ident(outs.Contains(p) ? WrittenName(p, convention) : p.Name!), p.Doc)), slot.ReturnDoc).TrimEnd(),
                         $"bool {tryName}({string.Join(", ", sigParts)})");
                     o.Add("    {");
-                    foreach (var op in outs) o.Add($"        {OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op))}Local;");
+                    foreach (var op in outs) o.Add($"        {OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local;");
                     var (tPro, tDepth) = Utf8Prologue(ins, new string(' ', 8));
                     var (tSeq, tSeqDepth) = SequencePrologue(model, cs.Sequences,
                         new string(' ', 8 + tDepth * 4), convention);
@@ -2414,7 +2407,7 @@ public static class CSharpWriter
                     var tInd = new string(' ', 8 + tDepth * 4);
                     var tryArgs = NativeParams()
                         .Select(p => outs.Contains(p)
-                            ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p))}Local") : CallArg(p));
+                            ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local") : CallArg(p));
                     if (convention.ReturnsResult(slot.Returns))
                         throw new InvalidOperationException(
                             $"{slot.Name}: a [try] slot answers whether it found something through a bool, and"
@@ -2424,8 +2417,8 @@ public static class CSharpWriter
                         + (cs.Fallible ? ", null)" : ")");
                     o.Add($"{tInd}var found = {tryCall};");
                     foreach (var op in outs)
-                        o.Add($"{tInd}{Idioms.Ident(WrittenName(op))} = "
-                            + $"{OutRead(op, $"{Idioms.Ident(WrittenName(op))}Local")};");
+                        o.Add($"{tInd}{Idioms.Ident(WrittenName(op, convention))} = "
+                            + $"{OutRead(op, $"{Idioms.Ident(WrittenName(op, convention))}Local")};");
                     o.Add($"{tInd}return found;");
                     CloseScopes(o, tDepth, tSeqAt, tClosers);
                     o.Add("    }");
@@ -2645,7 +2638,7 @@ public static class CSharpWriter
                         .Select(b => $" where {BlobTypeParam(b.Blob)} : unmanaged"));
                     Declare(o, decls,
                         XmlDoc("    ", slot.Doc, convention, args.Select(p =>
-                            (Idioms.Ident(cs.TrailingOuts.Contains(p) ? WrittenName(p) : p.Name!), p.Doc)),
+                            (Idioms.Ident(cs.TrailingOuts.Contains(p) ? WrittenName(p, convention) : p.Name!), p.Doc)),
                             slot.ReturnDoc).TrimEnd(),
                         $"{retType} {name}{generics}({sig}){constraints}", access: access);
                     o.Add("    {");
@@ -2662,12 +2655,12 @@ public static class CSharpWriter
                     var pClosers = SequenceClosers(model, cs.Sequences);
                     var pInd = new string(' ', 8 + pDepth * 4);
                     foreach (var op in cs.TrailingOuts)
-                        o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op))}Local;");
+                        o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local;");
                     var pCall = $"Handle->{slot.Name}(Handle{call})";
                     var pHolds = cs.TrailingOuts.Count > 0;
                     if (spanElement is not null)
                     {
-                        var countLocal = $"{Idioms.Ident(WrittenName(cs.ReturnCount!))}Local";
+                        var countLocal = $"{Idioms.Ident(WrittenName(cs.ReturnCount!, convention))}Local";
                         var native = CsType(model, CTypes.Deref(slot.Returns), convention);
                         var front = spanElement == native ? "front" : $"({spanElement}*)front";
                         o.Add($"{pInd}{CsType(model, CTypes.Deref(cs.ReturnCount!.Type), convention)} {countLocal} = 0;");
@@ -2688,8 +2681,8 @@ public static class CSharpWriter
                     else
                         o.Add($"{pInd}return {needsCast}{pCall};");
                     foreach (var op in cs.TrailingOuts)
-                        o.Add($"{pInd}{Idioms.Ident(WrittenName(op))} = "
-                            + $"{OutRead(op, $"{Idioms.Ident(WrittenName(op))}Local")};");
+                        o.Add($"{pInd}{Idioms.Ident(WrittenName(op, convention))} = "
+                            + $"{OutRead(op, $"{Idioms.Ident(WrittenName(op, convention))}Local")};");
                     if (retType != "void" && pHolds) o.Add($"{pInd}return result;");
                     CloseScopes(o, pDepth, pSeqAt, pClosers);
                     o.Add("    }");
@@ -2713,9 +2706,9 @@ public static class CSharpWriter
                 ? $"({NativePointerType(model, p.Type, convention)}){Idioms.Ident(p.Name!)}Ptr"
             : cs.Blobs.FirstOrDefault(b => b.Size == p) is { } asSize
                 ? $"({CsType(model, asSize.Size.Type, convention)})sizeof({BlobTypeParam(asSize.Blob)})"
-            : p == cs.ReturnCount ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p))}Local")
+            : p == cs.ReturnCount ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.TrailingOuts.Contains(p)
-                ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p))}Local")
+                ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
             : lanes.TryGetValue(p, out var lane) ? $"{Idioms.Ident(lane.Group)}.{lane.Lane}"
@@ -2983,11 +2976,11 @@ public static class CSharpWriter
             : cs.OutParam is not null ? OutElement(model, cs.OutParam, convention)
             : tupleOuts.Count > 0
                 ? "(" + string.Join(", ", tupleOuts.Select(p =>
-                    $"{OutElement(model, p, convention)} {Idioms.Pascal(WrittenName(p))}")) + ")"
+                    $"{OutElement(model, p, convention)} {Idioms.Pascal(WrittenName(p, convention))}")) + ")"
             : ReturnType(model, f.Returns, convention);
 
         string Local(ApiParam p) => Idioms.Ident(writes.Contains(p) || p == cs.ReturnCount
-            ? WrittenName(p) : p.Name!)
+            ? WrittenName(p, convention) : p.Name!)
             + (cs.TrailingOuts.Contains(p) || p == cs.ReturnCount ? "Local" : "");
 
         var args = (self is null ? [] : new[] { selfArg! }).Concat(rest.Select(p =>
@@ -3005,7 +2998,7 @@ public static class CSharpWriter
             cs.Blobs.Any(b => b.Blob == p)
                 ? $"in {BlobTypeParam(p)} {Idioms.Ident(p.Name!)}"
             : cs.TrailingOuts.Contains(p)
-                ? $"out {OutElement(model, p, convention)} {Idioms.Ident(WrittenName(p))}"
+                ? $"out {OutElement(model, p, convention)} {Idioms.Ident(WrittenName(p, convention))}"
                 : $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"));
 
         var generics = cs.Blobs.Count == 0 ? ""
@@ -3014,7 +3007,7 @@ public static class CSharpWriter
             .Select(b => $" where {BlobTypeParam(b.Blob)} : unmanaged"));
 
         o.Add(XmlDoc("    ", f.Doc, convention, ins.Select(p =>
-            (Idioms.Ident(cs.TrailingOuts.Contains(p) ? WrittenName(p) : p.Name!), p.Doc))).TrimEnd());
+            (Idioms.Ident(cs.TrailingOuts.Contains(p) ? WrittenName(p, convention) : p.Name!), p.Doc))).TrimEnd());
         o.Add($"    public static {retType} {methodName}{generics}({string.Join(", ", sigParts)}){constraints}");
         o.Add("    {");
 
@@ -3037,7 +3030,7 @@ public static class CSharpWriter
         {
             body.Add($"{call};");
             foreach (var p in cs.TrailingOuts)
-                body.Add($"{Idioms.Ident(WrittenName(p))} = {OutRead(p, Local(p))};");
+                body.Add($"{Idioms.Ident(WrittenName(p, convention))} = {OutRead(p, Local(p))};");
             body.Add(cs.OutParam is not null
                 ? $"return {OutRead(cs.OutParam, Local(cs.OutParam))};"
                 : $"return ({string.Join(", ", tupleOuts.Select(p => OutRead(p, Local(p))))});");

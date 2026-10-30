@@ -6,6 +6,7 @@ internal static class ProbeConvention
 {
     public static readonly Convention Value = new ConventionBuilder()
         .UseNumerics()
+        .AddNameRule(Languages.CSharp, "^out_(.+)$", "$1")
         .Symbols("ke_", "_handle", "_create", "_params")
         .Bindings("kernel_engine", "KernelEngine.Common.Native")
         .Managed("KernelEngine.Common")
