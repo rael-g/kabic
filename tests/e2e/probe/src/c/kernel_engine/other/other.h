@@ -17,6 +17,7 @@ typedef struct ke_other
     ke_other_pair (*pair)(struct ke_other *self);
 } ke_other;
 
+/// [owner]
 typedef struct ke_other_handle
 {
     ke_other *ref;

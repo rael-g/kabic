@@ -241,6 +241,23 @@ public class ApiModel
     /// </summary>
     public Dictionary<string, string> TypeAliases { get; } = [];
 
+    /// <summary>The <c>[owner]</c> struct that holds <paramref name="vtable"/>, or null.</summary>
+    public ApiStruct? OwnerOf(string vtable) =>
+        Structs.FirstOrDefault(s => s.Has("owner") && s.Fields.Any(f => Bare(f.Type) == vtable));
+
+    /// <summary>The function that makes the owner of <paramref name="vtable"/>, or null.</summary>
+    public ApiFunction? FactoryOf(string vtable) =>
+        OwnerOf(vtable) is { } owner ? Functions.FirstOrDefault(f => Makes(f) == owner.Name) : null;
+
+    /// <summary>The <c>[owner]</c> struct <paramref name="function"/> returns or writes last, or null.</summary>
+    public string? Makes(ApiFunction function)
+    {
+        var made = function.Params.Count > 0 && CTypes.IsPointer(function.Params[^1].Type) ? Bare(function.Params[^1].Type) : Bare(function.Returns);
+        return Structs.Any(s => s.Name == made && s.Has("owner")) ? made : null;
+    }
+
+    static string Bare(string type) => type.Replace("const ", "").Replace("struct ", "").Trim().TrimEnd('*', ' ');
+
     /// <summary>
     /// Resolves a type through <see cref="TypeAliases"/> until it is no longer an alias.
     /// </summary>

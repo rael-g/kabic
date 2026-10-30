@@ -114,7 +114,9 @@
     {
       "name": "ke_probe_handle",
       "doc": null,
-      "tags": [],
+      "tags": [
+        "owner"
+      ],
       "fields": [
         {
           "name": "ref",

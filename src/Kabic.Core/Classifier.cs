@@ -161,7 +161,7 @@ public static class Classifier
     {
         var result = new ClassifiedModel();
         var vtables = model.Structs
-            .Where(s => s.IsVtable && !s.External && !convention.IsHandleType(s.Name) && !s.Has("bag"))
+            .Where(s => s.IsVtable && !s.External && !s.Has("owner") && !s.Has("bag"))
             .ToList();
 
         var callbackTypeNames = vtables
@@ -173,8 +173,7 @@ public static class Classifier
 
         foreach (var v in vtables)
         {
-            var isOwnable = model.Structs.Any(s => s.Name == convention.HandleTypeFor(v.Name))
-                || model.Functions.Any(f => f.Name == convention.FactoryNameFor(v.Name));
+            var isOwnable = model.OwnerOf(v.Name) is not null;
 
             if (callbackTypeNames.Contains(v.Name) && !explicitProviders.Contains(v.Name))
                 result.Callbacks.Add(v);
@@ -192,24 +191,24 @@ public static class Classifier
 
         foreach (var v in result.Providers)
         {
-            var factory = model.Functions.FirstOrDefault(f => f.Name == convention.FactoryNameFor(v.Name));
+            var factory = model.FactoryOf(v.Name);
             if (factory is not null)
             {
-                var fparams = convention.FactoryInputs(factory);
+                var fparams = convention.FactoryInputs(model, factory);
                 result.Constructors[v.Name] = new ConstructorPlan(ConstructorKind.FromFactory, factory, null,
                     NeedsWrapper: fparams.Any(p => CTypes.IsPointer(p.Type)));
                 continue;
             }
-            var handleType = convention.HandleTypeFor(v.Name);
-            result.Constructors[v.Name] = model.Structs.Any(s => s.Name == handleType)
+            var handleType = model.OwnerOf(v.Name)?.Name;
+            result.Constructors[v.Name] = handleType is not null
                 ? new ConstructorPlan(ConstructorKind.FromHandle, null, handleType, NeedsWrapper: false)
                 : new ConstructorPlan(ConstructorKind.None, null, null, NeedsWrapper: false);
         }
 
         foreach (var fn in model.Functions)
         {
-            if (convention.IsFactoryName(fn.Name) && convention.ResultFactoryHandle(fn) is { } made
-                && vtables.Any(v => convention.HandleTypeFor(v.Name) == made))
+            if (convention.ReturnsResult(fn.Returns) && model.Makes(fn) is { } made
+                && vtables.Any(v => model.OwnerOf(v.Name)?.Name == made))
                 continue;
 
             var firstParamType = fn.Params.FirstOrDefault()?.Type.Replace("const ", "").Replace("struct ", "").TrimEnd('*', ' ');

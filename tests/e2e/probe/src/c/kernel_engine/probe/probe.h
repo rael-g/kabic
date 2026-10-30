@@ -25,6 +25,7 @@ typedef struct ke_probe
     void (*fill)(struct ke_probe *self, const ke_probe_item *items, uint32_t item_count);
 } ke_probe;
 
+/// [owner]
 typedef struct ke_probe_handle
 {
     ke_probe *ref;

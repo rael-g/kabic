@@ -1100,14 +1100,14 @@ public static class CSharpWriter
         if (plan.Kind == ConstructorKind.FromFactory)
         {
             var factory = plan.Factory!;
-            var fparams = convention.FactoryInputs(factory);
+            var fparams = convention.FactoryInputs(model, factory);
             var sig = string.Join(", ", fparams.Select(p => $"{Idioms.CsForeignType(p.Type, convention)} {Idioms.Ident(p.Name!)}"));
             var call = string.Join(", ", fparams.Select(p => Idioms.Ident(p.Name!)));
             o.Add(XmlDoc("    ", factory.Doc, convention, fparams.Select(p => (Idioms.Ident(p.Name!), p.Doc)),
                 throwsOnFail: true).TrimEnd());
             o.Add($"    {(plan.NeedsWrapper ? "internal" : "public")} {typeName}({sig})");
             o.Add("    {");
-            var madeHandle = convention.ResultFactoryHandle(factory)
+            var madeHandle = (convention.ReturnsResult(factory.Returns) ? model.Makes(factory) : null)
                 ?? throw new InvalidOperationException(
                     $"{factory.Name}: a factory returns {convention.ResultType} and writes its handle through its last parameter");
             o.Add($"        {madeHandle} handle;");

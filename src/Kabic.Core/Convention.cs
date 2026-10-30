@@ -11,41 +11,8 @@ public sealed class Convention
     /// </summary>
     public required string SymbolPrefix { get; init; }
 
-    /// <summary>
-    /// Suffix marking an owner-wrapper struct (<c>ke_input_handle{ref, destroy}</c>) — a plain
-    /// lifetime holder, not a vtable a caller registers a provider or callback for.
-    /// </summary>
-    public required string HandleSuffix { get; init; }
-
-    /// <summary>
-    /// Suffix marking a factory function for the vtable it is named after (<c>ke_input_create</c>).
-    /// </summary>
-    public required string FactorySuffix { get; init; }
-
     /// <summary>Boolean return-type spellings that mean "succeeded".</summary>
     public IReadOnlyList<string> BooleanReturnTypes => ["_Bool", "bool"];
-
-    /// <summary>
-    /// True if <paramref name="structName"/> names an owner-wrapper rather than a real vtable.
-    /// </summary>
-    public bool IsHandleType(string structName) => structName.EndsWith(HandleSuffix);
-
-    /// <summary>
-    /// The owner-wrapper struct name paired with a given vtable (<c>ke_window</c> →
-    /// <c>ke_window_handle</c>).
-    /// </summary>
-    public string HandleTypeFor(string vtableName) => vtableName + HandleSuffix;
-
-    /// <summary>
-    /// The factory function name paired with a given vtable (<c>ke_input</c> →
-    /// <c>ke_input_create</c>).
-    /// </summary>
-    public string FactoryNameFor(string vtableName) => vtableName + FactorySuffix;
-
-    /// <summary>
-    /// True if <paramref name="functionName"/> is spelled as a factory for some vtable.
-    /// </summary>
-    public bool IsFactoryName(string functionName) => functionName.EndsWith(FactorySuffix);
 
     /// <summary>
     /// True if a slot returns the result code (<see cref="ResultType"/>): it fails by returning a
@@ -54,22 +21,11 @@ public sealed class Convention
     public bool ReturnsResult(string returns) => ResultType.Length > 0 && returns.Trim() == ResultType;
 
     /// <summary>
-    /// The owner-wrapper handle a factory returning <see cref="ResultType"/> writes through its last
-    /// parameter, or null when <paramref name="factory"/> is not of that shape.
-    /// </summary>
-    public string? ResultFactoryHandle(ApiFunction factory) =>
-        ReturnsResult(factory.Returns) && factory.Params.Count > 0
-            && CTypes.IsPointer(factory.Params[^1].Type)
-            && CTypes.Deref(factory.Params[^1].Type).Replace("struct ", "").Trim() is var target
-            && IsHandleType(target)
-            ? target : null;
-
-    /// <summary>
-    /// The parameters a caller of <paramref name="factory"/> supplies: all of them, but the handle
+    /// The parameters a caller of <paramref name="factory"/> supplies: all of them, but the owner
     /// written back when the factory returns <see cref="ResultType"/>.
     /// </summary>
-    public IReadOnlyList<ApiParam> FactoryInputs(ApiFunction factory) =>
-        ResultFactoryHandle(factory) is not null
+    public IReadOnlyList<ApiParam> FactoryInputs(ApiModel model, ApiFunction factory) =>
+        ReturnsResult(factory.Returns) && model.Makes(factory) is not null
             ? factory.Params.Take(factory.Params.Count - 1).ToList()
             : factory.Params.ToList();
 
@@ -173,7 +129,7 @@ public sealed class Convention
         static string Or(System.Text.Json.Nodes.JsonObject o, string key, string fallback) => o[key]?.GetValue<string>() ?? fallback;
 
         var builder = new ConventionBuilder()
-            .Symbols(Text(json, "symbolPrefix"), Text(json, "handleSuffix"), Text(json, "factorySuffix"))
+            .Symbols(Text(json, "symbolPrefix"))
             .Bindings(Or(json, "includeDirectoryName", "kernel_engine"), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
             .Managed(Text(json, "commonManagedNamespace"));

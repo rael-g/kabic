@@ -72,20 +72,20 @@ public sealed class FactoriesExtension : IKabicExtension
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var convention = context.Convention;
         var model = context.ReadHeaders(job.Traverse.Select(Full), job.IncludeDirectories.Select(Full), []);
-        var functions = model.Functions.Where(f => convention.IsFactoryName(f.Name)).ToList();
+        var functions = model.Functions.Where(f => model.Makes(f) is not null).ToList();
         if (functions.Count != 1)
         {
             context.Report($"factories: {job.Name} declares {functions.Count} factories; one is projected");
             return null;
         }
         var function = functions[0];
-        if (function.Params is not [.., var outParam] || !convention.IsHandleType(Bare(outParam.Type)))
+        if (function.Params is not [.., var outParam] || model.Makes(function) is null)
         {
             context.Report($"factories: {function.Name} does not end in a <handle>* out; it is not projected");
             return null;
         }
         var handleType = Bare(outParam.Type);
-        var contractName = handleType[..^convention.HandleSuffix.Length];
+        var contractName = model.Structs.First(s => s.Name == handleType).Fields.Select(f => Bare(f.Type)).First(n => context.Domains.Any(d => d.Model.Structs.Any(s => s.Name == n && s.IsVtable)));
         var contract = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == contractName && !s.External));
         if (contract is null)
         {
@@ -119,7 +119,7 @@ public sealed class FactoriesExtension : IKabicExtension
             }
         }
         var contractClass = Idioms.TypeName(contractName, convention);
-        var stem = convention.StripPrefix(function.Name)[..^convention.FactorySuffix.Length];
+        var stem = convention.Spell("factory", convention.StripPrefix(function.Name));
         var contractStem = convention.StripPrefix(contractName);
         var plugin = stem.StartsWith(contractStem + "_", StringComparison.Ordinal) ? stem[(contractStem.Length + 1)..] : stem;
         var projectDir = Path.GetDirectoryName(job.NativeDir.TrimEnd('/', '\\'))!;

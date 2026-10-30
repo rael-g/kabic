@@ -538,7 +538,7 @@ internal static class GeneratorShapeCases
                     {
                         ["name"] = "ke_probe_handle",
                         ["doc"] = null,
-                        ["tags"] = new JsonArray(),
+                        ["tags"] = new JsonArray("owner"),
                         ["fields"] = new JsonArray(
                         new JsonObject { ["name"] = "ref", ["type"] = "ke_probe *", ["tags"] = new JsonArray(), ["doc"] = null },
                         new JsonObject { ["name"] = "destroy", ["type"] = "void (*)(ke_probe *)", ["tags"] = new JsonArray(), ["doc"] = null }),

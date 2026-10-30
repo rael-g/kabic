@@ -6,7 +6,7 @@ namespace Kabic;
 /// </summary>
 public sealed class ConventionBuilder
 {
-    string symbolPrefix = "", handleSuffix = "", factorySuffix = "";
+    string symbolPrefix = "";
     readonly Dictionary<string, List<(System.Text.RegularExpressions.Regex, string)>> nameRules = [];
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
     string commonManagedNamespace = "";
@@ -15,11 +15,11 @@ public sealed class ConventionBuilder
     readonly Dictionary<string, Dictionary<string, string>> typeMap = [];
 
     /// <summary>
-    /// The spellings that mark what a symbol is: its prefix and the suffix of a handle, a factory.
+    /// The spellings that mark what a symbol is: its prefix.
     /// </summary>
-    public ConventionBuilder Symbols(string prefix, string handle, string factory)
+    public ConventionBuilder Symbols(string prefix)
     {
-        (symbolPrefix, handleSuffix, factorySuffix) = (prefix, handle, factory);
+        symbolPrefix = prefix;
         return this;
     }
 
@@ -90,8 +90,6 @@ public sealed class ConventionBuilder
     public Convention Build() => new()
     {
         SymbolPrefix = symbolPrefix,
-        HandleSuffix = handleSuffix,
-        FactorySuffix = factorySuffix,
         NameRules = nameRules.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<(System.Text.RegularExpressions.Regex, string)>)kv.Value.ToList()),
         IncludeDirectoryName = includeDirectoryName,
         CommonBindingsNamespace = commonBindingsNamespace,
