@@ -323,7 +323,7 @@ public static class Extractor
         var type = node["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "";
         var readOnly = type.StartsWith("const ", StringComparison.Ordinal);
         return new ApiData(name, readOnly ? type["const ".Length..] : type, readOnly,
-            ExtractValue(((JsonArray)node["inner"]!)[^1]!.AsObject(), bytes));
+            ExtractValue(((JsonArray)node["inner"]!).Select(n => n!.AsObject()).Last(n => n["kind"]?.GetValue<string>() != "FullComment"), bytes));
     }
 
     static ApiValue ExtractValue(JsonObject node, byte[] bytes)

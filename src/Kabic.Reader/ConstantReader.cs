@@ -134,7 +134,7 @@ public static partial class ConstantReader
             else if (IsInteger(underlying))
                 integers.Add((name, spelled, underlying, doc));
             else
-                errors.Add($"{name}: a macro of type {spelled} is not a constant kabic can describe");
+                continue;
         }
         return new Typed(read, integers, errors, [.. candidates.Select(c => c.Name)]);
     }

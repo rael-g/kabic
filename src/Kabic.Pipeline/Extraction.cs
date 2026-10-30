@@ -49,13 +49,14 @@ public static class Extraction
             var written = ConstantReader.Candidates(headerPaths);
             File.WriteAllLines(tuPath, includes.Concat(written.Select(c => ConstantReader.ExpansionProbe(c.Name))));
             var candidates = ConstantReader.Valued(written, Run(zig, tuPath, request.IncludeDirs, ["-E", "-P"]));
-            File.WriteAllLines(tuPath, includes.Concat(candidates.Select(c => ConstantReader.TypeProbe(c.Name))));
-            ast = JsonNode.Parse(RunAstDump(zig, tuPath, request.IncludeDirs))!.AsObject();
+            ast = JsonNode.Parse(Probed(tuPath, includes, ref candidates, c => ConstantReader.TypeProbe(c.Name),
+                () => RunAstDump(zig, tuPath, request.IncludeDirs)))!.AsObject();
             typed = ConstantReader.ReadTypes(ast, candidates);
             if (typed.Integers.Count > 0)
             {
-                File.WriteAllLines(tuPath, includes.Concat(typed.Integers.Select(i => ConstantReader.ValueProbe(i.Name, i.Underlying))));
-                values = ConstantReader.ReadValues(JsonNode.Parse(RunAstDump(zig, tuPath, request.IncludeDirs, "-std=c23"))!.AsObject());
+                var integers = typed.Integers;
+                values = ConstantReader.ReadValues(JsonNode.Parse(Probed(tuPath, includes, ref integers, i => ConstantReader.ValueProbe(i.Name, i.Underlying),
+                    () => RunAstDump(zig, tuPath, request.IncludeDirs, "-std=c23")))!.AsObject());
             }
         }
         finally
@@ -70,7 +71,6 @@ public static class Extraction
         foreach (var i in typed.Integers)
         {
             if (values.TryGetValue(i.Name, out var v)) byName[i.Name] = new ApiConstant(i.Name, i.Spelled, v, null, i.Doc);
-            else errors.Add($"{i.Name}: clang folded no value for the macro");
         }
         api.Constants.AddRange(typed.Order.Where(byName.ContainsKey).Select(n => byName[n]));
         if (errors.Count > 0)
@@ -103,6 +103,26 @@ public static class Extraction
             if (File.Exists(candidate)) return candidate;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Runs a dump of a translation unit holding one probe per item, dropping each item whose probe
+    /// does not compile: a macro that does not expand to a value is simply no constant.
+    /// </summary>
+    static string Probed<T>(string tuPath, IReadOnlyList<string> includes, ref List<T> items, Func<T, string> probe, Func<string> dump)
+    {
+        while (true)
+        {
+            File.WriteAllLines(tuPath, includes.Concat(items.Select(probe)));
+            try { return dump(); }
+            catch (InvalidOperationException e)
+            {
+                var failed = System.Text.RegularExpressions.Regex.Matches(e.Message, @"tu\.c:(\d+):\d+: error")
+                    .Select(m => int.Parse(m.Groups[1].Value) - includes.Count - 1).Where(i => i >= 0).ToHashSet();
+                if (failed.Count == 0) throw;
+                items = items.Where((_, i) => !failed.Contains(i)).ToList();
+            }
+        }
     }
 
     static string RunAstDump(string zig, string tuPath, IReadOnlyList<string> includeDirs, params string[] dialect)
