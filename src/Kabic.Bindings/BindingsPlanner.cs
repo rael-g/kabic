@@ -251,7 +251,7 @@ public static class BindingsPlanner
                 name, nativeDir, b["output"]!.GetValue<string>(), ns, library,
                 dirs.Select(Rel).ToList(), file, umbrellaBody,
                 traversed.OrderBy(Repo, StringComparer.Ordinal).Select(Rel).ToList(),
-                extra, remaps, excludes.OrderBy(x => x, StringComparer.Ordinal).ToList(), config,
+                extra, [.. remaps, "__va_list_tag=void"], excludes.OrderBy(x => x, StringComparer.Ordinal).ToList(), config,
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass));
         }
 

@@ -66,13 +66,18 @@ public static class Serialization
     }
 
     /// <summary>The description of one parameter.</summary>
-    public static JsonObject ToJson(this ApiParam p) => new()
+    public static JsonObject ToJson(this ApiParam p)
     {
-        ["name"] = p.Name,
-        ["type"] = p.Type,
-        ["tags"] = new JsonArray(p.Tags.Select(t => (JsonNode)t).ToArray()),
-        ["doc"] = p.Doc,
-    };
+        var o = new JsonObject
+        {
+            ["name"] = p.Name,
+            ["type"] = p.Type,
+            ["tags"] = new JsonArray(p.Tags.Select(t => (JsonNode)t).ToArray()),
+            ["doc"] = p.Doc,
+        };
+        if (p.Callback is { } callback) o["callback"] = callback;
+        return o;
+    }
 
     /// <summary>
     /// Writes an enumerator as an object with its name, its value and its documentation. The value

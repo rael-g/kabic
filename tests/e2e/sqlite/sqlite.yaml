@@ -1,5 +1,5 @@
-sqlite3_row_fn:
-  ctx: context
+sqlite3_exec_callback:
+  arg1: context
 
 sqlite3_open:
   return: result
@@ -10,6 +10,6 @@ sqlite3_close:
 
 sqlite3_exec:
   return: result
-  callback: closure:ctx
-  ctx: context
+  callback: closure:arg4
+  arg4: context
   errmsg: out

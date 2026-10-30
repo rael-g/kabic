@@ -6,6 +6,9 @@ namespace Kabic;
 /// </summary>
 public record ApiParam(string? Name, string Type, IReadOnlyList<string> Tags, string? Doc)
 {
+    /// <summary>The callback describing a function pointer written inline in the parameter.</summary>
+    public string? Callback { get; init; }
+
     /// <summary>
     /// Whether the parameter carries <paramref name="tag"/>, with or without a value.
     /// </summary>
@@ -236,6 +239,9 @@ public class ApiModel
     /// </summary>
     public ApiCallback? CallbackOf(string type) => Callbacks.FirstOrDefault(c => c.Name == type.Trim());
 
+    /// <summary>The callback a parameter carries, inline or through a typedef.</summary>
+    public ApiCallback? CallbackOf(ApiParam p) => CallbackOf(p.Callback ?? p.Type);
+
     /// <summary>
     /// Typedefs that resolve to a plain C primitive (<c>ke_entity</c> -&gt; <c>uint64_t</c>),
     /// which every writer must see through — a language with no typedef concept has
@@ -413,7 +419,7 @@ public static class ApiReader
         o[key]?.AsArray().Select(t => t!.GetValue<string>()).ToList() ?? [];
 
     static ApiParam ReadParam(System.Text.Json.Nodes.JsonObject o) => new(Str(o, "name"), Str(o, "type")!,
-        WithText(Str(o, "type")!, o["tags"]!.AsArray().Select(t => t!.GetValue<string>()).ToList()), Str(o, "doc"));
+        WithText(Str(o, "type")!, o["tags"]!.AsArray().Select(t => t!.GetValue<string>()).ToList()), Str(o, "doc")) { Callback = Str(o, "callback") };
 
     static List<string> WithText(string type, List<string> tags)
     {

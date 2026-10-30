@@ -580,9 +580,12 @@ public static class CSharpWriter
     {
         if (!CTypes.IsPointer(cType)) return null;
         if (Pointee(model, cType) is not { } target) return "nint";
-        if (target.IsVtable && !target.Has("bag")) return Idioms.NativeInterface(target.Name, convention);
+        if (HasInterface(model, target)) return Idioms.NativeInterface(target.Name, convention);
         return ByValue(cType, target) ? Idioms.TypeName(target.Name, convention) : "nint";
     }
+
+    static bool HasInterface(ApiModel model, ApiStruct target) =>
+        target.IsVtable && !target.Has("bag") && (target.External || model.OwnerOf(target.Name) is not null);
 
     static bool ByValue(string cType, ApiStruct target) =>
         (IsPlain(target) || target.Has("view")) && CType.Of(cType).Const;
@@ -594,7 +597,7 @@ public static class CSharpWriter
         if (IsOptionalValue(model, p))
             return $"{name}.HasValue ? ({native})Unsafe.AsPointer(ref Unsafe.AsRef(in Nullable.GetValueRefOrDefaultRef(in {name}))) : null";
         return Pointee(model, p.Type) is { } target
-            ? target.IsVtable && !target.Has("bag") ? $"{name}.Native" : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
+            ? HasInterface(model, target) ? $"{name}.Native" : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
             : $"({native}){name}";
     }
 
@@ -1403,7 +1406,7 @@ public static class CSharpWriter
                 ?? throw new InvalidOperationException(
                     $"{slot.Name}.{fn.Name}: [closure:{ctxName}] names no parameter of this slot");
 
-            var callback = model.CallbackOf(fn.Type)
+            var callback = model.CallbackOf(fn)
                 ?? throw new InvalidOperationException(
                     $"{slot.Name}.{fn.Name}: [closure] needs a function-pointer typedef, but {fn.Type.Trim()} is not one");
 
@@ -1508,7 +1511,7 @@ public static class CSharpWriter
             ?? throw new InvalidOperationException(
                 $"{slot.Name}.{fn.Name}: [completion:{ctxName}] names no parameter of this slot");
 
-        var callback = model.CallbackOf(fn.Type)
+        var callback = model.CallbackOf(fn)
             ?? throw new InvalidOperationException(
                 $"{slot.Name}.{fn.Name}: [completion] needs a function-pointer typedef, but"
                 + $" {fn.Type.Trim()} is not one");

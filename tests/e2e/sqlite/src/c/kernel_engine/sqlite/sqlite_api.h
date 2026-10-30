@@ -8,16 +8,6 @@ extern "C" {
 typedef struct sqlite3 sqlite3;
 
 /**
- * Called once per row.
- * @param ctx Opaque.
- * @param columns Column count.
- * @param values Column values.
- * @param names Column names.
- * @return 0 to go on.
- */
-typedef int (*sqlite3_row_fn)(void *ctx, int columns, char **values, char **names);
-
-/**
  * Opens a database.
  * @param filename Path.
  * @param ppDb The database.
@@ -37,11 +27,10 @@ int sqlite3_close(sqlite3 *db);
  * @param db The database.
  * @param sql Statements.
  * @param callback Per row.
- * @param ctx Opaque.
  * @param errmsg Error text.
  * @return 0 on success.
  */
-int sqlite3_exec(sqlite3 *db, const char *sql, sqlite3_row_fn callback, void *ctx, char **errmsg);
+int sqlite3_exec(sqlite3 *db, const char *sql, int (*callback)(void *, int, char **, char **), void *, char **errmsg);
 
 /** @return The library version. */
 const char *sqlite3_libversion(void);

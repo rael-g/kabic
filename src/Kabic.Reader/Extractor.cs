@@ -76,7 +76,8 @@ public static class Extractor
                     break;
 
                 case "FunctionDecl" when name is not null && name.StartsWith(symbolPrefix, StringComparison.Ordinal) && HasSymbol(node):
-                    api.Functions.Add(ExtractFunction(node, name, errors));
+                    if (TakesVaList(node)) Console.Error.WriteLine($"{name}: skipped, a va_list has no projection");
+                    else api.Functions.Add(ExtractFunction(node, name, errors, api));
                     break;
 
                 case "VarDecl" when name is not null && node["storageClass"]?.GetValue<string>() == "extern" && HasSymbol(node):
@@ -203,7 +204,7 @@ public static class Extractor
             var slotParams = new List<ApiParam>();
             for (var i = 1; i < paramTypes.Count; i++)
             {
-                var pname = i < pnames.Count ? pnames[i] : null;
+                var pname = (i < pnames.Count ? pnames[i] : null) ?? UnnamedParameter(i - 1);
                 var (tags, doc) = pname is not null && pdocs.TryGetValue(pname, out var d)
                     ? (d.Tags, d.Doc) : ([], "");
                 slotParams.Add(new ApiParam(pname, paramTypes[i], tags, doc.Length > 0 ? doc : null));
@@ -247,7 +248,7 @@ public static class Extractor
 
         var lanes = types.Skip(1).Select((type, i) =>
         {
-            var laneName = laneNames.TryGetValue(i, out var n) ? n : null;
+            var laneName = laneNames.TryGetValue(i, out var n) ? n : UnnamedParameter(i);
             var (tags, doc) = laneName is not null && pdocs.TryGetValue(laneName, out var d)
                 ? (d.Tags, d.Doc) : ([], "");
             return new ApiParam(laneName, type, tags, doc.Length > 0 ? doc : null);
@@ -290,7 +291,32 @@ public static class Extractor
     /// </summary>
     static bool HasSymbol(JsonObject node) => node["storageClass"]?.GetValue<string>() != "static";
 
-    static ApiFunction ExtractFunction(JsonObject node, string name, List<string> errors)
+    /// <summary>
+    /// The name of a parameter the declaration leaves unnamed, by its position from one, so a tag
+    /// and a <c>[closure:]</c> reach it the way they reach a named one.
+    /// </summary>
+    static string UnnamedParameter(int index) => $"arg{index + 1}";
+
+    static bool TakesVaList(JsonObject node) =>
+        ((node["inner"] as JsonArray) ?? []).Any(c => c!["kind"]?.GetValue<string>() == "ParmVarDecl"
+            && c["type"]?.AsObject()["qualType"]?.GetValue<string>() is { } t
+            && (t.Contains("va_list") || t.Contains("__va_list_tag")));
+
+    /// <summary>
+    /// Describes a function pointer written inline in a parameter as the callback
+    /// <c>function_parameter</c>, and returns that name, or null for any other type.
+    /// </summary>
+    static string? InlineCallback(ApiModel api, string function, string parameter, string type)
+    {
+        var (returns, lanes) = CTypes.FunctionPointer(type);
+        if (returns is null) return null;
+        var name = $"{function}_{parameter}";
+        api.Callbacks.Add(new ApiCallback(name, returns, null,
+            lanes.Select((lane, i) => new ApiParam(UnnamedParameter(i), lane, [], null)).ToList()));
+        return name;
+    }
+
+    static ApiFunction ExtractFunction(JsonObject node, string name, List<string> errors, ApiModel api)
     {
         var (_, summary, pdocs, retTags, retDoc) = DocParser.Parse(node);
         var paramDecls = ((node["inner"] as JsonArray) ?? [])
@@ -304,12 +330,12 @@ public static class Extractor
         }
 
         var returns = (node["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "").Split('(')[0].Trim();
-        var parameters = paramDecls.Select(p =>
+        var parameters = paramDecls.Select((p, i) =>
         {
-            var pname = p["name"]?.GetValue<string>() ?? "";
+            var pname = p["name"]?.GetValue<string>() ?? UnnamedParameter(i);
             var ptype = p["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "";
             var (tags, doc) = pdocs.TryGetValue(pname, out var d) ? (d.Tags, d.Doc) : ([], "");
-            return new ApiParam(pname, ptype, tags, doc.Length > 0 ? doc : null);
+            return new ApiParam(pname, ptype, tags, doc.Length > 0 ? doc : null) { Callback = InlineCallback(api, name, pname, ptype) };
         }).ToList();
 
         return new ApiFunction(name, returns, summary.Length > 0 ? summary : null,
