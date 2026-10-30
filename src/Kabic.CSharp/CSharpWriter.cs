@@ -308,7 +308,9 @@ public static class CSharpWriter
     static string ReturnType(ApiModel model, string cType, Convention convention) =>
         model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
-            : PointerToView(model, cType, convention) ?? CsType(model, cType, convention);
+            : Pointee(model, cType) is { } s && (IsPlain(s) || s.Has("view")) ? Idioms.TypeName(s.Name, convention)
+            : CTypes.IsPointer(cType) ? "nint"
+            : CsType(model, cType, convention);
 
     /// <summary>
     /// The cast carrying the ABI's answer into what <see cref="ReturnType"/> spells, or
@@ -317,7 +319,8 @@ public static class CSharpWriter
     static string ReturnCast(ApiModel model, string cType, Convention convention) =>
         model.Enums.Any(e => e.Name == cType.Trim())
             ? $"({Idioms.TypeName(cType.Trim(), convention)})"
-            : PointerToView(model, cType, convention) is { } view ? $"({view})"
+            : Pointee(model, cType) is { } s && (IsPlain(s) || s.Has("view")) ? $"*({Idioms.TypeName(s.Name, convention)}*)"
+            : CTypes.IsPointer(cType) ? "(nint)"
             : "";
 
     /// <summary>
@@ -544,7 +547,31 @@ public static class CSharpWriter
         if (p.Has("rooted")) return "object";
         if (model.Enums.Any(e => e.Name == p.Type.Trim()))
             return Idioms.TypeName(p.Type.Trim(), convention);
-        return PointerToView(model, p.Type, convention) ?? CsType(model, p.Type, convention);
+        return Passed(model, p.Type, convention) ?? CsType(model, p.Type, convention);
+    }
+
+    static ApiStruct? Pointee(ApiModel model, string cType) =>
+        CTypes.IsPointer(cType) ? model.Structs.FirstOrDefault(s => s.Name == StripQualifiers(CTypes.Deref(cType)).Trim()) : null;
+
+    /// <summary>
+    /// How a pointer reaches a caller without a pointer: a struct by value, a vtable through its
+    /// native interface, anything else as an opaque nint. Null for what is no pointer.
+    /// </summary>
+    static string? Passed(ApiModel model, string cType, Convention convention)
+    {
+        if (!CTypes.IsPointer(cType)) return null;
+        if (Pointee(model, cType) is not { } target) return "nint";
+        if (target.IsVtable && !target.Has("bag")) return Idioms.NativeInterface(target.Name, convention);
+        return IsPlain(target) || target.Has("view") ? Idioms.TypeName(target.Name, convention) : "nint";
+    }
+
+    static string PassedArgument(ApiModel model, ApiParam p, Convention convention)
+    {
+        var name = Idioms.Ident(p.Name!);
+        var native = NativePointerType(model, p.Type, convention);
+        return Pointee(model, p.Type) is { } target
+            ? target.IsVtable && !target.Has("bag") ? $"{name}.Native" : IsPlain(target) || target.Has("view") ? $"({native})&{name}" : $"({native}){name}"
+            : $"({native}){name}";
     }
 
     /// <summary>
@@ -1321,6 +1348,7 @@ public static class CSharpWriter
 
     static string ManagedLane(ApiModel model, ApiParam lane, string selfType, Convention convention) =>
         IsOwnerLane(lane, selfType, convention) ? selfType
+        : CTypes.IsPointer(lane.Type) && !lane.Has("utf8") ? "nint"
         : lane.Has("utf8") ? "string"
         : IsBoolType(lane.Type, convention) ? "bool"
         : CsType(model, lane.Type, convention);
@@ -2371,12 +2399,11 @@ public static class CSharpWriter
             : p.Has("provider") ? $"{Idioms.Ident(p.Name!)}.Native"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"
-            : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({p.Type.Trim()}){Idioms.Ident(p.Name!)}"
+            : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"
             : p.Has("enum") && CTypes.IsPointer(p.Type) ? $"({p.Type.Trim()}){Idioms.Ident(p.Name!)}"
             : p.Has("enum") ? $"({Idioms.CsPrimitive(p.Type, convention)}){Idioms.Ident(p.Name!)}"
-            : PointerToView(model, p.Type, convention) is not null
-                ? $"({NativePointerType(model, p.Type, convention)}){Idioms.Ident(p.Name!)}"
             : UntypedPointer(p.Type) is string cast ? $"({cast}){Idioms.Ident(p.Name!)}"
+            : CTypes.IsPointer(p.Type) ? PassedArgument(model, p, convention)
             : Idioms.Ident(p.Name!);
     }
 

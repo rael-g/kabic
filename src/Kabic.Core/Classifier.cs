@@ -270,7 +270,7 @@ public static class Classifier
                 ? bag!.Fields.Select(f => new ApiParam(f.Name, f.Type, f.Tags, f.Doc))
                 : (IEnumerable<ApiParam>)[p]).ToList();
 
-        var isTry = slot.Has("try");
+        var isTry = convention.BooleanReturnTypes.Contains(slot.Returns.Trim()) && ps.Any(p => p.Has("out"));
 
         var sequences = new List<SequencePair>();
         foreach (var seq in ps.Where(p => p.Has("array_of")))

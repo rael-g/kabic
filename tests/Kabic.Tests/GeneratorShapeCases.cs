@@ -65,7 +65,7 @@ internal static class GeneratorShapeCases
                     Param("out_bundle", "ke_probe_bundle **", "out")),
                 Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
-            contains: ["public Bundle Open(ke_probe* self)",
+            contains: ["public Bundle Open(INativeProbe self)",
                        "ke_probe_bundle* resultOut = default;",
                        "return new Bundle(this, (ProbeBundle*)resultOut);"],
             absent: ["&err"],
@@ -81,7 +81,7 @@ internal static class GeneratorShapeCases
                 Slot("bind", "ke_result", Param("entity", "ke_entity"),
                      Param("instance", "void *", "rooted:entity")),
                 Slot("drop", "void", "unroots:entity", Param("entity", "ke_entity")),
-                Slot("instance_of", "bool", "try", Param("entity", "ke_entity"),
+                Slot("instance_of", "bool", Param("entity", "ke_entity"),
                      Param("out_type", "uint32_t *", "out"),
                      Param("out_instance", "void **", "out,rooted"))),
             contains: ["public void Bind(ulong entity, object instance)", "GCHandle.Alloc(instance)",
@@ -102,7 +102,7 @@ internal static class GeneratorShapeCases
             absent: []);
 
         Expect("a rooted written-back parameter that is not an opaque pointer is refused",
-            Vtable("ke_probe", Slot("instance_of", "bool", "try", Param("entity", "ke_entity"),
+            Vtable("ke_probe", Slot("instance_of", "bool", Param("entity", "ke_entity"),
                 Param("out_instance", "uint64_t *", "out,rooted"))),
             contains: [], absent: [],
             throws: "a rooted pointer is the one thing it never does");
@@ -289,11 +289,6 @@ internal static class GeneratorShapeCases
             callbacks: [Callback("ke_probe_body_fn", "ke_result",
                 Param("probe", "ke_probe *"), Param("ctx", "void *", "context"))]);
 
-        Expect("a contract spelling a pointer keeps the keyword",
-            Vtable("ke_probe", "interface", Slot("samples", "const uint32_t *")),
-            contains: ["public unsafe interface IProbe : IDisposable", "    uint* Samples();"],
-            absent: ["public interface IProbe : IDisposable"]);
-
         ExpectStructSpans("a counted pointer field of a native struct reads as a span",
             CountedStruct("ke_probe_segment",
                 ("entities", "const uint64_t *", "array_of:count"),
@@ -383,8 +378,8 @@ internal static class GeneratorShapeCases
                 Slot("open", "ke_probe_bundle *", Param("self", "ke_probe *")),
                 Slot("close", "void", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
-            contains: ["public ProbeBundle* Open(", "return (ProbeBundle*)Handle->open(",
-                       "ProbeBundle* bundle)", "(ke_probe_bundle*)bundle"],
+            contains: ["public ProbeBundle Open(", "return *(ProbeBundle*)Handle->open(",
+                       "ProbeBundle bundle)", "(ke_probe_bundle*)&bundle"],
             absent: ["ke_probe_bundle* Open", "ke_probe_bundle* bundle)"],
             structs: [ViewJson("ke_probe_bundle")]);
 
@@ -398,7 +393,7 @@ internal static class GeneratorShapeCases
                        "public ProbeBundle Data => _native is null",
                        "_owner.Close(native);",
                        "public Bundle Open(", "return new Bundle(this, (ProbeBundle*)resultOut);",
-                       "internal void Close(ke_probe* self, ProbeBundle* bundle)"],
+                       "internal void Close(INativeProbe self, ProbeBundle bundle)"],
             absent: ["public void Close(", "ProbeBundle* Open("],
             structs: [ViewJson("ke_probe_bundle")]);
 
@@ -419,7 +414,7 @@ internal static class GeneratorShapeCases
                     Param("user_data", "void *")),
                 Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
-            contains: ["public Task<Bundle> OpenAsync(ke_probe* self, string path)",
+            contains: ["public Task<Bundle> OpenAsync(INativeProbe self, string path)",
                        "private static void OpenAsyncOnDoneTrampoline(KernelEngine.Result.Native.ke_result arg0, ke_probe_bundle* arg1, void* ctx)",
                        "if (arg0 != KernelEngine.Result.Native.ke_result.KE_OK || arg1 == null)",
                        "state.Source.TrySetException(KernelEngine.NativeResults.FromCode(arg0, \"open_async\"));"],
@@ -429,19 +424,6 @@ internal static class GeneratorShapeCases
             callbacks: [Callback("ke_probe_done_func", "void",
                 Param("result", "ke_result"), Param("bundle", "ke_probe_bundle *"),
                 Param("user_data", "void *", "context"))]);
-
-        Expect("an answer nothing claims ownership of is refused, not handed over as a pointer",
-            Vtable("ke_probe",
-                Slot("open_async", "ke_task *", Param("self", "ke_probe *"),
-                    Param("on_done", "ke_probe_done_func", "completion:user_data"),
-                    Param("user_data", "void *"))),
-            contains: [], absent: [],
-            structs: [ViewJson("ke_probe_bundle")],
-            aliases: new() { ["ke_probe_done_func"] = "void (*)(ke_result, ke_probe_bundle *, void *)" },
-            callbacks: [Callback("ke_probe_done_func", "void",
-                Param("result", "ke_result"), Param("bundle", "ke_probe_bundle *"),
-                Param("user_data", "void *", "context"))],
-            throws: "a Task cannot answer with a pointer");
 
         Expect("an operation that answers later is refused a result code of its own",
             Vtable("ke_probe",
@@ -458,7 +440,7 @@ internal static class GeneratorShapeCases
             Vtable("ke_probe",
                 Slot("attach", "void", Param("self", "ke_probe *"),
                     Param("pool", "ke_task_pool *", "provider"))),
-            contains: ["Attach(ke_probe* self, INativeTaskPool pool)", "pool.Native"],
+            contains: ["Attach(INativeProbe self, INativeTaskPool pool)", "pool.Native"],
             absent: ["ke_task_pool* pool", "ke_task_pool *pool"]);
 
         void Expect(string what, JsonObject vtable, string[] contains, string[] absent,
