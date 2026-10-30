@@ -28,6 +28,16 @@ public static class Idioms
         ["uint8_t"] = "byte",
         ["int8_t"] = "sbyte",
         ["char"] = "sbyte",
+        ["signed char"] = "sbyte",
+        ["unsigned char"] = "byte",
+        ["short"] = "short",
+        ["unsigned short"] = "ushort",
+        ["int"] = "int",
+        ["unsigned int"] = "uint",
+        ["long"] = "nint",
+        ["unsigned long"] = "nuint",
+        ["long long"] = "long",
+        ["unsigned long long"] = "ulong",
     };
 
     static readonly HashSet<string> CsKeywords = ["event", "base", "params", "object", "string", "lock",
@@ -46,7 +56,7 @@ public static class Idioms
     {
         if (s.Length == 0) return s;
         return string.Concat(s.Split('_').Where(p => p.Length > 0)
-            .Select(p => char.ToUpperInvariant(p[0]) + p[1..].ToLowerInvariant()));
+            .Select(p => char.ToUpperInvariant(p[0]) + (p.Any(char.IsLower) ? p[1..] : p[1..].ToLowerInvariant())));
     }
 
     /// <summary>

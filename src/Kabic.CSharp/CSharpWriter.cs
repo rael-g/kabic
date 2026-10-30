@@ -298,7 +298,8 @@ public static class CSharpWriter
     /// depending on which side of the slot it sits on.
     /// </summary>
     static string ReturnType(ApiModel model, string cType, Convention convention) =>
-        model.Enums.Any(e => e.Name == cType.Trim())
+        CType.Of(cType) is { Name: "char", Const: true, Pointers: 1 } ? "string"
+        : model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
             : Pointee(model, cType) is { } s && ByValue(cType, s) ? Idioms.TypeName(s.Name, convention)
             : CTypes.IsPointer(cType) ? "nint"
@@ -2338,6 +2339,11 @@ public static class CSharpWriter
                     foreach (var op in cs.TrailingOuts)
                         o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local;");
                     var pCall = Call(slot, call);
+                    if (retType == "string")
+                    {
+                        pCall = $"Marshal.PtrToStringUTF8((nint){pCall}) ?? \"\"";
+                        needsCast = "";
+                    }
                     var pHolds = cs.TrailingOuts.Count > 0;
                     if (spanElement is not null)
                     {
