@@ -11,7 +11,6 @@ public sealed class ConventionBuilder
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
     string commonManagedNamespace = "";
     string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "";
-    readonly Dictionary<string, string> handleTypes = [], typeNames = [];
     readonly Dictionary<string, Dictionary<string, string>> typeMap = [];
 
     /// <summary>
@@ -65,22 +64,6 @@ public sealed class ConventionBuilder
     }
 
     /// <summary>
-    /// A C owner-wrapper handle type and the managed type a caller holds instead.
-    /// </summary>
-    public ConventionBuilder AddHandleType(string cType, string managed)
-    {
-        handleTypes[cType] = managed;
-        return this;
-    }
-
-    /// <summary>A target-language name for a symbol whose derived name is unusable.</summary>
-    public ConventionBuilder AddTypeName(string symbol, string name)
-    {
-        typeNames[symbol] = name;
-        return this;
-    }
-
-    /// <summary>
     /// Builds the <see cref="Convention"/> from the facts declared so far, without checking them.
     /// </summary>
     /// <returns>
@@ -99,8 +82,6 @@ public sealed class ConventionBuilder
         ResultOk = resultOk,
         ResultManagedType = resultManagedType,
         ResultHelperClass = resultHelperClass,
-        HandleTypes = new Dictionary<string, string>(handleTypes),
-        TypeNameOverrides = new Dictionary<string, string>(typeNames),
         TypeMap = typeMap.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(kv.Value)),
     };
 }

@@ -895,7 +895,7 @@ public static class CSharpWriter
     /// </summary>
     static string ValueTypeName(ApiModel model, string cType, Convention convention) =>
         convention.Project(Languages.CSharp, cType) is { } mat ? mat
-        : convention.HandleTypes.TryGetValue(cType.Trim(), out var handle) ? handle
+        : convention.Project(Languages.CSharp, cType) is { } handle ? handle
         : model.Structs.Any(v => v.Name == cType.Trim() && (IsValue(v) || IsBorrowed(v)))
         || model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)

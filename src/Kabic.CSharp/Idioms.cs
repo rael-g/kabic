@@ -99,9 +99,12 @@ public static class Idioms
         "INative" + Pascal(convention.StripPrefix(vtable));
 
     public static string TypeName(string name, Convention convention) =>
-        convention.TypeNameOverrides.TryGetValue(name, out var overridden)
-            ? overridden
+        convention.Spell(TypeNames, name) is var spelled && spelled != name
+            ? spelled
             : Pascal(convention.StripPrefix(name));
+
+    /// <summary>The rules that spell a type's name, by the name <see cref="Convention.Spell"/> takes.</summary>
+    public const string TypeNames = "csharp-type";
 
     /// <summary>
     /// The C# spelling of a C scalar type name: the convention's byte-boolean type is <c>bool</c>,

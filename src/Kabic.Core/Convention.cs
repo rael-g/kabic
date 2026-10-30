@@ -52,15 +52,6 @@ public sealed class Convention
     public bool SignalsFailureByReturn(string returns) => BooleanReturnTypes.Contains(returns) || ReturnsResult(returns);
 
     /// <summary>
-    /// Explicit target-language type names for ABI symbols whose derived name is
-    /// unusable — chiefly a vtable whose name matches its own namespace's last
-    /// segment (<c>ke_ecs</c> in <c>KernelEngine.Ecs</c> would derive to
-    /// <c>Ecs</c>, forcing every reference to be fully qualified).
-    /// </summary>
-    public IReadOnlyDictionary<string, string> TypeNameOverrides { get; init; } =
-        new Dictionary<string, string>();
-
-    /// <summary>
     /// Strips <see cref="SymbolPrefix"/> from a symbol, leaving the rest untouched.
     /// </summary>
     public string StripPrefix(string name) =>
@@ -104,9 +95,6 @@ public sealed class Convention
     /// </summary>
     public string CommonManagedNamespace { get; init; } = "";
 
-    /// <summary>C owner-wrapper handle types and the managed type a caller holds instead.</summary>
-    public IReadOnlyDictionary<string, string> HandleTypes { get; init; } = new Dictionary<string, string>();
-
     /// <summary>
     /// The target type a C type is written as, by language: a spelling, whose layout is the
     /// declarer's to keep equal to the C type's.
@@ -137,10 +125,6 @@ public sealed class Convention
             builder.Result(Text(json, "resultType"), Text(json, "resultOk"), Text(json, "resultManagedType"),
                 Text(json, "resultHelperClass"));
 
-        foreach (var (cType, managed) in json["handleTypes"]?.AsObject() ?? [])
-            builder.AddHandleType(cType, managed!.GetValue<string>());
-        foreach (var (symbol, name) in json["typeNameOverrides"]?.AsObject() ?? [])
-            builder.AddTypeName(symbol, name!.GetValue<string>());
         foreach (var (language, rules) in json["names"]?.AsObject() ?? [])
             foreach (var rule in rules!.AsArray())
                 builder.AddNameRule(language, rule!["match"]!.GetValue<string>(), rule["replace"]!.GetValue<string>());
