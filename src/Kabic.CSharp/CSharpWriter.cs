@@ -526,7 +526,6 @@ public static class CSharpWriter
 
     static string CsParamType(ApiModel model, ApiParam p, Convention convention)
     {
-        if (p.Has("provider")) return ProviderInterface(p, convention);
         var tagEnum = p.TagValue("enum");
         if (tagEnum is not null)
         {
@@ -1004,7 +1003,7 @@ public static class CSharpWriter
         var decls = domainIface is null ? null : new List<MemberDecl>();
 
         var contractNamesForeignProjections = vtable.Slots
-            .Any(s => s.Params.Any(p => p.Has("provider")));
+            .Any(s => s.Params.Any(p => Pointee(model, p.Type) is { IsVtable: true }));
 
         var contract = domainIface is null ? null : new List<string> { Header };
         if (contract is not null)
@@ -2390,7 +2389,6 @@ public static class CSharpWriter
                 ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
-            : p.Has("provider") ? $"{Idioms.Ident(p.Name!)}.Native"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"

@@ -143,7 +143,7 @@ public sealed class FactoriesExtension : IKabicExtension
     {
         var name = Idioms.Ident(field.Name);
         var type = CTypes.Unqualified(field.Type);
-        if (field.Has("provider") && type.EndsWith('*'))
+        if (type.EndsWith('*') && context.Domains.Any(d => d.Model.Structs.Any(s => s.Name == type.TrimEnd('*', ' ') && s.IsVtable)))
         {
             var target = type.TrimEnd('*', ' ');
             var domain = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == target && !s.External));

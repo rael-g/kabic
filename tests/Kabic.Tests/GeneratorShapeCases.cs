@@ -436,12 +436,12 @@ internal static class GeneratorShapeCases
                 Param("result", "ke_result"), Param("user_data", "void *", "context"))],
             throws: "a value is not something this form may drop");
 
-        Expect("[provider] asks for another domain's projection, not the pointer inside it",
+        Expect("a pointer to a vtable reaches the caller as its native interface",
             Vtable("ke_probe",
                 Slot("attach", "void", Param("self", "ke_probe *"),
-                    Param("pool", "ke_task_pool *", "provider"))),
-            contains: ["Attach(INativeProbe self, INativeTaskPool pool)", "pool.Native"],
-            absent: ["ke_task_pool* pool", "ke_task_pool *pool"]);
+                    Param("peer", "ke_probe *"))),
+            contains: ["Attach(INativeProbe self, INativeProbe peer)", "peer.Native"],
+            absent: ["ke_probe* peer"]);
 
         void Expect(string what, JsonObject vtable, string[] contains, string[] absent,
             Dictionary<string, string>? aliases = null, JsonObject[]? callbacks = null,
