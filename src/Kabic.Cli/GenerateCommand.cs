@@ -54,14 +54,6 @@ internal static class GenerateCommand
 
         if (options.Domains.Count == 0)
         {
-            if (convention.ResultCodesOut.Length > 0)
-            {
-                var codesFile = Place(convention.ResultCodesOut);
-                Directory.CreateDirectory(Path.GetDirectoryName(codesFile)!);
-                File.WriteAllText(codesFile, Generation.ResultCodes(convention));
-                Console.WriteLine("result codes: regenerated");
-            }
-
             IReadOnlyDictionary<string, string> emitted;
             try
             {

@@ -10,10 +10,7 @@ public sealed class ConventionBuilder
     readonly Dictionary<string, List<(System.Text.RegularExpressions.Regex, string)>> nameRules = [];
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
     string commonManagedNamespace = "";
-    string resultAbiHeader = "";
-    IReadOnlyList<string> resultAbiIncludeDirs = [];
-    string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "", resultCodesOut = "";
-    readonly List<ResultCodeSpec> resultCodes = [];
+    string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "";
     readonly Dictionary<string, string> handleTypes = [], typeNames = [];
     readonly Dictionary<string, Dictionary<string, string>> typeMap = [];
 
@@ -55,30 +52,9 @@ public sealed class ConventionBuilder
     /// means success, the managed type the bindings declare for it, and the class that turns a code
     /// into an exception, the last two fully qualified.
     /// </summary>
-    public ConventionBuilder Result(string cType, string ok, string managedType, string helperClass, string codesOut = "")
+    public ConventionBuilder Result(string cType, string ok, string managedType, string helperClass)
     {
-        (resultType, resultOk, resultManagedType, resultHelperClass, resultCodesOut) = (cType, ok, managedType, helperClass, codesOut);
-        return this;
-    }
-
-    /// <summary>
-    /// The header that declares the result type and its codes, relative to the repository root,
-    /// and the include directories it is read with.
-    /// </summary>
-    public ConventionBuilder ResultAbi(string header, IEnumerable<string> includeDirs)
-    {
-        (resultAbiHeader, resultAbiIncludeDirs) = (header, includeDirs.ToList());
-        return this;
-    }
-
-    /// <summary>
-    /// Declares the exception a code reads as on the managed side. With <paramref name="extends"/>,
-    /// kabic declares <paramref name="managed"/> as a new exception type deriving from it. A code
-    /// never declared reads as the general exception.
-    /// </summary>
-    public ConventionBuilder AddResultCode(string code, string managed, string? extends = null)
-    {
-        resultCodes.Add(new ResultCodeSpec(code, managed, extends));
+        (resultType, resultOk, resultManagedType, resultHelperClass) = (cType, ok, managedType, helperClass);
         return this;
     }
 
@@ -123,14 +99,10 @@ public sealed class ConventionBuilder
         CommonBindingsNamespace = commonBindingsNamespace,
         BindingsMethodsClass = bindingsMethodsClass,
         CommonManagedNamespace = commonManagedNamespace,
-        ResultAbiHeader = resultAbiHeader,
-        ResultAbiIncludeDirs = resultAbiIncludeDirs,
         ResultType = resultType,
         ResultOk = resultOk,
         ResultManagedType = resultManagedType,
         ResultHelperClass = resultHelperClass,
-        ResultCodesOut = resultCodesOut,
-        ResultCodes = resultCodes.ToList(),
         HandleTypes = new Dictionary<string, string>(handleTypes),
         TypeNameOverrides = new Dictionary<string, string>(typeNames),
         TypeMap = typeMap.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(kv.Value)),

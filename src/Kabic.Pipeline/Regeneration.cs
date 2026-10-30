@@ -39,18 +39,6 @@ public static class Regeneration
     }
 
     /// <summary>
-    /// Extracts the result header of the convention, resolved under the root directory, and
-    /// returns its model.
-    /// </summary>
-    public static ApiModel ExtractResultAbi(Convention convention, string rootDir, string? zig)
-    {
-        string Rooted(string path) => Path.Combine(rootDir, path);
-        var json = Extraction.Run(new Extraction.Request([Rooted(convention.ResultAbiHeader)],
-            convention.ResultAbiIncludeDirs.Select(Rooted).ToList(), [], zig, convention));
-        return ApiReader.Read(System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject());
-    }
-
-    /// <summary>
     /// Extracts the headers of one domain and returns their API as JSON.
     /// </summary>
     public static string ExtractOne(DomainSpec spec, string rootDir, string? zig, Convention convention) =>

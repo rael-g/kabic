@@ -1,12 +1,6 @@
 namespace Kabic;
 
 /// <summary>
-/// One result code the ABI names on the managed side: the constant, and the exception a caller
-/// catches for it, declared by kabic as deriving from <paramref name="Extends"/> when that is given.
-/// </summary>
-public sealed record ResultCodeSpec(string Code, string Managed, string? Extends);
-
-/// <summary>
 /// The naming and shape conventions of the C ABI being compiled: everything <c>kabic</c> knows
 /// about its consumer that is not intrinsic to C itself.
 /// </summary>
@@ -108,14 +102,7 @@ public sealed class Convention
     /// </summary>
     public string ResultHelperClass { get; init; } = "";
 
-    /// <summary>
-    /// Path, relative to the repository root, of the generated file that maps each result code to
-    /// its exception.
-    /// </summary>
-    public string ResultCodesOut { get; init; } = "";
 
-    /// <summary>The codes whose managed exception the ABI names, in declaration order.</summary>
-    public IReadOnlyList<ResultCodeSpec> ResultCodes { get; init; } = [];
 
     /// <summary>
     /// True if this slot signals failure through what it returns: a boolean, or the result code.
@@ -167,15 +154,7 @@ public sealed class Convention
     public string BindingsMethodsClass { get; init; } = "NativeMethods";
 
 
-    /// <summary>
-    /// Header, relative to the repository root, that declares the result type and its codes.
-    /// </summary>
-    public string ResultAbiHeader { get; init; } = "";
 
-    /// <summary>
-    /// Include directories the result header is read with, relative to the repository root.
-    /// </summary>
-    public IReadOnlyList<string> ResultAbiIncludeDirs { get; init; } = [];
 
     /// <summary>
     /// Managed namespace the generated projections import for the shared types, beside the bindings
@@ -212,15 +191,10 @@ public sealed class Convention
                 Text(json, "paramsSuffix"))
             .Bindings(Or(json, "includeDirectoryName", "kernel_engine"), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
-            .Managed(Text(json, "commonManagedNamespace"))
-            .ResultAbi(Or(json, "resultAbiHeader", ""),
-                (json["resultAbiIncludeDirs"]?.AsArray() ?? []).Select(n => n!.GetValue<string>()));
+            .Managed(Text(json, "commonManagedNamespace"));
         if (json["resultType"] is not null)
             builder.Result(Text(json, "resultType"), Text(json, "resultOk"), Text(json, "resultManagedType"),
-                Text(json, "resultHelperClass"), Or(json, "resultCodesOut", ""));
-        foreach (var r in json["resultCodes"]?.AsArray() ?? [])
-            builder.AddResultCode(r!["code"]!.GetValue<string>(), r["managed"]!.GetValue<string>(),
-                r["extends"]?.GetValue<string>());
+                Text(json, "resultHelperClass"));
 
         foreach (var (cType, managed) in json["handleTypes"]?.AsObject() ?? [])
             builder.AddHandleType(cType, managed!.GetValue<string>());
