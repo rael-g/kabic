@@ -1,0 +1,9 @@
+bin/
+obj/
+build/
+artifacts/
+.vs/
+.vscode/
+.idea/
+*.user
+docs/kanban/
