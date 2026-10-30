@@ -308,7 +308,7 @@ public static class CSharpWriter
     static string ReturnType(ApiModel model, string cType, Convention convention) =>
         model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
-            : Pointee(model, cType) is { } s && (IsPlain(s) || s.Has("view")) ? Idioms.TypeName(s.Name, convention)
+            : Pointee(model, cType) is { } s && ByValue(cType, s) ? Idioms.TypeName(s.Name, convention)
             : CTypes.IsPointer(cType) ? "nint"
             : CsType(model, cType, convention);
 
@@ -319,7 +319,7 @@ public static class CSharpWriter
     static string ReturnCast(ApiModel model, string cType, Convention convention) =>
         model.Enums.Any(e => e.Name == cType.Trim())
             ? $"({Idioms.TypeName(cType.Trim(), convention)})"
-            : Pointee(model, cType) is { } s && (IsPlain(s) || s.Has("view")) ? $"*({Idioms.TypeName(s.Name, convention)}*)"
+            : Pointee(model, cType) is { } s && ByValue(cType, s) ? $"*({Idioms.TypeName(s.Name, convention)}*)"
             : CTypes.IsPointer(cType) ? "(nint)"
             : "";
 
@@ -562,15 +562,18 @@ public static class CSharpWriter
         if (!CTypes.IsPointer(cType)) return null;
         if (Pointee(model, cType) is not { } target) return "nint";
         if (target.IsVtable && !target.Has("bag")) return Idioms.NativeInterface(target.Name, convention);
-        return IsPlain(target) || target.Has("view") ? Idioms.TypeName(target.Name, convention) : "nint";
+        return ByValue(cType, target) ? Idioms.TypeName(target.Name, convention) : "nint";
     }
+
+    static bool ByValue(string cType, ApiStruct target) =>
+        (IsPlain(target) || target.Has("view")) && CTypes.Deref(cType).TrimStart().StartsWith("const ", StringComparison.Ordinal);
 
     static string PassedArgument(ApiModel model, ApiParam p, Convention convention)
     {
         var name = Idioms.Ident(p.Name!);
         var native = NativePointerType(model, p.Type, convention);
         return Pointee(model, p.Type) is { } target
-            ? target.IsVtable && !target.Has("bag") ? $"{name}.Native" : IsPlain(target) || target.Has("view") ? $"({native})&{name}" : $"({native}){name}"
+            ? target.IsVtable && !target.Has("bag") ? $"{name}.Native" : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
             : $"({native}){name}";
     }
 

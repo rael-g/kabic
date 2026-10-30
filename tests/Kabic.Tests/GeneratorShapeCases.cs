@@ -378,8 +378,8 @@ internal static class GeneratorShapeCases
                 Slot("open", "ke_probe_bundle *", Param("self", "ke_probe *")),
                 Slot("close", "void", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
-            contains: ["public ProbeBundle Open(", "return *(ProbeBundle*)Handle->open(",
-                       "ProbeBundle bundle)", "(ke_probe_bundle*)&bundle"],
+            contains: ["public nint Open(", "return (nint)Handle->open(",
+                       "nint bundle)", "(ke_probe_bundle*)bundle"],
             absent: ["ke_probe_bundle* Open", "ke_probe_bundle* bundle)"],
             structs: [ViewJson("ke_probe_bundle")]);
 
@@ -393,7 +393,7 @@ internal static class GeneratorShapeCases
                        "public ProbeBundle Data => _native is null",
                        "_owner.Close(native);",
                        "public Bundle Open(", "return new Bundle(this, (ProbeBundle*)resultOut);",
-                       "internal void Close(INativeProbe self, ProbeBundle bundle)"],
+                       "internal void Close(INativeProbe self, nint bundle)"],
             absent: ["public void Close(", "ProbeBundle* Open("],
             structs: [ViewJson("ke_probe_bundle")]);
 
