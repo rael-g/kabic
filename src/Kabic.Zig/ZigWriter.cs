@@ -342,10 +342,28 @@ public sealed class ZigWriter
 
     /// <summary>The type that wraps a pointer to a local vtable or opaque record, or null.</summary>
     string? WrappedType(string cType) =>
-        top && CType.Of(cType) is { Pointers: 1 } type && Wrappable(type.Name) ? TypeName(type.Name) : null;
+        top && Handled(cType) is { } name ? TypeName(name) : null;
+
+    /// <summary>The wrapped declaration a parameter of <paramref name="cType"/> passes: a pointer to it, or a pointer typedef itself.</summary>
+    string? Handled(string cType) => CType.Of(cType) switch
+    {
+        { Pointers: 1 } t when Wrappable(t.Name) => t.Name,
+        { Pointers: 0 } t when IsPointerTypedef(t.Name) => t.Name,
+        _ => null,
+    };
+
+    bool IsPointerTypedef(string name) =>
+        model.TypeAliases.ContainsKey(name) && !foreign.ContainsKey(name) && model.HandleOf(name) is not null;
+
+    bool Claim(string name, string declaration)
+    {
+        if (topNames.Add(name)) return true;
+        Console.Error.WriteLine($"{declaration}: {name} is already declared, so it stays reachable only through c");
+        return false;
+    }
 
     bool Wrappable(string name) =>
-        model.Opaques.Contains(name) && !foreign.ContainsKey(name)
+        model.Opaques.Contains(name) && !foreign.ContainsKey(name) && !model.TypeAliases.Values.Any(v => CType.Of(v).Name == name)
         || model.Structs.Any(s => s.Name == name && !s.External && s.IsVtable && !s.Has("bag") && !s.Has("owner"));
 
     string? LocalEnum(string cType) =>
@@ -366,11 +384,13 @@ public sealed class ZigWriter
     {
         top = true;
         var types = model.Structs.Where(s => !s.External && s.IsVtable && !s.Has("bag") && !s.Has("owner")).Select(s => s.Name)
-            .Concat(model.Opaques.Where(n => Wrappable(n))).Distinct().Where(n => topNames.Add(TypeName(n))).ToList();
+            .Concat(model.Opaques.Where(n => Wrappable(n))).Concat(model.TypeAliases.Keys.Where(IsPointerTypedef)).Distinct().ToList();
+        foreach (var name in types)
+            if (!topNames.Add(TypeName(name))) throw new NotSupportedException($"{name} and another type are both {TypeName(name)}");
         var wrappedNames = types.ToHashSet();
         foreach (var e in model.Enums.Where(e => !e.External && e.Values.Any(v => v.IsInt)))
         {
-            if (!topNames.Add(TypeName(e.Name))) continue;
+            if (!Claim(TypeName(e.Name), e.Name)) continue;
             var cases = CaseWords(e);
             var seen = new HashSet<string>();
             var used = new HashSet<string>();
@@ -385,7 +405,7 @@ public sealed class ZigWriter
         var free = new List<ApiFunction>();
         foreach (var f in model.Functions)
         {
-            var home = f.Params.Count > 0 && CType.Of(f.Params[0].Type) is { Pointers: 1 } t && types.Contains(t.Name) ? t.Name
+            var home = f.Params.Count > 0 && Handled(f.Params[0].Type) is { } first && types.Contains(first) ? first
                 : f.Params.LastOrDefault(p => p.Has("out")) is { } last ? Creates(last, types) : null;
             if (home is null) free.Add(f);
             else { if (!owned.TryGetValue(home, out var list)) owned[home] = list = []; list.Add(f); }
@@ -397,7 +417,7 @@ public sealed class ZigWriter
             var type = TypeName(name);
             var members = new HashSet<string>();
             o.AppendLine($"pub const {type} = struct {{");
-            o.AppendLine($"    ptr: *{Named(name, false)},");
+            o.AppendLine(IsPointerTypedef(name) ? $"    ptr: {Named(name, true)}," : $"    ptr: *{Named(name, false)},");
             if (owner is not null) o.AppendLine($"    owner: ?{Named(owner.Name, true)} = null,");
             o.AppendLine();
             if (owner is { Fields: [var field], Slots: [var destroy] } && members.Add("deinit"))
@@ -420,8 +440,12 @@ public sealed class ZigWriter
             foreach (var f in owned.GetValueOrDefault(name) ?? [])
             {
                 var method = FunctionName(Unprefixed(f.Name, name));
-                if (!members.Add(method)) continue;
-                var isMethod = CType.Of(f.Params[0].Type) is { Pointers: 1 } t && t.Name == name;
+                if (!members.Add(method))
+                {
+                    Console.Error.WriteLine($"{f.Name}: {type}.{method} is already declared, so it stays reachable only through c");
+                    continue;
+                }
+                var isMethod = f.Params.Count > 0 && Handled(f.Params[0].Type) == name;
                 var ps = isMethod ? f.Params.Skip(1).ToList() : f.Params.ToList();
                 Doc(o, f.Doc, "    ");
                 Wrapper(o, "    ", Ident(method), isMethod ? $"self: {type}" : null, isMethod ? ["self.ptr"] : [], $"c.{f.Name}", ps,
@@ -434,14 +458,14 @@ public sealed class ZigWriter
         foreach (var f in free)
         {
             var name = FunctionName(f.Name);
-            if (!topNames.Add(name)) continue;
+            if (!Claim(name, f.Name)) continue;
             Doc(o, f.Doc, "");
             Wrapper(o, "", Ident(name), null, [], $"c.{f.Name}", f.Params,
                 f.Params.Select((p, i) => FreeParam(p, i, topNames)).ToList(), f.Returns, f.CReturns ?? f.Returns, null);
             o.AppendLine();
         }
         foreach (var s in model.Structs.Where(s => !s.External && !wrappedNames.Contains(s.Name)))
-            if (topNames.Add(TypeName(s.Name))) o.AppendLine($"pub const {TypeName(s.Name)} = c.{s.Name};");
+            if (Claim(TypeName(s.Name), s.Name)) o.AppendLine($"pub const {TypeName(s.Name)} = c.{s.Name};");
         o.AppendLine();
         top = false;
     }
@@ -449,7 +473,7 @@ public sealed class ZigWriter
     string? Creates(ApiParam written, List<string> types)
     {
         var name = CType.Of(written.Type).Name;
-        if (types.Contains(name) && CType.Of(written.Type).Pointers == 2) return name;
+        if (types.Contains(name) && CType.Of(written.Type).Pointers == (IsPointerTypedef(name) ? 1 : 2)) return name;
         return model.Structs.FirstOrDefault(s => s.Has("owner") && s.Name == name) is { Fields: [var held] }
             && types.Contains(CType.Of(held.Type).Name) ? CType.Of(held.Type).Name : null;
     }
