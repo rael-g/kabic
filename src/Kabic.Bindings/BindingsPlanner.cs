@@ -257,6 +257,14 @@ public static class BindingsPlanner
         }
 
         var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention, domains).ToList());
+        var ownedIds = idiomatic.Values.SelectMany(r => r).Where(r => r.Contains("=global::")).Distinct()
+            .ToDictionary(r => r.Split('=')[0], r => r);
+        foreach (var remaps in idiomatic.Values)
+        {
+            var foreignIds = remaps.Where(r => r.StartsWith('?')).Select(r => r[1..]).ToList();
+            remaps.RemoveAll(r => r.StartsWith('?'));
+            remaps.AddRange(foreignIds.Where(ownedIds.ContainsKey).Select(id => ownedIds[id]));
+        }
         var renamed = idiomatic.Values.SelectMany(r => r).Select(r => r.Split('=', 2))
             .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).ToDictionary(r => r[0], r => r[1]);
         var contracts = jobs.Select(j => (Job: j, Spec: ContractSpec(j)))
@@ -314,6 +322,7 @@ public static class BindingsPlanner
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
             job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
+        foreach (var id in model.ForeignIdTypes) yield return $"?{id}";
         var text = Regex.Replace(string.Concat(job.Traverse.Select(p => File.ReadAllText(Full(p)))), @"/\*.*?\*/|//[^\n]*", "", RegexOptions.Singleline);
         bool Captured(string value, ApiEnum owner) =>
             Regex.IsMatch(text, $@"[(=][ \t]*{value}\b") && model.Enums.Any(o => o != owner
