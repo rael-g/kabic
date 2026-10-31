@@ -31,3 +31,7 @@ for fixture in "$probe" "$zlib" "$sqlite"; do
   dotnet run --project src/Kabic -- write zig --root "$fixture"
   (cd "$fixture/src/zig/abi" && zig build test --global-cache-dir "$fixture/build/zig-global")
 done
+LD_LIBRARY_PATH="$probe/build" zig test --global-cache-dir "$probe/build/zig-global" --dep abi -Mroot=tests/e2e/zigrun/probe.zig \
+  -Mabi="$probe/src/zig/abi/probe/probe.zig" -L "$probe/build" -lke_probe -lc
+LD_LIBRARY_PATH="$sqlite/build" zig test --global-cache-dir "$sqlite/build/zig-global" --dep abi -Mroot=tests/e2e/zigrun/sqlite.zig \
+  -Mabi="$sqlite/src/zig/abi/sqlite/sqlite.zig" -L "$sqlite/build" -lsqlite3 -lc

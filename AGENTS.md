@@ -92,3 +92,5 @@ key: `symbol: { member: tags }`, where a symbol is a function, a callback or `st
 member is a parameter, a field or `return`. An unnamed parameter is `argN`, counted from one. An
 inline function pointer is the callback `function_parameter`, with lanes `argN`. A key that matches
 no declaration fails.
+
+Whoever owns a header tags it in the source; the annotation file is for a header that cannot be edited.

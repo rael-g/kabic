@@ -109,7 +109,7 @@ internal static class WriteZigCommand
         foreach (var unit in units)
         {
             var foreign = owner.Where(kv => kv.Value != unit.Key).ToDictionary();
-            try { texts[unit.Key] = ZigWriter.Render(models[unit.Key], foreign); }
+            try { texts[unit.Key] = ZigWriter.Render(models[unit.Key], foreign, convention); }
             catch (NotSupportedException e) { failures[unit.Key] = e.Message; continue; }
             imports[unit.Key] = foreign.Values.Distinct().Where(k => texts[unit.Key].Contains($"@import(\"{k}\")"))
                 .Concat(Included(root, unit, units)).Where(k => k != unit.Key)
