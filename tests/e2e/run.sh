@@ -39,3 +39,9 @@ zig test --global-cache-dir "$vulkan/build/zig-global" --dep abi -Mroot=tests/e2
   -Mabi="$vulkan/src/zig/abi/vulkan/vulkan.zig" -lc -fno-emit-bin
 zig test --global-cache-dir "$probe/build/zig-global" --dep abi -Mroot=tests/e2e/zigrun/implement.zig \
   -Mabi="$probe/src/zig/abi/probe/probe.zig" -lc
+P="$probe/src/zig/abi"
+zig build-lib -dynamic -lc -fsoname=libke_probe.so --global-cache-dir "$probe/build/zig-global" --dep abi -Mroot=tests/e2e/zigrun/probe_plugin.zig \
+  -Mabi="$P/probe/probe.zig" -femit-bin="$probe/build/libke_probe.so"
+LD_LIBRARY_PATH="$probe/build" zig test --global-cache-dir "$probe/build/zig-global" --dep abi -Mroot=tests/e2e/zigrun/extra.zig \
+  --dep probe -Mabi="$P/probe_extra/probe_extra.zig" -Mprobe="$P/probe/probe.zig" -L "$probe/build" -lke_probe -lc
+dotnet run --project "$root/tests/e2e/surface/Surface.csproj"
