@@ -45,6 +45,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
             sb.AppendLine($"    translated.addIncludePath(b.path(\"{dir}\"));");
         sb.AppendLine("    const tests = b.addTest(.{ .root_module = b.createModule(.{");
         sb.AppendLine("        .root_source_file = b.path(\"layout_test.zig\"),");
+        sb.AppendLine("        .link_libc = true,");
         sb.AppendLine("        .target = target,");
         sb.AppendLine("        .optimize = optimize,");
         sb.AppendLine("        .imports = &.{");
@@ -52,6 +53,9 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         sb.AppendLine("            .{ .name = \"c\", .module = translated.createModule() },");
         sb.AppendLine("        },");
         sb.AppendLine("    }) });");
+        sb.AppendLine("    tests.root_module.addCSourceFile(.{ .file = b.path(\"layout_values.c\") });");
+        foreach (var dir in IncludeDirs)
+            sb.AppendLine($"    tests.root_module.addIncludePath(b.path(\"{dir}\"));");
         sb.AppendLine($"    b.step(\"test\", \"Check the {Key} ABI against its headers\").dependOn(&b.addRunArtifact(tests).step);");
         sb.AppendLine("}");
         return sb.ToString();
@@ -124,7 +128,47 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
                         : $"    try std.testing.expectEqual(@as(i128, c.{k.Name}), @as(i128, abi.c.{k.Name}));");
             sb.AppendLine("}");
         }
+        var measures = Measures(model).ToList();
+        sb.AppendLine();
+        sb.AppendLine($"extern const layout_values: [{measures.Count + 1}]c_ulonglong;");
+        sb.AppendLine();
+        sb.AppendLine("test \"every size and offset is the one C computes\" {");
+        sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
+        sb.AppendLine("    const expected = [_]usize{");
+        foreach (var (type, member) in measures)
+            sb.AppendLine(member is null ? $"        @sizeOf(abi.c.{type})," : $"        @offsetOf(abi.c.{type}, \"{member}\"),");
+        sb.AppendLine("    };");
+        sb.AppendLine("    for (expected, 0..) |value, at| try std.testing.expectEqual(layout_values[at], value);");
+        sb.AppendLine("}");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// What C itself says of every record, as an array: its size, then the offset of each member
+    /// that has one. A record the translation leaves opaque is checked by this alone.
+    /// </summary>
+    public string LayoutValues(ApiModel model)
+    {
+        var sb = new StringBuilder("#include <stddef.h>\n");
+        foreach (var h in Headers) sb.AppendLine($"#include <{h}>");
+        sb.AppendLine("const unsigned long long layout_values[] = {");
+        foreach (var (type, member) in Measures(model))
+            sb.AppendLine(member is null ? $"    sizeof({type})," : $"    offsetof({type}, {member}),");
+        sb.AppendLine("    0,");
+        sb.AppendLine("};");
+        return sb.ToString();
+    }
+
+    static IEnumerable<(string Type, string? Member)> Measures(ApiModel model)
+    {
+        foreach (var s in model.Structs.Where(s => !s.External))
+        {
+            yield return (s.Name, null);
+            if (s.IsUnion) continue;
+            foreach (var f in s.Fields.Where(f => f.Bits is null && !f.Name.StartsWith("unnamed_", StringComparison.Ordinal)))
+                yield return (s.Name, f.Name);
+            foreach (var slot in s.Slots) yield return (s.Name, slot.Name);
+        }
     }
 
     /// <summary>The package name of the package that gathers every package.</summary>

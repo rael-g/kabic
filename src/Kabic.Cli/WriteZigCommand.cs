@@ -133,6 +133,7 @@ internal static class WriteZigCommand
             File.WriteAllText(Path.Combine(dir, "build.zig"), package.BuildZig());
             File.WriteAllText(Path.Combine(dir, "build.zig.zon"), package.BuildZon());
             File.WriteAllText(Path.Combine(dir, "layout_test.zig"), ZigPackage.LayoutTest(models[unit.Key]));
+            File.WriteAllText(Path.Combine(dir, "layout_values.c"), package.LayoutValues(models[unit.Key]));
         }
         var all = Path.Combine(root, PackagesRoot);
         var gathered = units.Select(u => new ZigImport(u.Key, u.Package, Slashed(Path.GetRelativePath(all, u.PackageDir)))).ToList();
