@@ -271,7 +271,7 @@ public static class BindingsPlanner
         {
             Remaps = [.. j.Remaps.Select(r => Located(Renamed(r, renamed))), .. idiomatic[j].Select(Located),
                 .. contractOf.Where(c => idiomatic[j].Any(r => r.StartsWith(c.Key + "="))).Select(c => $"{c.Key}=global::{c.Value}.{renamed.GetValueOrDefault(c.Key, c.Key)}")],
-            Excludes = [.. j.Excludes, .. contractOf.Keys.Where(k => !j.Excludes.Contains(k))],
+            Excludes = [.. j.Excludes.Union(contractOf.Keys).Union((convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>()).Keys)],
         }).ToList();
         foreach (var (job, spec, types) in contracts)
         {
@@ -298,8 +298,9 @@ public static class BindingsPlanner
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
             job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
-        return [.. model.Enums.Where(e => !e.External).Select(e => e.Name),
-            .. model.Structs.Where(CSharpWriter.IsValue).Where(s => s.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null)).Select(s => s.Name)];
+        var mapped = convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>();
+        return [.. model.Enums.Where(e => !e.External && !mapped.ContainsKey(e.Name)).Select(e => e.Name),
+            .. model.Structs.Where(CSharpWriter.IsValue).Where(s => !mapped.ContainsKey(s.Name) && s.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null)).Select(s => s.Name)];
     }
 
     static string Renamed(string remap, IReadOnlyDictionary<string, string> renamed)
@@ -325,7 +326,7 @@ public static class BindingsPlanner
             foreach (var v in e.Values.DistinctBy(v => Idioms.EnumMember(v.Name, e.Name)).Where(v => !Captured(v.Name, e)))
                 yield return $"{e.Name}::{v.Name}={Idioms.EnumMember(v.Name, e.Name)}";
         }
-        foreach (var s in model.Structs.Where(CSharpWriter.IsValue))
+        foreach (var s in model.Structs.Where(CSharpWriter.IsValue).Where(s => convention.TypeMap.GetValueOrDefault(Languages.CSharp)?.ContainsKey(s.Name) != true))
         {
             yield return $"{s.Name}={Idioms.TypeName(s.Name, convention)}";
             foreach (var f in s.Fields) yield return $"{s.Name}::{f.Name}={Idioms.Pascal(f.Name)}";
