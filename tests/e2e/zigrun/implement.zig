@@ -2,7 +2,7 @@ const std = @import("std");
 const abi = @import("abi");
 
 const State = struct {
-    api: abi.c.ke_probe = abi.Probe.implement(State),
+    api: abi.c.ke_probe = abi.Probe.implement(State, "api"),
     weight: f32 = 0,
     filled: u32 = 0,
 

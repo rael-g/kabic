@@ -98,7 +98,7 @@ internal static class ZigShapeCases
         Idiomatic("a string is sentinel terminated", ["pub fn nameOf(self: Probe, name: [:0]const u8) void {"]);
         Idiomatic("an opaque record is a type its functions hang off", ["pub const Db = struct {", "ptr: *c.ke_db,", "pub fn open() Error!Db {", "pub fn close(self: Db) void {"]);
         Idiomatic("a function tagged free stays free", ["pub fn dbStat(db: Db) void {"], ["pub fn stat(self: Db)"]);
-        Idiomatic("a vtable implements itself from a Zig type", ["pub fn implement(comptime T: type) c.ke_probe {", "catch |failure| return resultOf(failure);"]);
+        Idiomatic("a vtable implements itself from a Zig type", ["pub fn implement(comptime T: type, comptime field: []const u8) c.ke_probe {", "catch |failure| return resultOf(failure);"]);
         Idiomatic("the ABI is reached as c", ["pub const c = @import(\"probe_c.zig\");"]);
 
         Expect("a fixed-size array field declares its extent and its element type",

@@ -545,8 +545,8 @@ public sealed class ZigWriter
         var slots = record.Slots.Where(sl => IsMethod(record, sl)).ToList();
         if (slots.Count == 0) return;
         if (slots.Any(sl => convention!.ReturnsResult(sl.Returns)) && ResultEnum() is null && ResultModule() is null) return;
-        o.AppendLine($"    /// The vtable whose slots call the methods of <paramref name=\"T\"/>, which embeds it as the field <c>api</c>.".Replace("<paramref name=\"T\"/>", "T").Replace("<c>api</c>", "api"));
-        o.AppendLine($"    pub fn implement(comptime T: type) {Named(record.Name, true)} {{");
+        o.AppendLine("    /// The vtable whose slots call the methods of T, which embeds it as the named field.");
+        o.AppendLine($"    pub fn implement(comptime T: type, comptime field: []const u8) {Named(record.Name, true)} {{");
         o.AppendLine("        return .{");
         foreach (var slot in slots) ImplementSlot(o, record, slot);
         o.AppendLine("        };");
@@ -568,7 +568,7 @@ public sealed class ZigWriter
         var counts = ps.Where(p => SliceCount(p, ps) is not null).ToDictionary(p => SliceCount(p, ps)!, p => p);
         var name = (ApiParam p) => $"a{ps.ToList().IndexOf(p)}";
         var signature = string.Join(", ", ps.Select(p => $"{name(p)}: {Spell(p.Type, Lane.Of(p))}").Prepend($"self: {Spell(slot.Receiver ?? record.Name + " *", null)}"));
-        var body = new List<string> { $"const state: *T = @alignCast(@fieldParentPtr(\"api\", self orelse {refuse}));" };
+        var body = new List<string> { $"const state: *T = @alignCast(@fieldParentPtr(field, self orelse {refuse}));" };
         var args = new List<string> { "state" };
         foreach (var p in ps.Where(p => p != written && !counts.ContainsKey(p)))
         {
