@@ -780,6 +780,31 @@ public static class CSharpWriter
         return string.Join('\n', o);
     }
 
+    /// <summary>The view a slot answers a sequence of, when a contract cannot hold them in a span.</summary>
+    static ApiStruct? SafeViewSequence(ApiModel model, ClassifiedSlot cs) =>
+        model.SafeViews && cs.ReturnCount is not null && Pointee(model, cs.Slot.Returns) is { } v && v.Has("view") ? v : null;
+
+    /// <summary>A sequence of views as a count and an index, since a ref struct is no span element.</summary>
+    static void RenderViewSequence(ApiModel model, List<string> o, List<MemberDecl>? decls, ClassifiedSlot cs, ApiStruct view, Convention convention)
+    {
+        var name = SlotName(cs.Slot);
+        var ps = cs.PublicParams.Where(p => p != cs.ReturnCount).ToList();
+        var sig = string.Join(", ", ps.Select(p => $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"));
+        var args = string.Join(", ", ps.Select(p => Idioms.Ident(p.Name!)));
+        var type = Idioms.TypeName(view.Name, convention);
+        var native = CsType(model, view.Name, convention);
+        Declare(o, decls, $"    /// <summary>How many elements <see cref=\"{name}At\"/> reads.</summary>", $"int {name}Count({sig})");
+        o.Add($"        => {name}Native({args}).Length;");
+        o.Add("");
+        var indexed = sig.Length > 0 ? sig + ", int index" : "int index";
+        Declare(o, decls, $"    /// <summary>One element of the sequence.</summary>", $"{type} {name}At({indexed})");
+        o.Add("    {");
+        o.Add($"        fixed ({native}* reading = &{name}Native({args})[index])");
+        o.Add($"            return {SafeViewFrom(model, view, "reading", convention)};");
+        o.Add("    }");
+        o.Add("");
+    }
+
     static string SafeViewType(ApiModel model, ApiField f, Convention convention)
     {
         if (f.Has("array_of"))
@@ -1287,6 +1312,7 @@ public static class CSharpWriter
                 continue;
             }
             RenderSlotMethod(model, o, decls, cs, convention, typeName, owned);
+            if (SafeViewSequence(model, cs) is { } views) RenderViewSequence(model, o, decls, cs, views, convention);
         }
 
 
@@ -2028,8 +2054,9 @@ public static class CSharpWriter
         IReadOnlyList<OwnedProjection>? owned = null)
     {
         var slot = cs.Slot;
-        var name = SlotName(slot);
-        var access = owned is not null && owned.Any(x => x.Release == slot) ? "internal" : "public";
+        var viewSequence = SafeViewSequence(model, cs);
+        var name = SlotName(slot) + (viewSequence is null ? "" : "Native");
+        var access = viewSequence is not null ? "private" : owned is not null && owned.Any(x => x.Release == slot) ? "internal" : "public";
         var ownedReturn = owned?.FirstOrDefault(x =>
             x.Answers(slot.Returns) || (cs.ResultOut is { } ro && x.Answers(CTypes.Deref(ro.Type))));
         var callbacks = CallbackPairs(model, cs, convention);
@@ -2431,7 +2458,9 @@ public static class CSharpWriter
                     var args = cs.PublicParams;
                     var sig = Sig(args);
                     var call = string.Concat(NativeParams().Select(p => ", " + CallArg(p)));
-                    var spanElement = cs.ReturnCount is null ? null : ReturnElement(model, slot, convention);
+                    var spanElement = cs.ReturnCount is null ? null
+                        : viewSequence is not null ? CsType(model, StripQualifiers(CTypes.Deref(slot.Returns)).Trim(), convention)
+                        : ReturnElement(model, slot, convention);
                     if (ownedReturn is not null)
                         throw new InvalidOperationException(
                             $"{slot.Name}: answers with the memory [releases:{ownedReturn.TypeName}] owns, and"
