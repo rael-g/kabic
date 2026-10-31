@@ -727,6 +727,7 @@ public static class CSharpWriter
     {
         var counts = s.Fields.Where(f => f.Has("array_of"))
             .Select(f => f.TagValue("array_of")).ToHashSet();
+        if (model.SafeViews) return RenderSafeView(model, s, ns, extraUsings, counts, convention);
 
         var o = new List<string> { Header };
         o.Add("using System.Runtime.InteropServices;");
@@ -753,6 +754,54 @@ public static class CSharpWriter
         o.Add("}");
         o.Add("");
         return string.Join('\n', o);
+    }
+
+    static string SafeViewType(ApiModel model, ApiField f, Convention convention)
+    {
+        if (f.Has("array_of"))
+        {
+            var cType = StripQualifiers(CTypes.Deref(f.Type)).Trim();
+            if (model.Structs.Any(v => v.Name == cType && v.Has("view")))
+                throw new NotSupportedException($"{f.Name}: a view nested in a contract has no projection yet");
+            return $"ReadOnlySpan<{ViewElement(model, cType, convention)}>";
+        }
+        return CTypes.FixedArray(f.Type) is not null ? "string" : ValueTypeName(model, f.Type, convention);
+    }
+
+    /// <summary>A view as a contract holds it: spans a managed implementation can build.</summary>
+    static string RenderSafeView(ApiModel model, ApiStruct s, string ns, IEnumerable<string> extraUsings,
+        HashSet<string?> counts, Convention convention)
+    {
+        var fields = s.Fields.Where(f => !counts.Contains(f.Name)).ToList();
+        var o = new List<string> { Header };
+        foreach (var u in extraUsings) o.Add($"using {u};");
+        o.Add($"\nnamespace {ns};\n");
+        o.Add(s.Doc is not null ? XmlDoc("", s.Doc, convention).TrimEnd() : $"/// <summary>Reads <c>{s.Name}</c>.</summary>");
+        o.Add($"public readonly ref struct {Idioms.TypeName(s.Name, convention)}({string.Join(", ", fields.Select(f => $"{SafeViewType(model, f, convention)} {Idioms.Ident(f.Name)}"))})");
+        o.Add("{");
+        foreach (var f in fields)
+        {
+            if (!string.IsNullOrEmpty(f.Doc)) o.Add($"    /// <summary>{Escape(f.Doc)}</summary>");
+            o.Add($"    public {SafeViewType(model, f, convention)} {Idioms.Pascal(f.Name)} {{ get; }} = {Idioms.Ident(f.Name)};");
+        }
+        o.Add("}\n");
+        return string.Join('\n', o);
+    }
+
+    /// <summary>The expression that reads the native <paramref name="pointer"/> as its safe view.</summary>
+    static string SafeViewFrom(ApiModel model, ApiStruct s, string pointer, Convention convention)
+    {
+        var counts = s.Fields.Where(f => f.Has("array_of")).Select(f => f.TagValue("array_of")).ToHashSet();
+        var args = s.Fields.Where(f => !counts.Contains(f.Name)).Select(f =>
+        {
+            if (f.TagValue("array_of") is { } count)
+            {
+                var element = ViewElement(model, StripQualifiers(CTypes.Deref(f.Type)).Trim(), convention);
+                return $"new ReadOnlySpan<{element}>(({element}*){pointer}->{f.Name}, (int){pointer}->{count})";
+            }
+            return CTypes.FixedArray(f.Type) is not null ? $"Marshal.PtrToStringUTF8((nint){pointer}->{f.Name}) ?? \"\"" : $"{pointer}->{f.Name}";
+        });
+        return $"new {Idioms.TypeName(s.Name, convention)}({string.Join(", ", args)})";
     }
 
     /// <summary>
@@ -1213,7 +1262,7 @@ public static class CSharpWriter
                 RenderCallbackMethod(o, decls, vtable, cs, classified, typeName, convention);
                 continue;
             }
-            RenderSlotMethod(model, o, cs.Slot.Has("implementation") ? null : decls, cs, convention, typeName, owned);
+            RenderSlotMethod(model, o, decls, cs, convention, typeName, owned);
         }
 
 
@@ -2407,6 +2456,12 @@ public static class CSharpWriter
                         needsCast = "";
                     }
                     if (model.CallbackOf(slot.Returns) is not null) needsCast = "(nint)";
+                    if (model.SafeViews && spanElement is null && Pointee(model, slot.Returns) is { } safeView && safeView.Has("view"))
+                    {
+                        o.Add($"{pInd}var reading = {pCall};");
+                        pCall = SafeViewFrom(model, safeView, "reading", convention);
+                        needsCast = "";
+                    }
                     var pHolds = cs.TrailingOuts.Count > 0;
                     if (spanElement is not null)
                     {

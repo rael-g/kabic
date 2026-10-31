@@ -43,6 +43,7 @@ public static class Generation
         var outDir = r.OutDir;
         var contractDir = r.ContractDir;
         var usings = r.Usings.ToList();
+        model.SafeViews = Path.GetFullPath(contractDir).StartsWith(Path.GetFullPath(outDir), StringComparison.Ordinal) is false;
 
         Directory.CreateDirectory(outDir);
 

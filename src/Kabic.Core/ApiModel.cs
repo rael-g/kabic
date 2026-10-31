@@ -250,6 +250,9 @@ public class ApiModel
     public List<ApiCallback> Callbacks { get; } = [];
 
     /// <summary>Scalar typedefs tagged <c>[id]</c>, each projected as a type of its own.</summary>
+    /// <summary>Whether views are written for a contract kept in a project of its own, free of pointers.</summary>
+    public bool SafeViews { get; set; }
+
     public HashSet<string> IdTypes { get; } = [];
 
     /// <summary>The identifiers this model reaches from another domain.</summary>
