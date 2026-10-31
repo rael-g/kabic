@@ -643,7 +643,9 @@ public static class CSharpWriter
         o.Add($"namespace {nativeNs};\n");
         o.Add($"/// <summary>The counted pointers of <c>{s.Name}</c>, read as the sequences they"
             + " bound.</summary>");
-        o.Add($"public unsafe partial struct {s.Name}");
+        var renamed = IsValue(s);
+        string Raw(string field) => renamed ? Idioms.Pascal(field) : field;
+        o.Add($"public unsafe partial struct {(renamed ? Idioms.TypeName(s.Name, convention) : s.Name)}");
         o.Add("{");
 
         var first = true;
@@ -667,8 +669,8 @@ public static class CSharpWriter
             o.Add(!string.IsNullOrEmpty(f.Doc)
                 ? $"    /// <summary>{Escape(f.Doc)}</summary>"
                 : $"    /// <summary>The <c>{count.Name}</c> elements <c>{f.Name}</c> reaches.</summary>");
-            o.Add($"    public readonly ReadOnlySpan<{element}> {Idioms.Pascal(f.Name)} => {f.Name} == null"
-                + $" ? default : new ReadOnlySpan<{element}>({f.Name}, (int){count.Name});");
+            o.Add($"    public readonly ReadOnlySpan<{element}> {Idioms.Pascal(f.Name)}{(renamed ? "Span" : "")} => {Raw(f.Name)} == null"
+                + $" ? default : new ReadOnlySpan<{element}>({Raw(f.Name)}, (int){Raw(count.Name)});");
         }
 
         o.Add("}");
@@ -941,7 +943,7 @@ public static class CSharpWriter
     static string ValueTypeName(ApiModel model, string cType, Convention convention) =>
         convention.Project(Languages.CSharp, cType) is { } mat ? mat
         : convention.Project(Languages.CSharp, cType) is { } handle ? handle
-        : model.Structs.Any(v => v.Name == cType.Trim() && (IsValue(v) || IsBorrowed(v)))
+        : model.Structs.Any(v => v.Name == cType.Trim() && (IsValue(v) || IsBorrowed(v) || v.Has("view")))
         || model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
             : CsType(model, cType, convention);
@@ -2445,7 +2447,7 @@ public static class CSharpWriter
                 ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
-            : model.CallbackOf(p) is not null ? $"({CsType(model, p.Type, convention).Replace("nint", "void*")}){Idioms.Ident(p.Name!)}"
+            : model.CallbackOf(p) is not null ? $"({CsType(model, p.Type, convention).Replace("nint", "void*").Replace(convention.ResultType.Length > 0 ? convention.ResultType : "\0", convention.ResultManagedType)}){Idioms.Ident(p.Name!)}"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"

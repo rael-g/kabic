@@ -293,9 +293,9 @@ internal static class GeneratorShapeCases
             CountedStruct("ke_probe_segment",
                 ("entities", "const uint64_t *", "array_of:count"),
                 ("count", "size_t", "")),
-            contains: ["namespace Probe.Native;", "public unsafe partial struct ke_probe_segment",
-                       "public readonly ReadOnlySpan<ulong> Entities => entities == null ? default"
-                       + " : new ReadOnlySpan<ulong>(entities, (int)count);"],
+            contains: ["namespace Probe.Native;", "public unsafe partial struct ProbeSegment",
+                       "public readonly ReadOnlySpan<ulong> EntitiesSpan => Entities == null ? default"
+                       + " : new ReadOnlySpan<ulong>(Entities, (int)Count);"],
             absent: ["public ulong* entities;", "MemoryMarshal", "Unsafe.As"]);
 
         ExpectStructSpans("a counted pointer field naming a length the struct lacks is refused",
