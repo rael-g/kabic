@@ -24,6 +24,7 @@ Check(seen.SequenceEqual([7u, 9u]), "closure");
 Check(probe.Load(41).GetAwaiter().GetResult() == 42, "completion");
 Check(probe.Batch().Items.Length == 2, "view");
 try { probe.Read(5); Check(false, "failure"); } catch (InvalidOperationException) { }
+probe.Tag(new Probe.ProbeLabel { Ids = new uint[] { 1, 2 } });
 Check(probe.CountOf(null) == 2, "optional null");
 Check(probe.CountOf(item) == 7, "optional value");
 var bound = new object();

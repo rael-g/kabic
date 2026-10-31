@@ -32,10 +32,29 @@ public static class CSharpWriter
     /// NUL-terminated byte buffer, on the stack when it is short, returning the lines and the number of braces
     /// the caller must close.
     /// </summary>
-    static (List<string> Lines, int Depth) Utf8Prologue(IEnumerable<ApiParam> ps, string indent)
+    static (List<string> Lines, int Depth) Utf8Prologue(ApiModel model, IEnumerable<ApiParam> ps, string indent, Convention convention)
     {
         var lines = new List<string>();
         var depth = 0;
+        foreach (var p in ps.Where(x => SingleBorrowed(model, x) is not null))
+        {
+            var b = SingleBorrowed(model, p)!;
+            var n = Idioms.Ident(p.Name!);
+            lines.Add($"{indent}var {n}Native = new {CsType(model, CTypes.Deref(p.Type), convention).TrimStart()}();");
+            foreach (var f in b.Fields)
+            {
+                var mirror = $"{n}.{Idioms.Pascal(f.Name)}";
+                if (f.Has("array_of"))
+                {
+                    var count = b.Fields.First(x => x.Name == f.TagValue("array_of"));
+                    lines.Add($"{indent}using var {n}{Idioms.Pascal(f.Name)}Pin = {mirror}.Pin();");
+                    lines.Add($"{indent}{n}Native.{f.Name} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}Pin.Pointer;");
+                    lines.Add($"{indent}{n}Native.{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;");
+                }
+                else if (!b.Fields.Any(x => x.TagValue("array_of") == f.Name))
+                    lines.Add($"{indent}{n}Native.{f.Name} = {mirror};");
+            }
+        }
         foreach (var p in ps.Where(x => x.Has("utf8") && !x.Has("array_of")))
         {
             var n = Idioms.Ident(p.Name!);
@@ -148,6 +167,10 @@ public static class CSharpWriter
     /// <summary>
     /// The <c>[borrowed]</c> struct a sequence's elements are, or null for any other element.
     /// </summary>
+    /// <summary>The <c>[borrowed]</c> struct one parameter points at, not as a sequence.</summary>
+    static ApiStruct? SingleBorrowed(ApiModel model, ApiParam p) =>
+        !p.Has("array_of") && !p.Has("out") && !p.Has("optional") && Pointee(model, p.Type) is { } target && IsBorrowed(target) ? target : null;
+
     static ApiStruct? BorrowedOf(ApiModel model, ApiParam seq)
     {
         if (!CTypes.IsPointer(seq.Type)) return null;
@@ -542,6 +565,7 @@ public static class CSharpWriter
     static string CsParamType(ApiModel model, ApiParam p, Convention convention)
     {
         if (model.CallbackOf(p) is not null) return "nint";
+        if (SingleBorrowed(model, p) is { } borrowed) return Idioms.TypeName(borrowed.Name, convention);
         if (model.HandleOf(p.Type) is { } handle) return Idioms.TypeName(handle, convention);
         var tagEnum = p.TagValue("enum");
         if (tagEnum is not null)
@@ -2071,7 +2095,7 @@ public static class CSharpWriter
             o.Add($"        var source = new {completion.SourceType}"
                 + "(TaskCreationOptions.RunContinuationsAsynchronously);");
             o.Add($"        var completion = GCHandle.Alloc(new {completion.StateType} {{ {inits} }});");
-            var (cPro, cDepth) = Utf8Prologue(ins, new string(' ', 8));
+            var (cPro, cDepth) = Utf8Prologue(model, ins, new string(' ', 8), convention);
             o.AddRange(cPro);
             var cInd = new string(' ', 8 + cDepth * 4);
             o.Add($"{cInd}try");
@@ -2107,7 +2131,7 @@ public static class CSharpWriter
                         convention.ReturnsResult(slot.Returns) ? cs.OutParam!.Doc : slot.ReturnDoc, cs.Fallible).TrimEnd(),
                         $"{ret} {name}({sig})");
                     o.Add("    {");
-                    var (roPro, roDepth) = Utf8Prologue(ins, new string(' ', 8));
+                    var (roPro, roDepth) = Utf8Prologue(model, ins, new string(' ', 8), convention);
                     var (roSeq, roSeqDepth) = SequencePrologue(model, cs.Sequences,
                         new string(' ', 8 + roDepth * 4), convention);
                     o.AddRange(roPro);
@@ -2148,7 +2172,7 @@ public static class CSharpWriter
                     Declare(o, decls, XmlDoc("    ", slot.Doc, convention, ins.Select(p => (Idioms.Ident(p.Name!), p.Doc)),
                         throwsOnFail: cs.Fallible).TrimEnd(), $"({retTuple}) {name}({sig})");
                     o.Add("    {");
-                    var (tuPro, tuDepth) = Utf8Prologue(ins, new string(' ', 8));
+                    var (tuPro, tuDepth) = Utf8Prologue(model, ins, new string(' ', 8), convention);
                     var (tuSeq, tuSeqDepth) = SequencePrologue(model, cs.Sequences,
                         new string(' ', 8 + tuDepth * 4), convention);
                     o.AddRange(tuPro);
@@ -2188,7 +2212,7 @@ public static class CSharpWriter
                         $"bool {tryName}({string.Join(", ", sigParts)})");
                     o.Add("    {");
                     foreach (var op in outs) o.Add($"        {OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local;");
-                    var (tPro, tDepth) = Utf8Prologue(ins, new string(' ', 8));
+                    var (tPro, tDepth) = Utf8Prologue(model, ins, new string(' ', 8), convention);
                     var (tSeq, tSeqDepth) = SequencePrologue(model, cs.Sequences,
                         new string(' ', 8 + tDepth * 4), convention);
                     o.AddRange(tPro);
@@ -2242,7 +2266,7 @@ public static class CSharpWriter
                         resultOut is not null ? resultOut.Doc : byReturn ? null : slot.ReturnDoc, throwsOnFail: true).TrimEnd(),
                         $"{retType} {name}{fGenerics}({sig}){fConstraints}");
                     o.Add("    {");
-                    var (fPro, fDepth) = Utf8Prologue(args, new string(' ', 8));
+                    var (fPro, fDepth) = Utf8Prologue(model, args, new string(' ', 8), convention);
                     var (fSeq, fSeqDepth) = SequencePrologue(model, cs.Sequences,
                         new string(' ', 8 + fDepth * 4), convention);
                     var (fBlob, fBlobDepth) = BlobPrologue(cs.Blobs,
@@ -2428,7 +2452,7 @@ public static class CSharpWriter
                             slot.ReturnDoc).TrimEnd(),
                         $"{retType} {name}{generics}({sig}){constraints}", access: access);
                     o.Add("    {");
-                    var (pPro, pDepth) = Utf8Prologue(args, new string(' ', 8));
+                    var (pPro, pDepth) = Utf8Prologue(model, args, new string(' ', 8), convention);
                     var (pSeq, pSeqDepth) = SequencePrologue(model, cs.Sequences,
                         new string(' ', 8 + pDepth * 4), convention);
                     var (pBlob, pBlobDepth) = BlobPrologue(cs.Blobs,
@@ -2516,6 +2540,7 @@ public static class CSharpWriter
                 ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
+            : SingleBorrowed(model, p) is not null ? $"&{Idioms.Ident(p.Name!)}Native"
             : model.CallbackOf(p) is not null ? $"({CsType(model, p.Type, convention).Replace("nint", "void*").Replace(convention.ResultType.Length > 0 ? convention.ResultType : "\0", convention.ResultManagedType)}){Idioms.Ident(p.Name!)}"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"

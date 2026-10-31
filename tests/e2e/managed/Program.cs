@@ -15,7 +15,7 @@ sealed class ManagedProbe : IProbe
     public float Read(uint id) => id < items.Length ? items[id].Weight : throw new InvalidOperationException("read");
     public void Each(ProbeVisit? visit) { foreach (var item in items) visit?.Invoke(item.Id.Value); }
     public ProbeBatch Batch() => new(items);
-    public void Tag(nint label) { }
+    public void Tag(ProbeLabel label) { }
     public Task<uint> Load(uint id) => Task.FromResult(id + 1);
     public uint CountOf(ProbeItem? item) => item?.Id.Value ?? (uint)items.Length;
     public void Bind(uint id, object instance) { }
