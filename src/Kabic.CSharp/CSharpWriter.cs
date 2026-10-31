@@ -293,6 +293,7 @@ public static class CSharpWriter
             return CsType(model, inner, convention) + "*";
         }
         var resolved = CTypes.Unqualified(model.ResolveAlias(t));
+        if (model.Enums.Any(e => e.Name == resolved)) return Idioms.TypeName(resolved, convention);
         return FunctionPointerType(model, resolved, convention) ?? Idioms.CsPrimitive(resolved, convention);
     }
 
@@ -2573,7 +2574,7 @@ public static class CSharpWriter
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
             : SingleBorrowed(model, p) is not null ? $"&{Idioms.Ident(p.Name!)}Native"
-            : model.CallbackOf(p) is not null ? $"({CsType(model, p.Type, convention).Replace("nint", "void*").Replace(convention.ResultType.Length > 0 ? convention.ResultType : "\0", convention.ResultManagedType)}){Idioms.Ident(p.Name!)}"
+            : model.CallbackOf(p) is not null ? $"({Regex.Replace(CsType(model, p.Type, convention).Replace("nint", "void*"), $@"(?<![\w.]){(convention.ResultType.Length > 0 ? Idioms.TypeName(convention.ResultType, convention) : "\0")}\b", convention.ResultManagedType)}){Idioms.Ident(p.Name!)}"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"

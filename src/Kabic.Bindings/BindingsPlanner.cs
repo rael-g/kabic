@@ -307,8 +307,13 @@ public static class BindingsPlanner
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
             job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
         var mapped = convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>();
-        return [.. model.Enums.Where(e => !e.External && !mapped.ContainsKey(e.Name)).Select(e => e.Name),
-            .. model.Structs.Where(CSharpWriter.IsValue).Where(s => !mapped.ContainsKey(s.Name) && s.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null)).Select(s => s.Name)];
+        var records = model.Structs.Where(CSharpWriter.IsValue).Where(s => !mapped.ContainsKey(s.Name)
+            && s.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null)).ToList();
+        var known = records.Select(r => r.Name).ToHashSet();
+        bool Holds(string type) => model.Structs.FirstOrDefault(s => s.Name == CType.Of(type).Name) is not { } held
+            || known.Contains(held.Name) || mapped.ContainsKey(held.Name);
+        while (records.RemoveAll(r => !r.Fields.All(f => Holds(f.Type))) > 0) known = records.Select(r => r.Name).ToHashSet();
+        return [.. model.Enums.Where(e => !e.External && !mapped.ContainsKey(e.Name)).Select(e => e.Name), .. known];
     }
 
     static string Renamed(string remap, IReadOnlyDictionary<string, string> renamed)
