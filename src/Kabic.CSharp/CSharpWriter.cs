@@ -430,7 +430,7 @@ public static class CSharpWriter
         o.Add("        if (_native is null) return;");
         o.Add("        var native = _native;");
         o.Add("        _native = null;");
-        o.Add($"        _owner.{releaseName}(native);");
+        o.Add($"        _owner.{releaseName}((nint)native);");
         o.Add("    }");
         o.Add("}");
         o.Add("");

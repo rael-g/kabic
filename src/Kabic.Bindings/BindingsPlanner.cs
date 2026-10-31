@@ -260,7 +260,7 @@ public static class BindingsPlanner
         var renamed = idiomatic.Values.SelectMany(r => r).Select(r => r.Split('=', 2))
             .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).ToDictionary(r => r[0], r => r[1]);
         var contracts = jobs.Select(j => (Job: j, Spec: ContractSpec(j)))
-            .Where(x => x.Spec is not null).Select(x => (x.Job, Spec: x.Spec!, Types: AbstractTypes(x.Job, convention))).ToList();
+            .Where(x => x.Spec is not null).Select(x => (x.Job, Spec: x.Spec!, Types: AbstractTypes(x.Job, convention))).Where(x => x.Types.Count > 0).ToList();
         var contractOf = contracts.SelectMany(c => c.Types.Select(t => (t, c.Spec.Namespace))).DistinctBy(x => x.t).ToDictionary(x => x.t, x => x.Item2);
         string Located(string remap)
         {

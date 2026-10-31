@@ -391,7 +391,7 @@ internal static class GeneratorShapeCases
                     Param("bundle", "ke_probe_bundle *"))),
             contains: ["public unsafe sealed class Bundle : IDisposable",
                        "public ProbeBundle Data => _native is null",
-                       "_owner.Close(native);",
+                       "_owner.Close((nint)native);",
                        "public Bundle Open(", "return new Bundle(this, (ProbeBundle*)resultOut);",
                        "internal void Close(INativeProbe self, nint bundle)"],
             absent: ["public void Close(", "ProbeBundle* Open("],
