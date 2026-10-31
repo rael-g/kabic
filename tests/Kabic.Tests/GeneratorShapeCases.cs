@@ -281,7 +281,7 @@ internal static class GeneratorShapeCases
             Vtable("ke_probe", Slot("register_body", "ke_result",
                 Param("body", "ke_probe_body_fn", "closure:ctx"),
                 Param("ctx", "void *"))),
-            contains: ["public delegate void ProbeBody(Probe probe);",
+            contains: ["public delegate void ProbeBody(IProbe probe);",
                        "public required Probe Owner;",
                        "handler(state.Owner);"],
             absent: ["_callbackFailures", "ke_probe* probe"],

@@ -111,7 +111,7 @@ public static class ClangSharpRunner
         {
             if (job.Includes.Count > 0 && Directory.Exists(outputDirectory))
                 foreach (var written in Directory.EnumerateFiles(outputDirectory, "*.cs"))
-                    File.WriteAllText(written, System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(written), @"^\s*\[NativeTypeName\(.*\)\]\r?\n", "", System.Text.RegularExpressions.RegexOptions.Multiline));
+                    File.WriteAllText(written, System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(written), @"^\s*\[NativeTypeName\(.*\)\]\r?\n|^using [\w.:]+\.Native;\r?\n", "", System.Text.RegularExpressions.RegexOptions.Multiline));
             Directory.SetCurrentDirectory(previous);
         }
 

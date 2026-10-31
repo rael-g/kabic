@@ -1051,8 +1051,6 @@ public static class CSharpWriter
             contract.Add($"using {convention.CommonManagedNamespace};");
             contract.Add($"using {nativeNs};");
             foreach (var u in extraUsings) contract.Add($"using {u};");
-            if (contractNamesForeignProjections)
-                foreach (var u in extraUsings) contract.Add($"using {u};");
             contract.Add("");
             contract.Add($"namespace {ns};");
             contract.Add("");
@@ -1061,7 +1059,7 @@ public static class CSharpWriter
         var closures = VtableClosures(model, slots, convention);
         var closureGroups = VtableClosureGroups(model, slots, typeName, convention);
         foreach (var cb in closures.DistinctBy(c => c.Delegate))
-            RenderClosureDelegate(model, contract ?? o, cb, typeName, convention);
+            RenderClosureDelegate(model, contract ?? o, cb, typeName, convention, contract is null ? typeName : domainIface);
 
         var owned = OwnedOf(model, vtable, convention);
         foreach (var each in owned)
@@ -1721,10 +1719,10 @@ public static class CSharpWriter
     /// rather than as an <c>Action</c>, because a lane can be a pointer and a generic
     /// type argument cannot.
     /// </summary>
-    static void RenderClosureDelegate(ApiModel model, List<string> o, CallbackPair pair, string selfType, Convention convention)
+    static void RenderClosureDelegate(ApiModel model, List<string> o, CallbackPair pair, string selfType, Convention convention, string? spelledSelf = null)
     {
         var ps = CarriedLanes(pair).Select(i => pair.Callback.Lanes[i])
-            .Select((l, n) => $"{ManagedLane(model, l, selfType, convention)} {Idioms.Ident(l.Name ?? $"arg{n}")}")
+            .Select((l, n) => $"{(IsOwnerLane(l, selfType, convention) ? spelledSelf ?? selfType : ManagedLane(model, l, selfType, convention))} {Idioms.Ident(l.Name ?? $"arg{n}")}")
             .ToList();
         var ret = ManagedReturn(model, pair.Callback, convention);
         var doc = pair.Callback.Lanes
