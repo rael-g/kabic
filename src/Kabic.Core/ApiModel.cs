@@ -276,18 +276,29 @@ public class ApiModel
         return parsed.Pointers == outer && TypeAliases.TryGetValue(parsed.Name, out var target) && target.EndsWith('*') && !target.Contains('(') ? parsed.Name : null;
     }
 
-    /// <summary>The <c>[owner]</c> struct that holds <paramref name="vtable"/>, or null.</summary>
-    public ApiStruct? OwnerOf(string vtable) =>
-        Structs.FirstOrDefault(s => s.Has("owner") && s.Fields.Any(f => Bare(f.Type) == vtable));
+    /// <summary>The <c>[owner]</c> struct that holds <paramref name="vtable"/>, or null. Fails when two do.</summary>
+    public ApiStruct? OwnerOf(string vtable)
+    {
+        var owners = Structs.Where(s => s.Has("owner") && s.Fields.Any(f => Bare(f.Type) == vtable)).ToList();
+        return owners.Count > 1
+            ? throw new InvalidOperationException($"{vtable} has two owners: {string.Join(", ", owners.Select(o => o.Name))}")
+            : owners.FirstOrDefault();
+    }
 
-    /// <summary>The function that makes the owner of <paramref name="vtable"/>, or null.</summary>
-    public ApiFunction? FactoryOf(string vtable) =>
-        OwnerOf(vtable) is { } owner ? Functions.FirstOrDefault(f => Makes(f) == owner.Name) : null;
+    /// <summary>The function that makes the owner of <paramref name="vtable"/>, or null. Fails when two do.</summary>
+    public ApiFunction? FactoryOf(string vtable)
+    {
+        if (OwnerOf(vtable) is not { } owner) return null;
+        var factories = Functions.Where(f => Makes(f) == owner.Name).ToList();
+        return factories.Count > 1
+            ? throw new InvalidOperationException($"{owner.Name} has two factories: {string.Join(", ", factories.Select(f => f.Name))}")
+            : factories.FirstOrDefault();
+    }
 
-    /// <summary>The <c>[owner]</c> struct <paramref name="function"/> returns or writes last, or null.</summary>
+    /// <summary>The <c>[owner]</c> struct <paramref name="function"/> returns or writes through a last <c>[out]</c>, or null.</summary>
     public string? Makes(ApiFunction function)
     {
-        var made = function.Params.Count > 0 && CTypes.IsPointer(function.Params[^1].Type) ? Bare(function.Params[^1].Type) : Bare(function.Returns);
+        var made = function.Params.Count > 0 && function.Params[^1].Has("out") ? Bare(function.Params[^1].Type) : CTypes.IsPointer(function.Returns) ? "" : Bare(function.CReturns ?? function.Returns);
         return Structs.Any(s => s.Name == made && s.Has("owner")) ? made : null;
     }
 

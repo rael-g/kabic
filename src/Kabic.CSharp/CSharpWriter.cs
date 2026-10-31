@@ -539,7 +539,7 @@ public static class CSharpWriter
 
     static string CsParamType(ApiModel model, ApiParam p, Convention convention)
     {
-        if (p.Callback is not null) return "nint";
+        if (model.CallbackOf(p) is not null) return "nint";
         if (model.HandleOf(p.Type) is { } handle) return Idioms.TypeName(handle, convention);
         var tagEnum = p.TagValue("enum");
         if (tagEnum is not null)
@@ -1284,7 +1284,7 @@ public static class CSharpWriter
         var code = string.Join('\n', contract.Where(l => !l.TrimStart().StartsWith("///", StringComparison.Ordinal)));
         var native = model.Structs.Select(s => s.Name)
             .Concat(model.Enums.Where(e => e.External).Select(e => e.Name))
-            .FirstOrDefault(n => Regex.IsMatch(code, $@"\b{Regex.Escape(n)}\b"));
+            .FirstOrDefault(n => Regex.IsMatch(code, $@"(?<![\w.]){Regex.Escape(n)}\b"));
         if (native is not null)
             throw new InvalidOperationException(
                 $"{vtable.Name}: {domainIface} names {native}, which is the ABI's own spelling rather"
@@ -1384,6 +1384,7 @@ public static class CSharpWriter
         : CTypes.IsPointer(lane.Type) && !lane.Has("utf8") ? "nint"
         : lane.Has("utf8") ? "string"
         : IsBoolType(lane.Type, convention) ? "bool"
+        : convention.ReturnsResult(lane.Type) ? convention.ResultManagedType
         : CsType(model, lane.Type, convention);
 
     /// <summary>
@@ -2446,7 +2447,7 @@ public static class CSharpWriter
                 ? OutAddress(model, p, convention, $"{Idioms.Ident(WrittenName(p, convention))}Local")
             : cs.Sequences.FirstOrDefault(s => s.Count == p) is { } asCount
                 ? $"({CsType(model, asCount.Count.Type, convention)}){Idioms.Ident(asCount.Seq.Name!)}.Length"
-            : p.Callback is not null ? $"({CsType(model, p.Type, convention).Replace("nint", "void*")}){Idioms.Ident(p.Name!)}"
+            : model.CallbackOf(p) is not null ? $"({CsType(model, p.Type, convention).Replace("nint", "void*")}){Idioms.Ident(p.Name!)}"
             : p.Has("rooted") ? $"(void*)System.Runtime.InteropServices.GCHandle.ToIntPtr({Idioms.Ident(p.Name!)}Handle)"
             : p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr"
             : model.Enums.Any(e => e.Name == p.Type.Trim()) ? $"({Idioms.TypeName(p.Type.Trim(), convention)}){Idioms.Ident(p.Name!)}"
