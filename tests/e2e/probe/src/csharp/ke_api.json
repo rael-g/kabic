@@ -41,7 +41,7 @@
       "fields": [
         {
           "name": "id",
-          "type": "uint32_t",
+          "type": "ke_probe_id",
           "tags": [],
           "doc": null
         },
@@ -446,8 +446,12 @@
       ]
     }
   ],
+  "strong_types": [
+    "ke_probe_id"
+  ],
   "type_aliases": {
     "ke_probe_visit_fn": "void (*)(void *, uint32_t)",
+    "ke_probe_id": "uint32_t",
     "ke_probe_done_fn": "void (*)(void *, ke_result, uint32_t)"
   }
 }

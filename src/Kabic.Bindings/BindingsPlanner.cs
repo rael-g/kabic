@@ -256,7 +256,7 @@ public static class BindingsPlanner
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass));
         }
 
-        var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention).ToList());
+        var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention, domains).ToList());
         var renamed = idiomatic.Values.SelectMany(r => r).Select(r => r.Split('=', 2))
             .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).ToDictionary(r => r[0], r => r[1]);
         var contracts = jobs.Select(j => (Job: j, Spec: ContractSpec(j)))
@@ -282,7 +282,7 @@ public static class BindingsPlanner
                 job.IncludeDirectories.Select(Moved).ToList(), job.UmbrellaBody is null ? Moved(job.File) : job.File, job.UmbrellaBody,
                 job.Traverse.Select(Moved).ToList(), job.Additional,
                 [.. result.First(r => r.Name == job.Name).Remaps.Where(r => !types.Contains(r.Split('=')[0].TrimEnd()) && !r.Contains("::")),
-                    .. idiomatic[job].Where(r => types.Contains(r.Split("::")[0].Split('=')[0].TrimEnd()))], [],
+                    .. idiomatic[job].Where(r => r.Contains("=global::") || types.Contains(r.Split("::")[0].Split('=')[0].TrimEnd()))], [],
                 [.. job.Config.Where(c => c != "generate-helper-types")],
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass) { Includes = types });
         }
@@ -309,7 +309,7 @@ public static class BindingsPlanner
         return renamed.TryGetValue(source, out var name) ? $"{source}={target[..(target.LastIndexOf('.') + 1)]}{name}" : remap;
     }
 
-    static IEnumerable<string> Idiomatic(BindingJob job, Convention convention)
+    static IEnumerable<string> Idiomatic(BindingJob job, Convention convention, IReadOnlyList<DomainSpec> domains)
     {
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
@@ -318,6 +318,9 @@ public static class BindingsPlanner
         bool Captured(string value, ApiEnum owner) =>
             Regex.IsMatch(text, $@"[(=][ \t]*{value}\b") && model.Enums.Any(o => o != owner
                 && o.Values.Any(v => Idioms.EnumMember(v.Name, o.Name) == Idioms.EnumMember(value, owner.Name)));
+        foreach (var strong in model.StrongTypes)
+            if (domains.FirstOrDefault(d => d.NativeNamespace == job.Namespace) is { } home)
+                yield return $"{strong}=global::{home.Namespace}.{Idioms.TypeName(strong, convention)}";
         foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
             yield return $"{cType}={target}";
         foreach (var e in model.Enums.Where(e => !e.External))

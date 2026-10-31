@@ -25,9 +25,12 @@ typedef enum ke_probe_kind
     KE_PROBE_KIND_FAR,
 } ke_probe_kind;
 
+/// [strong]
+typedef uint32_t ke_probe_id;
+
 typedef struct ke_probe_item
 {
-    uint32_t id;
+    ke_probe_id id;
     float weight; ///< [default:1]
     ke_probe_kind kind;
 } ke_probe_item;

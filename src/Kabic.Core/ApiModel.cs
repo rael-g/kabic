@@ -249,6 +249,9 @@ public class ApiModel
     /// </summary>
     public List<ApiCallback> Callbacks { get; } = [];
 
+    /// <summary>Scalar typedefs tagged <c>[strong]</c>, each projected as a type of its own.</summary>
+    public HashSet<string> StrongTypes { get; } = [];
+
     /// <summary>
     /// The callback a parameter's type names, or <see langword="null"/> if it names none.
     /// </summary>
@@ -420,6 +423,7 @@ public static class ApiReader
                 Tags = ReadTags(o, "tags"),
             });
         }
+        foreach (var strong in root["strong_types"]?.AsArray() ?? []) m.StrongTypes.Add(strong!.GetValue<string>());
         foreach (var v in root["variables"]?.AsArray() ?? [])
         {
             var o = v!.AsObject();

@@ -95,6 +95,12 @@ public static class Generation
         if (model.Opaques.Count > 0 || model.TypeAliases.Keys.Any(a => model.HandleOf(a) is not null))
             File.WriteAllText(Path.Combine(outDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
 
+        if (model.StrongTypes.Count > 0)
+        {
+            Directory.CreateDirectory(contractDir);
+            File.WriteAllText(Path.Combine(contractDir, "StrongTypes.g.cs"), CSharpWriter.RenderStrongTypes(model, ns, convention));
+        }
+
         if (classified.Functions.Count > 0)
         {
             var domain = r.Domain ?? "functions";

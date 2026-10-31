@@ -558,6 +558,18 @@ public static class CSharpWriter
     static string NativeHandle(ApiModel model, string type, Convention convention) =>
         NativePointerType(model, model.TypeAliases.GetValueOrDefault(CType.Of(type).Name) ?? type, convention);
 
+    /// <summary>The strong scalars the headers declare, each laid out as its scalar.</summary>
+    public static string RenderStrongTypes(ApiModel model, string ns, Convention convention)
+    {
+        var o = new List<string> { Header, $"namespace {ns};\n" };
+        foreach (var name in model.StrongTypes.Order(StringComparer.Ordinal))
+        {
+            o.Add($"/// <summary>A <c>{name}</c>.</summary>");
+            o.Add($"public readonly record struct {Idioms.TypeName(name, convention)}({CsType(model, model.TypeAliases[name], convention)} Value);\n");
+        }
+        return string.Join('\n', o);
+    }
+
     /// <summary>The handles the headers declare, one distinct type each.</summary>
     public static string RenderHandles(ApiModel model, string ns, Convention convention)
     {

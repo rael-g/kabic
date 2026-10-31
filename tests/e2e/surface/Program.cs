@@ -13,8 +13,8 @@ if (unsafeMembers.Count > 0) return 1;
 
 using var probe = new Probe.Probe(4);
 var item = Probe.ProbeItem.Default;
-item.Id = 7;
-probe.Fill([item, item with { Id = 9, Weight = 2.5f }]);
+item.Id = new Probe.ProbeId(7);
+probe.Fill([item, item with { Id = new Probe.ProbeId(9), Weight = 2.5f }]);
 Check(probe.Count() == 2, "count");
 Check(probe.Read(1) == 2.5f, "read");
 Check(probe.WeightOf(0) == 1f, "default");
