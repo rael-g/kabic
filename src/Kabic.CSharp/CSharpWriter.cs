@@ -1492,7 +1492,7 @@ public static class CSharpWriter
             ? "TaskCompletionSource" : $"TaskCompletionSource<{ResultType}>";
 
         /// <summary>What the call hands back in place of the answer it does not have yet.</summary>
-        public string TaskType => ResultType is null ? "Task" : $"Task<{ResultType}>";
+        public string TaskType => ResultType is null ? "global::System.Threading.Tasks.Task" : $"global::System.Threading.Tasks.Task<{ResultType}>";
 
         /// <summary>Whether the trampoline has to reach the provider to build its answer.</summary>
         public bool NeedsOwner => Owned is not null;

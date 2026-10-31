@@ -414,7 +414,7 @@ internal static class GeneratorShapeCases
                     Param("user_data", "void *")),
                 Slot("close", "void", "releases:Bundle", Param("self", "ke_probe *"),
                     Param("bundle", "ke_probe_bundle *"))),
-            contains: ["public Task<Bundle> OpenAsync(INativeProbe self, string path)",
+            contains: ["public global::System.Threading.Tasks.Task<Bundle> OpenAsync(INativeProbe self, string path)",
                        "private static void OpenAsyncOnDoneTrampoline(KernelEngine.Result.Native.ke_result arg0, ke_probe_bundle* arg1, void* ctx)",
                        "if (arg0 != KernelEngine.Result.Native.ke_result.KE_OK || arg1 == null)",
                        "state.Source.TrySetException(KernelEngine.NativeResults.FromCode(arg0, \"open_async\"));"],

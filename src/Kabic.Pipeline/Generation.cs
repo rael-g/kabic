@@ -92,9 +92,11 @@ public static class Generation
             File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(callback.Name, convention)}Native.g.cs"),
                 CSharpWriter.RenderCallbackInterface(callback, ns, nativeNs, convention));
 
+        if (model.Opaques.Count > 0 || model.TypeAliases.Keys.Any(a => model.HandleOf(a) is not null))
+            File.WriteAllText(Path.Combine(outDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
+
         if (classified.Functions.Count > 0)
         {
-            File.WriteAllText(Path.Combine(outDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
             var domain = r.Domain ?? "functions";
             File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(domain, convention)}.Functions.g.cs"),
                 CSharpWriter.RenderFunctions(model, classified, domain, ns, nativeNs, usings, convention));

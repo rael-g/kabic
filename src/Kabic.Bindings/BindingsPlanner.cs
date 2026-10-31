@@ -314,9 +314,9 @@ public static class BindingsPlanner
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
             job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
-        var text = string.Concat(job.Traverse.Select(p => File.ReadAllText(Full(p))));
+        var text = Regex.Replace(string.Concat(job.Traverse.Select(p => File.ReadAllText(Full(p)))), @"/\*.*?\*/|//[^\n]*", "", RegexOptions.Singleline);
         bool Captured(string value, ApiEnum owner) =>
-            Regex.Count(text, $@"\b{value}\b") > 1 && model.Enums.Any(o => o != owner
+            Regex.IsMatch(text, $@"[(=][ \t]*{value}\b") && model.Enums.Any(o => o != owner
                 && o.Values.Any(v => Idioms.EnumMember(v.Name, o.Name) == Idioms.EnumMember(value, owner.Name)));
         foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
             yield return $"{cType}={target}";
