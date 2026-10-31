@@ -42,7 +42,8 @@ public static class Generation
         var nativeNs = r.NativeNamespace;
         var outDir = r.OutDir;
         var contractDir = r.ContractDir;
-        var usings = r.Usings.ToList();
+        var usings = r.Usings.SelectMany(u => u.EndsWith(".Native", StringComparison.Ordinal) ? [u, u[..^".Native".Length]] : new[] { u })
+            .Distinct().Where(u => u != ns).ToList();
         model.SafeViews = Path.GetFullPath(contractDir).StartsWith(Path.GetFullPath(outDir), StringComparison.Ordinal) is false;
 
         Directory.CreateDirectory(outDir);
