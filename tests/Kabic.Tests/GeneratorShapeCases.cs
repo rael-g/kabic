@@ -112,7 +112,7 @@ internal static class GeneratorShapeCases
                 Param("entity", "ke_entity"),
                 Param("out_kind", "ke_probe_verdict *", "out,enum:ke_probe_verdict"))),
             contains: ["public ulong Ask(ulong entity, out ProbeVerdict kind)", "ProbeVerdict kindLocal;",
-                       "(ke_probe_verdict*)&kindLocal", "kind = kindLocal;"],
+                       "&kindLocal", "kind = kindLocal;"],
             absent: ["ProbeVerdict* outKind", "public ProbeVerdict Ask("]);
 
         Expect("a slot answering with a declared enum answers in its names",

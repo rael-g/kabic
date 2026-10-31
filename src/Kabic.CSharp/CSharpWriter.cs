@@ -2048,7 +2048,7 @@ public static class CSharpWriter
 
     /// <summary>What a slot is called where the provider projects it.</summary>
     static string SlotName(ApiSlot slot) =>
-        Idioms.Pascal(slot.Name);
+        slot.TagValue("name") ?? Idioms.Pascal(slot.Name);
 
     static string Call(ApiSlot slot, string arguments) =>
         slot.Symbol is { } symbol ? $"{symbol}({arguments.TrimStart(',', ' ')})" : $"Handle->{slot.Name}(Handle{arguments})";
