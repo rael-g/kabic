@@ -8,6 +8,7 @@
     { "name": "other", "headers": ["src/c/kernel_engine/other/other.h"], "includeDirs": ["src/c"],
     "apiJson": "src/csharp/other_ke_api.json", "namespace": "Other", "nativeNamespace": "Other.Native",
     "outDir": "src/csharp/Other/Generated", "providers": ["ke_other"], "usings": ["Probe.Native"] } ],
+  "zig": [ { "name": "probe_extra", "headers": ["src/c/kernel_engine/probe_extra/probe_extra.h"], "includeDirs": ["src/c"] } ],
   "bindings": [ { "name": "Probe", "project": "src/csharp/Probe", "namespace": "Probe.Native",
     "headers": ["src/c/kernel_engine/probe/probe.h"], "library": "ke_probe", "output": "Native/Generated/" },
     { "name": "Other", "project": "src/csharp/Other", "namespace": "Other.Native",

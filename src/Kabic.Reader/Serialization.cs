@@ -200,6 +200,8 @@ public static class Serialization
         };
         if (f.ReturnTags.Count > 0)
             o["return_tags"] = new JsonArray(f.ReturnTags.Select(t => (JsonNode)t).ToArray());
+        if (f.Tags.Count > 0)
+            o["tags"] = new JsonArray(f.Tags.Select(t => (JsonNode)t).ToArray());
         return o;
     }
 }

@@ -66,10 +66,40 @@ internal static class ZigShapeCases
             });
         }
 
-        Expect("a slot on its own record is a method over a suffixed field",
-            m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [], [
-                Slot("read", "uint32_t", "ke_probe *", P("count", "uint32_t"), P("read", "uint32_t"))])),
-            ["read_fn: ?*const fn", "pub fn read(self: *ke_probe, count: u32, read_: u32) u32 {", "return self.read_fn.?(self, count, read_);"]);
+        ApiModel Idiom()
+        {
+            var m = new ApiModel();
+            m.Enums.Add(new ApiEnum("ke_result", null, [new("KE_OK", "0", true, null), new("KE_RESULT_GENERAL", "1", true, null)]));
+            m.Opaques.Add("ke_db");
+            m.Structs.Add(new ApiStruct("ke_probe", null, [], [], [
+                Slot("read", "ke_result", "ke_probe *", P("id", "uint32_t"), P("out_value", "float *", "out")),
+                Slot("fill", "void", "ke_probe *", P("items", "const uint32_t *", "array_of:item_count"), P("item_count", "uint32_t")),
+                Slot("name_of", "void", "ke_probe *", P("name", "const char *", "utf8"))]));
+            m.Functions.Add(new ApiFunction("ke_db_open", "ke_result", null, null, [P("out_db", "ke_db **", "out")]));
+            m.Functions.Add(new ApiFunction("ke_db_close", "void", null, null, [P("db", "ke_db *")]));
+            m.Functions.Add(new ApiFunction("ke_db_stat", "void", null, null, [P("db", "ke_db *")]) { Tags = ["free"] });
+            return m;
+        }
+
+        void Idiomatic(string what, string[] contains, string[]? absent = null) => Register(what, failures =>
+        {
+            var api = ZigWriter.RenderFiles(Idiom(), new Dictionary<string, string>(),
+                new Convention { SymbolPrefix = "ke_", ResultType = "ke_result", ResultOk = "Ok" }, "probe_c.zig").Api;
+            foreach (var needle in contains)
+                if (!api.Contains(needle, StringComparison.Ordinal)) failures.Add($"{what}: expected \"{needle}\"\n{api}");
+            foreach (var needle in absent ?? [])
+                if (api.Contains(needle, StringComparison.Ordinal)) failures.Add($"{what}: expected NOT \"{needle}\"");
+        });
+
+        Idiomatic("a result enum is non exhaustive with snake_case cases", ["pub const Result = enum(c.ke_result) {", "ok = 0,", "result_general = 1,", "_,"]);
+        Idiomatic("results map to errors and back", ["error{ ResultGeneral, Failed }", "error.ResultGeneral => c.KE_RESULT_GENERAL,", "if (code == c.KE_RESULT_GENERAL) return error.ResultGeneral;"]);
+        Idiomatic("a slot is a method with an error and its out as the value", ["pub fn read(self: Probe, id: u32) Error!f32 {", "try checkResult(self.ptr.read.?(self.ptr, id, &written));"]);
+        Idiomatic("an array is a slice and its count leaves the signature", ["pub fn fill(self: Probe, items: []const u32) void {", "items.ptr, @intCast(items.len)"]);
+        Idiomatic("a string is sentinel terminated", ["pub fn nameOf(self: Probe, name: [:0]const u8) void {"]);
+        Idiomatic("an opaque record is a type its functions hang off", ["pub const Db = struct {", "ptr: *c.ke_db,", "pub fn open() Error!Db {", "pub fn close(self: Db) void {"]);
+        Idiomatic("a function tagged free stays free", ["pub fn dbStat(db: Db) void {"], ["pub fn stat(self: Db)"]);
+        Idiomatic("a vtable implements itself from a Zig type", ["pub fn implement(comptime T: type) c.ke_probe {", "catch |failure| return resultOf(failure);"]);
+        Idiomatic("the ABI is reached as c", ["pub const c = @import(\"probe_c.zig\");"]);
 
         Expect("a fixed-size array field declares its extent and its element type",
             m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [
@@ -134,8 +164,8 @@ internal static class ZigShapeCases
                     P("capacity", "uint32_t")),
             ])),
             contains: ["handle: ?*anyopaque = std.mem.zeroes(?*anyopaque),",
-                       "count_fn: ?*const fn (?*ke_probe) callconv(.c) u32 = null,",
-                       "fill_fn: ?*const fn (?*ke_probe, ?[*]far.ke_item, u32) callconv(.c) result.ke_result = null,"],
+                       "count: ?*const fn (?*ke_probe) callconv(.c) u32 = null,",
+                       "fill: ?*const fn (?*ke_probe, ?[*]far.ke_item, u32) callconv(.c) result.ke_result = null,"],
             absent: [],
             foreign: new Dictionary<string, string> { ["ke_item"] = "far", ["ke_result"] = "result" });
 
@@ -144,7 +174,7 @@ internal static class ZigShapeCases
                 Slot("write", "void", "struct ke_probe *"),
             ])
             { Order = ["write", "handle"] }),
-            contains: ["write_fn: ?*const fn (?*ke_probe) callconv(.c) void = null,\n    handle: ?*anyopaque = std.mem.zeroes(?*anyopaque),"]);
+            contains: ["write: ?*const fn (?*ke_probe) callconv(.c) void = null,\n    handle: ?*anyopaque = std.mem.zeroes(?*anyopaque),"]);
 
         Expect("an anonymous union is an inline extern union",
             m => m.Structs.Add(new ApiStruct("ke_probe_variant", null, [], [
@@ -168,7 +198,7 @@ internal static class ZigShapeCases
             m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [], [
                 Slot("compile", "void", "struct ke_probe *", P("on_ready", "void (*)(uint64_t, void *)")),
             ])),
-            contains: ["compile_fn: ?*const fn (?*ke_probe, ?*const fn (u64, ?*anyopaque) callconv(.c) void) callconv(.c) void = null,"]);
+            contains: ["compile: ?*const fn (?*ke_probe, ?*const fn (u64, ?*anyopaque) callconv(.c) void) callconv(.c) void = null,"]);
 
         Expect("a record declared and never defined is opaque",
             m =>

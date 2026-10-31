@@ -75,10 +75,6 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         sb.AppendLine("const abi = @import(\"abi\");");
         sb.AppendLine("const c = @import(\"c\");");
         sb.AppendLine();
-        sb.AppendLine("fn headerName(comptime C: type, comptime name: []const u8) []const u8 {");
-        sb.AppendLine($"    return if (@hasField(C, name)) name else name[0 .. name.len - \"{ZigWriter.SlotSuffix}\".len];");
-        sb.AppendLine("}");
-        sb.AppendLine();
         sb.AppendLine("fn expectSameLayout(comptime A: type, comptime C: type) !void {");
         sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
         sb.AppendLine("    if (@typeInfo(C) == .@\"opaque\") return;");
@@ -86,9 +82,8 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         sb.AppendLine("    try std.testing.expectEqual(@alignOf(C), @alignOf(A));");
         sb.AppendLine("    switch (@typeInfo(A)) {");
         sb.AppendLine("        .@\"struct\" => |s| inline for (s.fields) |f| {");
-        sb.AppendLine("            const name = comptime headerName(C, f.name);");
-        sb.AppendLine("            try std.testing.expectEqual(@offsetOf(C, name), @offsetOf(A, f.name));");
-        sb.AppendLine("            try expectSameLayout(f.type, @FieldType(C, name));");
+        sb.AppendLine("            try std.testing.expectEqual(@offsetOf(C, f.name), @offsetOf(A, f.name));");
+        sb.AppendLine("            try expectSameLayout(f.type, @FieldType(C, f.name));");
         sb.AppendLine("        },");
         sb.AppendLine("        .@\"union\" => |u| inline for (u.fields) |f| try expectSameLayout(f.type, @FieldType(C, f.name)),");
         sb.AppendLine("        else => {},");

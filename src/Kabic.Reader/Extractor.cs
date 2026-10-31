@@ -323,7 +323,7 @@ public static class Extractor
 
     static ApiFunction ExtractFunction(JsonObject node, string name, List<string> errors, ApiModel api)
     {
-        var (_, summary, pdocs, retTags, retDoc) = DocParser.Parse(node);
+        var (functionTags, summary, pdocs, retTags, retDoc) = DocParser.Parse(node);
         var paramDecls = ((node["inner"] as JsonArray) ?? [])
             .Where(c => c!["kind"]?.GetValue<string>() == "ParmVarDecl").Select(c => c!.AsObject()).ToList();
         var pnames = paramDecls.Select(p => p["name"]?.GetValue<string>()).ToList();
@@ -345,7 +345,7 @@ public static class Extractor
 
         return new ApiFunction(name, returns, summary.Length > 0 ? summary : null,
             retDoc.Length > 0 ? retDoc : null, parameters)
-        { ReturnTags = retTags };
+        { ReturnTags = retTags, Tags = functionTags };
     }
 
     static ApiData? ExtractData(JsonObject node, string name, byte[] bytes)

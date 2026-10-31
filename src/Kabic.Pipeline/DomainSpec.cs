@@ -21,6 +21,20 @@ public sealed record DomainSpec(
     string? Annotations = null)
 {
     /// <summary>
+    /// The domains of the manifest followed by its <c>zig</c> entries: headers that have a Zig
+    /// package and no projection of their own, such as a library's factory header, given a name,
+    /// headers, include directories and optional annotations.
+    /// </summary>
+    public static IReadOnlyList<DomainSpec> LoadForZig(string manifestPath)
+    {
+        var extra = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject()["zig"]?.AsArray() ?? [];
+        return [.. Load(manifestPath), .. extra.Select(e => new DomainSpec(e!["name"]!.GetValue<string>(),
+            e["headers"]!.AsArray().Select(n => n!.GetValue<string>()).ToList(),
+            e["includeDirs"]!.AsArray().Select(n => n!.GetValue<string>()).ToList(),
+            [], "", "", "", "", null, [], [], null, e["annotations"]?.GetValue<string>()))];
+    }
+
+    /// <summary>
     /// Reads the manifest at the given path and returns its domains in manifest order.
     /// </summary>
     public static IReadOnlyList<DomainSpec> Load(string manifestPath)

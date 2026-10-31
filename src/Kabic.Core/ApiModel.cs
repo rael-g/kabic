@@ -181,6 +181,12 @@ public record ApiData(string Name, string Type, bool ReadOnly, ApiValue Value);
 /// <summary>A function the header declares, with its return type and its parameters.</summary>
 public record ApiFunction(string Name, string Returns, string? Doc, string? ReturnDoc, IReadOnlyList<ApiParam> Params)
 {
+    /// <summary>The tags of the function's own documentation.</summary>
+    public IReadOnlyList<string> Tags { get; init; } = [];
+
+    /// <summary>Whether the function carries <paramref name="tag"/>.</summary>
+    public bool Has(string tag) => Tags.Contains(tag);
+
     /// <summary>The return type C declares, where <c>Returns</c> holds the tagged result.</summary>
     public string? CReturns { get; init; }
 
@@ -400,6 +406,7 @@ public static class ApiReader
             {
                 ReturnTags = ReadTags(o, "return_tags"),
                 CReturns = Str(o, "returns"),
+                Tags = ReadTags(o, "tags"),
             });
         }
         foreach (var v in root["variables"]?.AsArray() ?? [])

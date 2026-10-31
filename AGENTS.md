@@ -94,3 +94,6 @@ inline function pointer is the callback `function_parameter`, with lanes `argN`.
 no declaration fails.
 
 Whoever owns a header tags it in the source; the annotation file is for a header that cannot be edited.
+
+In Zig a function hangs off the handle it takes first, or that it creates. A function tagged `free`,
+`self: free` in an annotation file, stays a plain function.

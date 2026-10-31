@@ -15,9 +15,6 @@ using Kabic;
 /// </summary>
 public sealed class ZigWriter
 {
-    /// <summary>What a slot's field adds to its name, since a method takes the name itself.</summary>
-    public const string SlotSuffix = "_fn";
-
     readonly ApiModel model;
     readonly IReadOnlyDictionary<string, string> foreign;
     readonly SortedSet<string> imported = [];
@@ -213,8 +210,7 @@ public sealed class ZigWriter
 
     /// <summary>
     /// A record as an extern struct or union, members in declaration order. A slot reads as a
-    /// nullable function pointer whose first parameter is its receiver; a slot that receives the
-    /// record itself is the field <c>slot_fn</c> and the method <c>slot</c>.
+    /// nullable function pointer whose first parameter is its receiver.
     /// </summary>
     string Record(ApiStruct s, string indent)
     {
@@ -236,14 +232,6 @@ public sealed class ZigWriter
             catch (NotSupportedException e) { throw new NotSupportedException($"{s.Name}.{name}: {e.Message}"); }
         }
         BitRun(sb, run, indent + "    ");
-        foreach (var slot in s.Slots.Where(sl => convention is null && IsMethod(s, sl))) Method(sb, s, slot, indent + "    ");
-        if (convention is null && s.Has("owner") && s.Fields is [var owned] && s.Slots is [var destroy])
-        {
-            sb.AppendLine();
-            sb.AppendLine($"{indent}    pub fn deinit(self: {s.Name}) void {{");
-            sb.AppendLine($"{indent}        self.{Ident(destroy.Name)}.?(self.{Ident(owned.Name)});");
-            sb.AppendLine($"{indent}    }}");
-        }
         sb.Append(indent).Append('}');
         return sb.ToString();
     }
@@ -272,16 +260,6 @@ public sealed class ZigWriter
 
     static bool IsMethod(ApiStruct s, ApiSlot slot) =>
         s.IsVtable && !s.Has("bag") && Bare((slot.Receiver ?? s.Name + " *").Replace("*", " ")) == s.Name;
-
-    void Method(StringBuilder sb, ApiStruct s, ApiSlot slot, string inner)
-    {
-        sb.AppendLine();
-        Doc(sb, slot.Doc, inner);
-        var names = slot.Params.Select((p, i) => ParamName(s, p, i)).ToList();
-        Wrapper(sb, inner, Ident(FunctionName(slot.Name)), $"self: *{s.Name}", ["self"], $"self.{slot.Name}{SlotSuffix}.?",
-            slot.Params, names, slot.Returns, slot.CReturns ?? slot.Returns,
-            slot.ReturnTagValue("array_of") is not null ? Lane.Many : null);
-    }
 
     /// <summary>
     /// A function over <paramref name="target"/>. A result becomes an error, and the last
@@ -323,7 +301,7 @@ public sealed class ZigWriter
         var (value, answer) = Answer(written, raw);
         sb.AppendLine($"{inner}pub fn {name}({signature}) Error!{value} {{");
         if (written is not null) sb.AppendLine($"{inner}    var written: {raw} = undefined;");
-        sb.AppendLine(ResultEnum() is null
+        sb.AppendLine(ResultEnum() is null && ResultModule() is null
             ? $"{inner}    if ({target}({args}) != {OkValue()}) return error.Failed;"
             : $"{inner}    try checkResult({target}({args}));");
         if (written is not null) sb.AppendLine($"{inner}    return {answer};");
@@ -383,6 +361,8 @@ public sealed class ZigWriter
     void Idiomatic(StringBuilder o)
     {
         top = true;
+        usesResult = ResultEnum() is not null;
+        if (ResultModule() is { } resultModule) { imported.Add(resultModule); usesResult = true; }
         var types = model.Structs.Where(s => !s.External && s.IsVtable && !s.Has("bag") && !s.Has("owner")).Select(s => s.Name)
             .Concat(model.Opaques.Where(n => Wrappable(n))).Concat(model.TypeAliases.Keys.Where(IsPointerTypedef)).Distinct().ToList();
         foreach (var name in types)
@@ -405,7 +385,7 @@ public sealed class ZigWriter
         var free = new List<ApiFunction>();
         foreach (var f in model.Functions)
         {
-            var home = f.Params.Count > 0 && Handled(f.Params[0].Type) is { } first && types.Contains(first) ? first
+            var home = f.Has("free") ? null : f.Params.Count > 0 && Handled(f.Params[0].Type) is { } first && types.Contains(first) ? first
                 : f.Params.LastOrDefault(p => p.Has("out")) is { } last ? Creates(last, types) : null;
             if (home is null) free.Add(f);
             else { if (!owned.TryGetValue(home, out var list)) owned[home] = list = []; list.Add(f); }
@@ -427,12 +407,13 @@ public sealed class ZigWriter
                 o.AppendLine("    }");
                 o.AppendLine();
             }
+            if (record is not null) Implement(o, record);
             foreach (var slot in (record?.Slots ?? []).Where(sl => record is not null && IsMethod(record, sl)))
             {
                 var method = FunctionName(slot.Name);
                 if (!members.Add(method)) continue;
                 Doc(o, slot.Doc, "    ");
-                Wrapper(o, "    ", Ident(method), $"self: {type}", ["self.ptr"], $"self.ptr.{slot.Name}{SlotSuffix}.?", slot.Params,
+                Wrapper(o, "    ", Ident(method), $"self: {type}", ["self.ptr"], $"self.ptr.{Ident(slot.Name)}.?", slot.Params,
                     slot.Params.Select((p, i) => ParamName(record!, p, i)).ToList(), slot.Returns, slot.CReturns ?? slot.Returns,
                     slot.ReturnTagValue("array_of") is not null ? Lane.Many : null);
                 o.AppendLine();
@@ -519,11 +500,13 @@ public sealed class ZigWriter
         string.Concat(name.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
 
     /// <summary>The enum of the result code when this root declares it.</summary>
-    ApiEnum? ResultEnum() => model.Enums.FirstOrDefault(e => !e.External && e.Name == convention?.ResultType);
+    ApiEnum? ResultEnum() => convention is null ? null : model.Enums.FirstOrDefault(e => !e.External && e.Name == convention?.ResultType);
 
     /// <summary>One error per failing value of the result enum, and the function that raises it.</summary>
     string ResultErrors()
     {
+        if (ResultModule() is { } module)
+            return $"pub const Error = {module}.Error;\nconst checkResult = {module}.checkResult;\nconst resultOf = {module}.resultOf;\n";
         if (ResultEnum() is not { } e)
             return "/// A call returned a result other than success.\npub const Error = error{Failed};\n";
         var ok = OkValue();
@@ -533,12 +516,91 @@ public sealed class ZigWriter
         sb.AppendLine($"/// The results of {e.Name} other than success; Failed is a value the header does not declare.");
         sb.AppendLine($"pub const Error = error{{ {string.Join(", ", failing.Select(v => v.Error).Append("Failed").Distinct())} }};");
         sb.AppendLine();
-        sb.AppendLine($"fn checkResult(code: c.{e.Name}) Error!void {{");
+        sb.AppendLine($"pub fn checkResult(code: c.{e.Name}) Error!void {{");
         sb.AppendLine($"    if (code == {ok}) return;");
         foreach (var v in failing) sb.AppendLine($"    if (code == c.{v.Name}) return error.{v.Error};");
         sb.AppendLine("    return error.Failed;");
         sb.AppendLine("}");
+        if (failing.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"/// The code of an error, for a slot implemented in Zig; Failed takes the first failing value.");
+            sb.AppendLine($"pub fn resultOf(failure: Error) c.{e.Name} {{");
+            sb.AppendLine("    return switch (failure) {");
+            foreach (var v in failing) sb.AppendLine($"        error.{v.Error} => c.{v.Name},");
+            if (failing.All(v => v.Error != "Failed")) sb.AppendLine($"        error.Failed => c.{failing[0].Name},");
+            sb.AppendLine("    };");
+            sb.AppendLine("}");
+        }
         return sb.ToString();
+    }
+
+    /// <summary>The module that declares the result enum, when another root does.</summary>
+    string? ResultModule() =>
+        convention is not null && foreign.TryGetValue(convention.ResultType, out var module) ? module : null;
+
+    /// <summary>The body of <c>implement</c> for the vtable, or null when a result has no way back.</summary>
+    void Implement(StringBuilder o, ApiStruct record)
+    {
+        var slots = record.Slots.Where(sl => IsMethod(record, sl)).ToList();
+        if (slots.Count == 0) return;
+        if (slots.Any(sl => convention!.ReturnsResult(sl.Returns)) && ResultEnum() is null && ResultModule() is null) return;
+        o.AppendLine($"    /// The vtable whose slots call the methods of <paramref name=\"T\"/>, which embeds it as the field <c>api</c>.".Replace("<paramref name=\"T\"/>", "T").Replace("<c>api</c>", "api"));
+        o.AppendLine($"    pub fn implement(comptime T: type) {Named(record.Name, true)} {{");
+        o.AppendLine("        return .{");
+        foreach (var slot in slots) ImplementSlot(o, record, slot);
+        o.AppendLine("        };");
+        o.AppendLine("    }");
+        o.AppendLine();
+    }
+
+    void ImplementSlot(StringBuilder o, ApiStruct record, ApiSlot slot)
+    {
+        var ps = slot.Params;
+        var result = convention!.ReturnsResult(slot.Returns);
+        var lane = slot.ReturnTagValue("array_of") is not null ? Lane.Many : null;
+        var cReturn = slot.CReturns ?? slot.Returns;
+        var returned = Spell(cReturn, lane);
+        var refuse = result ? "return resultOf(error.Failed)" : cReturn.Trim() == "void" ? "return" : $"return std.mem.zeroes({returned})";
+        if (!result && cReturn.Trim() != "void") usesStd = true;
+        var outs = ps.Where(p => p.Has("out")).ToList();
+        var written = result && outs.Count == 1 && outs[0] == ps[^1] ? ps[^1] : null;
+        var counts = ps.Where(p => SliceCount(p, ps) is not null).ToDictionary(p => SliceCount(p, ps)!, p => p);
+        var name = (ApiParam p) => $"a{ps.ToList().IndexOf(p)}";
+        var signature = string.Join(", ", ps.Select(p => $"{name(p)}: {Spell(p.Type, Lane.Of(p))}").Prepend($"self: {Spell(slot.Receiver ?? record.Name + " *", null)}"));
+        var body = new List<string> { $"const state: *T = @alignCast(@fieldParentPtr(\"api\", self orelse {refuse}));" };
+        var args = new List<string> { "state" };
+        foreach (var p in ps.Where(p => p != written && !counts.ContainsKey(p)))
+        {
+            var n = name(p);
+            if (SliceCount(p, ps) is { } count) args.Add($"if ({n}) |items| items[0..{name(count)}] else &.{{}}");
+            else if (IsString(p)) { usesStd = true; args.Add(p.Has("optional") ? $"if ({n}) |text| std.mem.span(text) else null" : $"std.mem.span({n} orelse {refuse})"); }
+            else if (WrappedType(p.Type) is { } wrapped) args.Add($"{wrapped}{{ .ptr = {n} orelse {refuse} }}");
+            else if (LocalEnum(p.Type) is not null) args.Add($"@enumFromInt({n})");
+            else args.Add(n);
+        }
+        var call = $"T.{Ident(FunctionName(slot.Name))}({string.Join(", ", args)})";
+        if (result)
+        {
+            if (written is null) body.Add($"{call} catch |failure| return resultOf(failure);");
+            else
+            {
+                var (_, _) = Answer(written, "");
+                body.Add($"const value = {call} catch |failure| return resultOf(failure);");
+                var deref = CTypes.Deref(written.Type);
+                body.Add($"({name(written)} orelse {refuse}).* = value{(WrappedType(deref) is not null ? ".ptr" : "")};");
+            }
+            body.Add($"return {OkValue()};");
+        }
+        else if (LocalEnum(cReturn) is not null) body.Add($"return @intFromEnum({call});");
+        else if (lane is null && CType.Of(cReturn) is { Const: false } && WrappedType(cReturn) is not null)
+            body.Add($"return if ({call}) |handle| handle.ptr else null;");
+        else body.Add($"return {call};");
+        o.AppendLine($"            .{Ident(slot.Name)} = &struct {{");
+        o.AppendLine($"                fn call({signature}) callconv(.c) {returned} {{");
+        foreach (var line in body) o.AppendLine($"                    {line}");
+        o.AppendLine("                }");
+        o.AppendLine("            }.call,");
     }
 
     /// <summary>The value of a call that succeeded: the number the convention names, or the enumerator ending in it.</summary>
@@ -572,8 +634,7 @@ public sealed class ZigWriter
         Doc(sb, slot.Doc, inner);
         var lanes = slot.Params.Select(p => (p.Type, (ApiParam?)p))
             .Prepend((slot.Receiver ?? $"{s.Name} *", null));
-        var field = IsMethod(s, slot) ? slot.Name + SlotSuffix : Ident(slot.Name);
-        sb.AppendLine($"{inner}{field}: {FnPointer(lanes, slot.CReturns ?? slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null)} = null,");
+        sb.AppendLine($"{inner}{Ident(slot.Name)}: {FnPointer(lanes, slot.CReturns ?? slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null)} = null,");
     }
 
     /// <summary>

@@ -13,3 +13,6 @@ sqlite3_exec:
   callback: closure:arg4
   arg4: context
   errmsg: out
+
+sqlite3_errmsg:
+  self: free

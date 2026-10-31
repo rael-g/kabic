@@ -67,7 +67,7 @@ internal static class WriteZigCommand
     static string Slashed(string path) => path.Replace('\\', '/');
 
     static List<Unit> Units(Options options) =>
-        DomainSpec.Load(options.Manifest).OrderBy(d => d.Name, StringComparer.Ordinal)
+        DomainSpec.LoadForZig(options.Manifest).OrderBy(d => d.Name, StringComparer.Ordinal)
             .Select(d => new Unit(d, Path.Combine(options.Root, PackagesRoot, d.Name))).ToList();
 
     static int Write(Options options, string into)

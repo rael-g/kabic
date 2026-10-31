@@ -35,6 +35,7 @@ public static class Annotations
             var f = model.Functions[at];
             model.Functions[at] = f with
             {
+                Tags = [.. f.Tags, .. Tags(members, "self")],
                 ReturnTags = [.. f.ReturnTags, .. Tags(members, "return")],
                 Params = Merged(symbol, f.Params, members, stale),
             };
@@ -75,7 +76,7 @@ public static class Annotations
 
     static List<ApiParam> Merged(string symbol, IReadOnlyList<ApiParam> parameters, Dictionary<string, string> members, List<string> stale)
     {
-        foreach (var member in members.Keys.Where(k => k != "return" && parameters.All(p => p.Name != k))) stale.Add($"{symbol}.{member}");
+        foreach (var member in members.Keys.Where(k => k is not ("return" or "self") && parameters.All(p => p.Name != k))) stale.Add($"{symbol}.{member}");
         return parameters.Select(p => p with { Tags = [.. p.Tags, .. Tags(members, p.Name ?? "")] }).ToList();
     }
 
