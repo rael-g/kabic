@@ -446,7 +446,7 @@
       ]
     }
   ],
-  "strong_types": [
+  "id_types": [
     "ke_probe_id"
   ],
   "type_aliases": {

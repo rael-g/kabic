@@ -515,9 +515,7 @@
       ]
     }
   ],
-  "strong_types": [
-    "ke_probe_id"
-  ],
+  "id_types": [],
   "type_aliases": {
     "ke_probe_visit_fn": "void (*)(void *, uint32_t)",
     "ke_probe_id": "uint32_t",

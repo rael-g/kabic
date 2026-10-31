@@ -96,7 +96,7 @@ public static class Extractor
                         if (target.EndsWith('*') || !target.StartsWith("struct ") && !target.StartsWith("union ") && !target.StartsWith("enum ") && target != name)
                             api.TypeAliases[name] = target;
                         if (ExtractCallback(node, name) is { } callback) api.Callbacks.Add(callback);
-                        if (DocParser.Parse(node).SummaryTags.Contains("id")) api.IdTypes.Add(name);
+                        if (!compose && DocParser.Parse(node).SummaryTags.Contains("id")) api.IdTypes.Add(name);
                         break;
                     }
             }
