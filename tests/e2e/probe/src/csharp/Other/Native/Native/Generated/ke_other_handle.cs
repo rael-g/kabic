@@ -1,4 +1,4 @@
-using Probe.Native;
+using global::Probe;
 
 namespace Other.Native;
 
