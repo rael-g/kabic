@@ -189,7 +189,11 @@ public static class Extractor
             {
                 var field = new ApiField(fieldName, declaredWith is null ? qual : "", summaryTags,
                     summary.Length > 0 ? summary : null);
-                fields.Add(field with { Inline = declaredWith });
+                fields.Add(field with
+                {
+                    Inline = declaredWith,
+                    Bits = f["isBitfield"]?.GetValue<bool>() == true ? int.Parse(Folded(f)!) : null,
+                });
                 continue;
             }
 

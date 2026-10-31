@@ -196,11 +196,21 @@ public sealed class ZigWriter
         var sb = new StringBuilder();
         sb.AppendLine(s.IsUnion ? "extern union {" : "extern struct {");
         var members = s.Order ?? [.. s.Fields.Select(f => f.Name), .. s.Slots.Select(sl => sl.Name)];
+        var run = new List<ApiField>();
         foreach (var name in members)
         {
+            if (s.Fields.FirstOrDefault(f => f.Name == name) is { Bits: not null } bits)
+            {
+                if (run.Count > 0 && (BitsOf(run[0].Type) != BitsOf(bits.Type) || run.Sum(f => f.Bits!.Value) + bits.Bits!.Value > BitsOf(bits.Type)))
+                    BitRun(sb, run, indent + "    ");
+                run.Add(bits);
+                continue;
+            }
+            BitRun(sb, run, indent + "    ");
             try { Member(sb, s, name, indent + "    "); }
             catch (NotSupportedException e) { throw new NotSupportedException($"{s.Name}.{name}: {e.Message}"); }
         }
+        BitRun(sb, run, indent + "    ");
         foreach (var slot in s.Slots.Where(sl => IsMethod(s, sl))) Method(sb, s, slot, indent + "    ");
         if (s.Has("owner") && s.Fields is [var owned] && s.Slots is [var destroy])
         {
@@ -211,6 +221,28 @@ public sealed class ZigWriter
         }
         sb.Append(indent).Append('}');
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The bit-fields that share one storage unit, as a packed struct of that unit, since an
+    /// extern struct holds no field narrower than a byte. The field takes the first one's name.
+    /// </summary>
+    void BitRun(StringBuilder sb, List<ApiField> run, string inner)
+    {
+        if (run.Count == 0) return;
+        var width = BitsOf(run[0].Type);
+        sb.AppendLine($"{inner}{run[0].Name}_bits: packed struct(u{width}) {{");
+        foreach (var f in run) sb.AppendLine($"{inner}    {Ident(f.Name)}: u{f.Bits} = 0,");
+        var used = run.Sum(f => f.Bits!.Value);
+        if (used < width) sb.AppendLine($"{inner}    _padding: u{width - used} = 0,");
+        sb.AppendLine($"{inner}}} = .{{}},");
+        run.Clear();
+    }
+
+    int BitsOf(string type)
+    {
+        var spelled = Primitives.GetValueOrDefault(Bare(model.ResolveAlias(type)), "c_uint");
+        return spelled is "c_int" or "c_uint" ? 32 : int.Parse(spelled[1..]);
     }
 
     static bool IsMethod(ApiStruct s, ApiSlot slot) =>
@@ -308,7 +340,7 @@ public sealed class ZigWriter
         var ok = convention!.ResultOk;
         if (long.TryParse(ok, out _)) return ok;
         var name = model.Enums.SelectMany(e => e.Values).Select(v => v.Name)
-            .FirstOrDefault(v => v.EndsWith("_" + ok, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(v => v.Replace("_", "").EndsWith(ok, StringComparison.OrdinalIgnoreCase))
             ?? throw new NotSupportedException($"no enumerator is the result {ok}");
         return Value(name);
     }

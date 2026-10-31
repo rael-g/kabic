@@ -87,6 +87,9 @@ public record ApiEnum(string Name, string? Doc, IReadOnlyList<ApiEnumValue> Valu
 /// <summary>A field of a struct, with its type, tags and doc as declared.</summary>
 public record ApiField(string Name, string Type, IReadOnlyList<string> Tags, string? Doc)
 {
+    /// <summary>The width of a bit-field, or null for any other field.</summary>
+    public int? Bits { get; init; }
+
     /// <summary>
     /// The record the field is declared with when its type has no name of its own: a member
     /// union or struct written inside the declaration, or an anonymous one, whose name is then
@@ -343,6 +346,7 @@ public static class ApiReader
                     {
                         Inline = f["inline"] is System.Text.Json.Nodes.JsonObject inline
                             ? ReadRecord(inline, inline["slots"] is not null) : null,
+                        Bits = f["bits"]?.GetValue<int>(),
                     };
                 })
                 .ToList();

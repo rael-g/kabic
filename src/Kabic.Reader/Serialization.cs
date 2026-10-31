@@ -121,6 +121,7 @@ public static class Serialization
             ["doc"] = f.Doc,
         };
         if (f.Inline is not null) o["inline"] = f.Inline.ToJson();
+        if (f.Bits is { } bits) o["bits"] = bits;
         return o;
     }
 

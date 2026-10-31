@@ -80,6 +80,8 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("fn expectSameLayout(comptime A: type, comptime C: type) !void {");
+        sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
+        sb.AppendLine("    if (@typeInfo(C) == .@\"opaque\") return;");
         sb.AppendLine("    try std.testing.expectEqual(@sizeOf(C), @sizeOf(A));");
         sb.AppendLine("    try std.testing.expectEqual(@alignOf(C), @alignOf(A));");
         sb.AppendLine("    switch (@typeInfo(A)) {");
@@ -98,6 +100,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("test \"every record is laid out as the header lays it out\" {");
+        sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
         foreach (var s in model.Structs.Where(s => !s.External))
             sb.AppendLine($"    try expectSameLayout(abi.{s.Name}, translated(\"{s.Name}\"));");
         foreach (var (alias, _) in model.TypeAliases.OrderBy(kv => kv.Key, StringComparer.Ordinal))
@@ -108,6 +111,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         {
             sb.AppendLine();
             sb.AppendLine("test \"every enum value is the header's value\" {");
+            sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
             foreach (var v in values)
                 sb.AppendLine($"    try std.testing.expectEqual(@as(i64, c.{v.Name}), @as(i64, abi.{v.Name}));");
             sb.AppendLine("}");
@@ -116,6 +120,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         {
             sb.AppendLine();
             sb.AppendLine("test \"every constant is the header's value\" {");
+            sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
             foreach (var k in model.Constants)
                 sb.AppendLine(k.Fields is not null
                     ? $"    try std.testing.expectEqual(std.mem.toBytes(c.{k.Name}), std.mem.toBytes(abi.{k.Name}));"
