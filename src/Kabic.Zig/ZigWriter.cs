@@ -202,6 +202,13 @@ public sealed class ZigWriter
             catch (NotSupportedException e) { throw new NotSupportedException($"{s.Name}.{name}: {e.Message}"); }
         }
         foreach (var slot in s.Slots.Where(sl => IsMethod(s, sl))) Method(sb, s, slot, indent + "    ");
+        if (s.Has("owner") && s.Fields is [var owned] && s.Slots is [var destroy])
+        {
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    pub fn deinit(self: {s.Name}) void {{");
+            sb.AppendLine($"{indent}        self.{Ident(destroy.Name)}.?(self.{Ident(owned.Name)});");
+            sb.AppendLine($"{indent}    }}");
+        }
         sb.Append(indent).Append('}');
         return sb.ToString();
     }
@@ -229,9 +236,16 @@ public sealed class ZigWriter
         var result = convention?.ReturnsResult(returns) == true;
         var outs = ps.Where(p => p.Has("out")).ToList();
         var written = result && outs.Count == 1 && outs[0] == ps[^1] ? ps[^1] : null;
-        var taken = ps.Select((p, i) => (p, n: names[i])).Where(x => x.p != written).Select(x => $"{x.n}: {Spell(x.p.Type, Lane.Of(x.p))}");
+        var counts = ps.Where(p => SliceCount(p, ps) is not null).ToDictionary(p => SliceCount(p, ps)!, p => p);
+        var taken = ps.Select((p, i) => (p, n: names[i])).Where(x => x.p != written && !counts.ContainsKey(x.p))
+            .Select(x => $"{x.n}: {Taken(x.p, ps)}");
         var signature = string.Join(", ", (receiver is null ? taken : taken.Prepend(receiver)));
-        var args = string.Join(", ", first.Concat(ps.Select((p, i) => p == written ? "&written" : names[i])));
+        var args = string.Join(", ", first.Concat(ps.Select((p, i) =>
+            p == written ? "&written"
+            : counts.TryGetValue(p, out var slice) ? $"@intCast({names[ps.ToList().IndexOf(slice)]}.len)"
+            : SliceCount(p, ps) is not null ? $"{names[i]}.ptr"
+            : IsString(p) ? (p.Has("optional") ? $"if ({names[i]}) |text| text.ptr else null" : $"{names[i]}.ptr")
+            : names[i])));
         if (!result)
         {
             sb.AppendLine($"{inner}pub fn {name}({signature}) {Spell(cReturns, lane)} {{");
@@ -246,6 +260,22 @@ public sealed class ZigWriter
         sb.AppendLine($"{inner}    if ({target}({args}) != {OkValue()}) return error.Failed;");
         if (written is not null) sb.AppendLine($"{inner}    return written;");
         sb.AppendLine($"{inner}}}");
+    }
+
+    /// <summary>The count parameter of a pointer that takes a slice, or null.</summary>
+    static ApiParam? SliceCount(ApiParam p, IReadOnlyList<ApiParam> ps) =>
+        !p.Has("out") && p.TagValue("array_of") is { } count && !p.Has("optional") && CType.Of(p.Type) is { Pointers: 1, Name: not "void" }
+            ? ps.FirstOrDefault(c => c.Name == count && !CTypes.IsPointer(c.Type)) : null;
+
+    static bool IsString(ApiParam p) =>
+        p.Has("utf8") && !p.Has("out") && !p.Has("array_of") && CType.Of(p.Type) is { Name: "char", Pointers: 1 };
+
+    string Taken(ApiParam p, IReadOnlyList<ApiParam> ps)
+    {
+        if (SliceCount(p, ps) is not null)
+            return $"[]{(CType.Of(p.Type).Const ? "const " : "")}{Spell(CTypes.Unqualified(CTypes.Deref(p.Type)), null)}";
+        if (IsString(p)) return p.Has("optional") ? "?[:0]const u8" : "[:0]const u8";
+        return Spell(p.Type, Lane.Of(p));
     }
 
     /// <summary>The value of a call that succeeded: the number the convention names, or the enumerator ending in it.</summary>
