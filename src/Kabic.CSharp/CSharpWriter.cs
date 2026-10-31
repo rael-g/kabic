@@ -260,6 +260,8 @@ public static class CSharpWriter
     {
         if (model.Structs.Any(s => s.Name == StripQualifiers(cType).Trim() && IsPlain(s))) return Idioms.TypeName(StripQualifiers(cType).Trim(), convention);
         var t = cType.Trim();
+        if (model.IdTypes.Contains(StripQualifiers(t).Trim()) || model.ForeignIdTypes.Contains(StripQualifiers(t).Trim()))
+            return Idioms.TypeName(StripQualifiers(t).Trim(), convention);
         if (t is "void *" or "void*") return "nint";
         if (CTypes.IsPointer(t))
         {

@@ -23,6 +23,7 @@ public static class Serialization
             ["functions"] = new JsonArray(m.Functions.Select(f => (JsonNode)f.ToJson()).ToArray()),
             ["callbacks"] = new JsonArray(m.Callbacks.Select(c => (JsonNode)c.ToJson()).ToArray()),
             ["id_types"] = new JsonArray(m.IdTypes.Select(t => (JsonNode)t).ToArray()),
+            ["foreign_id_types"] = new JsonArray(m.ForeignIdTypes.Select(t => (JsonNode)t).ToArray()),
             ["type_aliases"] = m.TypeAliases.Aggregate(new JsonObject(),
             (o, kv) => { o[kv.Key] = kv.Value; return o; }),
         };

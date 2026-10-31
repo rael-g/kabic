@@ -252,6 +252,9 @@ public class ApiModel
     /// <summary>Scalar typedefs tagged <c>[id]</c>, each projected as a type of its own.</summary>
     public HashSet<string> IdTypes { get; } = [];
 
+    /// <summary>The identifiers this model reaches from another domain.</summary>
+    public HashSet<string> ForeignIdTypes { get; } = [];
+
     /// <summary>
     /// The callback a parameter's type names, or <see langword="null"/> if it names none.
     /// </summary>
@@ -313,7 +316,7 @@ public class ApiModel
     public string ResolveAlias(string type)
     {
         var t = type.Trim();
-        for (var i = 0; i < 8 && TypeAliases.TryGetValue(t, out var next); i++) t = next;
+        for (var i = 0; i < 8 && !IdTypes.Contains(t) && !ForeignIdTypes.Contains(t) && TypeAliases.TryGetValue(t, out var next); i++) t = next;
         return t;
     }
 }
@@ -424,6 +427,7 @@ public static class ApiReader
             });
         }
         foreach (var id in root["id_types"]?.AsArray() ?? []) m.IdTypes.Add(id!.GetValue<string>());
+        foreach (var id in root["foreign_id_types"]?.AsArray() ?? []) m.ForeignIdTypes.Add(id!.GetValue<string>());
         foreach (var v in root["variables"]?.AsArray() ?? [])
         {
             var o = v!.AsObject();
