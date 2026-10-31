@@ -29,7 +29,7 @@ public static class CSharpWriter
 
     /// <summary>
     /// Emits the `fixed` pinning prologue encoding every [utf8] parameter as a
-    /// NUL-terminated byte buffer, returning the lines and the number of braces
+    /// NUL-terminated byte buffer, on the stack when it is short, returning the lines and the number of braces
     /// the caller must close.
     /// </summary>
     static (List<string> Lines, int Depth) Utf8Prologue(IEnumerable<ApiParam> ps, string indent)
@@ -39,7 +39,10 @@ public static class CSharpWriter
         foreach (var p in ps.Where(x => x.Has("utf8") && !x.Has("array_of")))
         {
             var n = Idioms.Ident(p.Name!);
-            lines.Add($"{indent}var {n}Bytes = System.Text.Encoding.UTF8.GetBytes({n} + '\\0');");
+            lines.Add($"{indent}var {n}Text = {n} ?? \"\";");
+            lines.Add($"{indent}var {n}Size = System.Text.Encoding.UTF8.GetMaxByteCount({n}Text.Length) + 1;");
+            lines.Add($"{indent}Span<byte> {n}Bytes = {n}Size <= 512 ? stackalloc byte[512] : new byte[{n}Size];");
+            lines.Add($"{indent}{n}Bytes[System.Text.Encoding.UTF8.GetBytes({n}Text, {n}Bytes)] = 0;");
             lines.Add($"{indent}fixed (byte* {n}Ptr = {n}Bytes)");
             lines.Add($"{indent}{{");
             depth++;
