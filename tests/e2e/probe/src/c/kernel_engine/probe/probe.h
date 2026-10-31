@@ -25,7 +25,7 @@ typedef enum ke_probe_kind
     KE_PROBE_KIND_FAR,
 } ke_probe_kind;
 
-/// [strong]
+/// [id]
 typedef uint32_t ke_probe_id;
 
 typedef struct ke_probe_item

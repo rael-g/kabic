@@ -22,7 +22,7 @@ public static class Serialization
             ["vtables"] = new JsonArray(m.Structs.Where(s => s.IsVtable).Select(s => (JsonNode)s.ToJson()).ToArray()),
             ["functions"] = new JsonArray(m.Functions.Select(f => (JsonNode)f.ToJson()).ToArray()),
             ["callbacks"] = new JsonArray(m.Callbacks.Select(c => (JsonNode)c.ToJson()).ToArray()),
-            ["strong_types"] = new JsonArray(m.StrongTypes.Select(t => (JsonNode)t).ToArray()),
+            ["id_types"] = new JsonArray(m.IdTypes.Select(t => (JsonNode)t).ToArray()),
             ["type_aliases"] = m.TypeAliases.Aggregate(new JsonObject(),
             (o, kv) => { o[kv.Key] = kv.Value; return o; }),
         };

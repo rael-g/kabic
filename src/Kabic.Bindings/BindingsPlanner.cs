@@ -318,9 +318,9 @@ public static class BindingsPlanner
         bool Captured(string value, ApiEnum owner) =>
             Regex.IsMatch(text, $@"[(=][ \t]*{value}\b") && model.Enums.Any(o => o != owner
                 && o.Values.Any(v => Idioms.EnumMember(v.Name, o.Name) == Idioms.EnumMember(value, owner.Name)));
-        foreach (var strong in model.StrongTypes)
+        foreach (var id in model.IdTypes)
             if (domains.FirstOrDefault(d => d.NativeNamespace == job.Namespace) is { } home)
-                yield return $"{strong}=global::{home.Namespace}.{Idioms.TypeName(strong, convention)}";
+                yield return $"{id}=global::{home.Namespace}.{Idioms.TypeName(id, convention)}";
         foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
             yield return $"{cType}={target}";
         foreach (var e in model.Enums.Where(e => !e.External))
