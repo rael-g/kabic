@@ -84,7 +84,7 @@ public static class Generation
             if (source.Contract is not null)
             {
                 Directory.CreateDirectory(contractDir);
-                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), source.Contract);
+                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), contractDir != outDir ? source.Contract.Replace($"using {nativeNs};\n", "") : source.Contract);
             }
         }
 
