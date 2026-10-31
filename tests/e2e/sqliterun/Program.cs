@@ -1,4 +1,5 @@
 using Sqlite;
+SurfaceGate.Check(typeof(Sqlite.Sqlite).Assembly, "Sqlite");
 
 var db = Sqlite.Sqlite.Open(":memory:");
 Sqlite.Sqlite.Exec(db, "create table t(x); insert into t values (1), (2), (3);", null);

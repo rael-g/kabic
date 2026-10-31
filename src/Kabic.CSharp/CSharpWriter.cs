@@ -301,7 +301,8 @@ public static class CSharpWriter
     /// depending on which side of the slot it sits on.
     /// </summary>
     static string ReturnType(ApiModel model, string cType, Convention convention) =>
-        model.HandleOf(cType) is { } handle ? Idioms.TypeName(handle, convention)
+        model.CallbackOf(cType) is not null ? "nint"
+        : model.HandleOf(cType) is { } handle ? Idioms.TypeName(handle, convention)
         : CType.Of(cType) is { Name: "char", Const: true, Pointers: 1 } ? "string"
         : model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
@@ -2387,6 +2388,7 @@ public static class CSharpWriter
                         pCall = $"Marshal.PtrToStringUTF8((nint){pCall}) ?? \"\"";
                         needsCast = "";
                     }
+                    if (model.CallbackOf(slot.Returns) is not null) needsCast = "(nint)";
                     var pHolds = cs.TrailingOuts.Count > 0;
                     if (spanElement is not null)
                     {

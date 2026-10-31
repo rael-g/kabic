@@ -1,3 +1,4 @@
+SurfaceGate.Check(typeof(Zlib.Zlib).Assembly, "Zlib");
 var source = new byte[4096];
 var bound = Zlib.Zlib.CompressBound((nuint)source.Length);
 var dest = new byte[(int)bound];
