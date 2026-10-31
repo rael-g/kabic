@@ -102,9 +102,9 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         sb.AppendLine("test \"every record is laid out as the header lays it out\" {");
         sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
         foreach (var s in model.Structs.Where(s => !s.External))
-            sb.AppendLine($"    try expectSameLayout(abi.{s.Name}, translated(\"{s.Name}\"));");
+            sb.AppendLine($"    try expectSameLayout(abi.c.{s.Name}, translated(\"{s.Name}\"));");
         foreach (var (alias, _) in model.TypeAliases.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            sb.AppendLine($"    try expectSameLayout(abi.{alias}, c.{alias});");
+            sb.AppendLine($"    try expectSameLayout(abi.c.{alias}, c.{alias});");
         sb.AppendLine("}");
         var values = model.Enums.Where(e => !e.External).SelectMany(e => e.Values).ToList();
         if (values.Count > 0)
@@ -113,7 +113,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
             sb.AppendLine("test \"every enum value is the header's value\" {");
             sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
             foreach (var v in values)
-                sb.AppendLine($"    try std.testing.expectEqual(@as(i64, c.{v.Name}), @as(i64, abi.{v.Name}));");
+                sb.AppendLine($"    try std.testing.expectEqual(@as(i64, c.{v.Name}), @as(i64, abi.c.{v.Name}));");
             sb.AppendLine("}");
         }
         if (model.Constants.Count > 0)
@@ -123,10 +123,10 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
             sb.AppendLine("    @setEvalBranchQuota(100_000_000);");
             foreach (var k in model.Constants)
                 sb.AppendLine(k.Fields is not null
-                    ? $"    try std.testing.expectEqual(std.mem.toBytes(c.{k.Name}), std.mem.toBytes(abi.{k.Name}));"
+                    ? $"    try std.testing.expectEqual(std.mem.toBytes(c.{k.Name}), std.mem.toBytes(abi.c.{k.Name}));"
                     : k.Type == "const char *"
-                        ? $"    try std.testing.expectEqualStrings(c.{k.Name}, abi.{k.Name});"
-                        : $"    try std.testing.expectEqual(@as(i128, c.{k.Name}), @as(i128, abi.{k.Name}));");
+                        ? $"    try std.testing.expectEqualStrings(c.{k.Name}, abi.c.{k.Name});"
+                        : $"    try std.testing.expectEqual(@as(i128, c.{k.Name}), @as(i128, abi.c.{k.Name}));");
             sb.AppendLine("}");
         }
         return sb.ToString();

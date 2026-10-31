@@ -105,11 +105,12 @@ internal static class WriteZigCommand
                          .Concat(models[unit.Key].Constants.Select(c => c.Name)))
                 owner.TryAdd(name, unit.Key);
         var texts = new Dictionary<string, string>();
+        var abis = new Dictionary<string, string>();
         var imports = new Dictionary<string, List<string>>();
         foreach (var unit in units)
         {
             var foreign = owner.Where(kv => kv.Value != unit.Key).ToDictionary();
-            try { texts[unit.Key] = ZigWriter.Render(models[unit.Key], foreign, convention); }
+            try { (texts[unit.Key], abis[unit.Key]) = ZigWriter.RenderFiles(models[unit.Key], foreign, convention, $"{unit.Key}_c.zig"); }
             catch (NotSupportedException e) { failures[unit.Key] = e.Message; continue; }
             imports[unit.Key] = foreign.Values.Distinct().Where(k => texts[unit.Key].Contains($"@import(\"{k}\")"))
                 .Concat(Included(root, unit, units)).Where(k => k != unit.Key)
@@ -128,6 +129,7 @@ internal static class WriteZigCommand
                     .Select(d => Slashed(Path.GetRelativePath(unit.PackageDir, Path.Combine(root, d)))).ToList());
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, $"{unit.Key}.zig"), texts[unit.Key]);
+            File.WriteAllText(Path.Combine(dir, $"{unit.Key}_c.zig"), abis[unit.Key]);
             File.WriteAllText(Path.Combine(dir, "build.zig"), package.BuildZig());
             File.WriteAllText(Path.Combine(dir, "build.zig.zon"), package.BuildZon());
             File.WriteAllText(Path.Combine(dir, "layout_test.zig"), ZigPackage.LayoutTest(models[unit.Key]));

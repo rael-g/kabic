@@ -1,7 +1,16 @@
 const std = @import("std");
 const abi = @import("abi");
 
-test "bit-fields take the storage C gives them" {
-    try std.testing.expectEqual(@as(usize, 4), @sizeOf(abi.StdVideoH264SpsVuiFlags));
-    try std.testing.expectEqual(@as(usize, 64), @sizeOf(abi.VkAccelerationStructureInstanceKHR));
+comptime {
+    std.debug.assert(@sizeOf(abi.c.StdVideoH264SpsVuiFlags) == 4);
+    std.debug.assert(@sizeOf(abi.c.VkAccelerationStructureInstanceKHR) == 64);
+}
+
+test "every declaration compiles" {
+    @setEvalBranchQuota(100_000_000);
+    @import("std").testing.refAllDecls(abi);
+    inline for (@typeInfo(abi).@"struct".decls) |d| {
+        const value = @field(abi, d.name);
+        if (@TypeOf(value) == type and @typeInfo(value) == .@"struct") @import("std").testing.refAllDecls(value);
+    }
 }

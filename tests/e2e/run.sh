@@ -36,4 +36,4 @@ LD_LIBRARY_PATH="$probe/build" zig test --global-cache-dir "$probe/build/zig-glo
 LD_LIBRARY_PATH="$sqlite/build" zig test --global-cache-dir "$sqlite/build/zig-global" --dep abi -Mroot=tests/e2e/zigrun/sqlite.zig \
   -Mabi="$sqlite/src/zig/abi/sqlite/sqlite.zig" -L "$sqlite/build" -lsqlite3 -lc
 zig test --global-cache-dir "$vulkan/build/zig-global" --dep abi -Mroot=tests/e2e/zigrun/vulkan.zig \
-  -Mabi="$vulkan/src/zig/abi/vulkan/vulkan.zig" -lc
+  -Mabi="$vulkan/src/zig/abi/vulkan/vulkan.zig" -lc -fno-emit-bin

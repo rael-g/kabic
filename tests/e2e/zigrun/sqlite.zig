@@ -1,7 +1,14 @@
-const std = @import("std");
 const abi = @import("abi");
 
-test "a flat function fails with an error and answers with its out parameter" {
-    const db = try abi.checked.open(":memory:");
-    try abi.checked.close(db);
+test "an opaque handle is an object with the functions that take it" {
+    var db = try abi.Sqlite3.open(":memory:");
+    try db.close();
+}
+
+test "every declaration compiles" {
+    @import("std").testing.refAllDecls(abi);
+    inline for (@typeInfo(abi).@"struct".decls) |d| {
+        const value = @field(abi, d.name);
+        if (@TypeOf(value) == type and @typeInfo(value) == .@"struct") @import("std").testing.refAllDecls(value);
+    }
 }
