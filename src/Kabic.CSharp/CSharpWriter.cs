@@ -1199,7 +1199,7 @@ public static class CSharpWriter
                 RenderCallbackMethod(o, decls, vtable, cs, classified, typeName, convention);
                 continue;
             }
-            RenderSlotMethod(model, o, decls, cs, convention, typeName, owned);
+            RenderSlotMethod(model, o, cs.Slot.Has("implementation") ? null : decls, cs, convention, typeName, owned);
         }
 
 

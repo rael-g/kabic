@@ -65,7 +65,7 @@ public static class Generation
         {
             Directory.CreateDirectory(contractDir);
             File.WriteAllText(Path.Combine(contractDir, $"{Idioms.TypeName(view.Name, convention)}.g.cs"),
-                CSharpWriter.RenderView(model, view, ns, [.. usings, nativeNs], convention));
+                CSharpWriter.RenderView(model, view, ns, contractDir != outDir ? usings : [.. usings, nativeNs], convention));
         }
 
         foreach (var counted in model.Structs.Where(s => !s.External && !s.IsVtable
