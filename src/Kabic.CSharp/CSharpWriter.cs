@@ -211,6 +211,7 @@ public static class CSharpWriter
     /// </summary>
     static string SequenceElement(ApiModel model, SequencePair s, Convention convention) =>
         model.HandleOf(s.Seq.Type, 1) is { } handle ? Idioms.TypeName(handle, convention)
+        : model.SafeViews && Pointee(model, s.Seq.Type) is { } v && v.Has("view") ? CsType(model, v.Name, convention)
         : CTypes.IsPointer(CTypes.Deref(s.Seq.Type)) ? "nint"
         : ValueTypeName(model, StripQualifiers(CTypes.Deref(s.Seq.Type)), convention);
 
@@ -1311,7 +1312,9 @@ public static class CSharpWriter
                 RenderCallbackMethod(o, decls, vtable, cs, classified, typeName, convention);
                 continue;
             }
-            RenderSlotMethod(model, o, decls, cs, convention, typeName, owned);
+            var deferred = convention.Deferred.Contains($"{vtable.Name}.{cs.Slot.Name}");
+            if (deferred) Console.Error.WriteLine($"{vtable.Name}.{cs.Slot.Name}: deferred, not in the contract yet");
+            RenderSlotMethod(model, o, deferred ? null : decls, cs, convention, typeName, owned);
             if (SafeViewSequence(model, cs) is { } views) RenderViewSequence(model, o, decls, cs, views, convention);
         }
 

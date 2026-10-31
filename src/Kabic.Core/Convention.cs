@@ -71,6 +71,9 @@ public sealed class Convention
     public IReadOnlyDictionary<string, IReadOnlyList<(System.Text.RegularExpressions.Regex Pattern, string Replacement)>> NameRules { get; init; } =
         new Dictionary<string, IReadOnlyList<(System.Text.RegularExpressions.Regex, string)>>();
 
+    /// <summary>The <c>vtable.slot</c> names the wrapper projects but a managed contract does not hold yet.</summary>
+    public IReadOnlySet<string> Deferred { get; set; } = new HashSet<string>();
+
     /// <summary><paramref name="name"/> rewritten by the first rule of <paramref name="language"/> that matches.</summary>
     public string Spell(string language, string name)
     {
@@ -138,6 +141,8 @@ public sealed class Convention
         foreach (var (language, types) in json["types"]?.AsObject() ?? [])
             foreach (var (cType, target) in types!.AsObject())
                 builder.AddType(language, cType, target!.GetValue<string>());
-        return builder.Build();
+        var convention = builder.Build();
+        convention.Deferred = (json["deferred"]?.AsArray().Select(n => n!.GetValue<string>()) ?? []).ToHashSet();
+        return convention;
     }
 }
