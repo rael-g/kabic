@@ -20,6 +20,9 @@ public sealed record DomainSpec(
     string? Library,
     string? Annotations = null)
 {
+    /// <summary>The namespaces of every domain with a contract of its own.</summary>
+    public IReadOnlySet<string> ContractNamespaces { get; init; } = new HashSet<string>();
+
     /// <summary>
     /// The domains of the manifest followed by its <c>zig</c> entries: headers that have a Zig
     /// package and no projection of their own, such as a library's factory header, given a name,
@@ -40,7 +43,9 @@ public sealed record DomainSpec(
     public static IReadOnlyList<DomainSpec> Load(string manifestPath)
     {
         var domains = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject()["domains"]!.AsArray();
-        return domains.Select(d => FromJson(d!.AsObject())).ToList();
+        var specs = domains.Select(d => FromJson(d!.AsObject())).ToList();
+        var contracts = specs.Where(s => s.AbstractionsOutDir is { } dir && !dir.StartsWith(s.OutDir, StringComparison.Ordinal)).Select(s => s.Namespace).ToHashSet();
+        return specs.Select(s => s with { ContractNamespaces = contracts }).ToList();
     }
 
     static DomainSpec FromJson(JsonObject d)

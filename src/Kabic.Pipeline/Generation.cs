@@ -26,7 +26,11 @@ public static class Generation
         IReadOnlyCollection<string> Providers,
         IReadOnlyCollection<string> Callbacks,
         IReadOnlyList<string> Usings,
-        Convention Convention);
+        Convention Convention)
+    {
+        /// <summary>The namespaces of every domain with a contract of its own.</summary>
+        public IReadOnlySet<string> ContractNamespaces { get; init; } = new HashSet<string>();
+    }
 
     /// <summary>
     /// Writes the C# projection of one API description into the output and contract
@@ -43,7 +47,7 @@ public static class Generation
         var outDir = r.OutDir;
         var contractDir = r.ContractDir;
         var usings = r.Usings.SelectMany(u => u.EndsWith(".Native", StringComparison.Ordinal) ? [u, u[..^".Native".Length]] : new[] { u })
-            .Distinct().Where(u => u != ns).ToList();
+            .Distinct().Where(u => u != ns && u != r.Convention.CommonManagedNamespace).ToList();
         model.SafeViews = Path.GetFullPath(contractDir).StartsWith(Path.GetFullPath(outDir), StringComparison.Ordinal) is false;
 
         Directory.CreateDirectory(outDir);
@@ -86,7 +90,10 @@ public static class Generation
             if (source.Contract is not null)
             {
                 Directory.CreateDirectory(contractDir);
-                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), contractDir != outDir ? System.Text.RegularExpressions.Regex.Replace(source.Contract, @"^using [\w.]+\.Native;\n", "", System.Text.RegularExpressions.RegexOptions.Multiline) : source.Contract);
+                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), contractDir != outDir ? System.Text.RegularExpressions.Regex.Replace(source.Contract, @"^using ([\w.]+);\n", m =>
+                        m.Groups[1].Value.EndsWith(".Native", StringComparison.Ordinal)
+                        || (r.Usings.Contains(m.Groups[1].Value + ".Native") && !r.ContractNamespaces.Contains(m.Groups[1].Value)) ? "" : m.Value,
+                        System.Text.RegularExpressions.RegexOptions.Multiline) : source.Contract);
             }
         }
 

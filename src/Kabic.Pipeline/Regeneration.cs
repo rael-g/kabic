@@ -54,7 +54,7 @@ public static class Regeneration
     {
         Generation.CSharp(new Generation.CSharpRequest(
             apiJson, spec.Namespace, spec.NativeNamespace, output.OutDir, output.ContractDir,
-            spec.Name, spec.Library, spec.Providers, [], spec.Usings, convention));
+            spec.Name, spec.Library, spec.Providers, [], spec.Usings, convention) { ContractNamespaces = spec.ContractNamespaces });
 
     }
 
