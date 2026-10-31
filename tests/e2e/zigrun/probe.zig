@@ -9,5 +9,5 @@ test "a slot fails with an error and answers with its out parameter" {
     probe.fill(&items);
     try std.testing.expectEqual(@as(u32, 1), probe.count());
     try std.testing.expectEqual(@as(f32, 2.5), try probe.read(0));
-    try std.testing.expectError(error.Failed, probe.read(99));
+    try std.testing.expectError(error.KE_RESULT_GENERAL, probe.read(99));
 }

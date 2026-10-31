@@ -126,7 +126,7 @@ public sealed class ZigWriter
         foreach (var module in imported) head.AppendLine($"const {module} = @import(\"{module}\");");
         if (usesStd || imported.Count > 0) head.AppendLine();
         head.Append(head0);
-        if (usesResult) head.AppendLine("/// A call returned a result other than success.\npub const Error = error{Failed};\n");
+        if (usesResult) head.AppendLine(ResultErrors());
         return head.Append(body).ToString().TrimEnd('\n').ReplaceLineEndings("\n") + "\n";
     }
 
@@ -257,7 +257,9 @@ public sealed class ZigWriter
         var value = written is null ? "void" : Spell(CTypes.Deref(written.Type), null);
         sb.AppendLine($"{inner}pub fn {name}({signature}) Error!{value} {{");
         if (written is not null) sb.AppendLine($"{inner}    var written: {value} = undefined;");
-        sb.AppendLine($"{inner}    if ({target}({args}) != {OkValue()}) return error.Failed;");
+        sb.AppendLine(ResultEnum() is null
+            ? $"{inner}    if ({target}({args}) != {OkValue()}) return error.Failed;"
+            : $"{inner}    try checkResult({target}({args}));");
         if (written is not null) sb.AppendLine($"{inner}    return written;");
         sb.AppendLine($"{inner}}}");
     }
@@ -276,6 +278,28 @@ public sealed class ZigWriter
             return $"[]{(CType.Of(p.Type).Const ? "const " : "")}{Spell(CTypes.Unqualified(CTypes.Deref(p.Type)), null)}";
         if (IsString(p)) return p.Has("optional") ? "?[:0]const u8" : "[:0]const u8";
         return Spell(p.Type, Lane.Of(p));
+    }
+
+    /// <summary>The enum of the result code when this root declares it.</summary>
+    ApiEnum? ResultEnum() => model.Enums.FirstOrDefault(e => !e.External && e.Name == convention?.ResultType);
+
+    /// <summary>One error per failing value of the result enum, and the function that raises it.</summary>
+    string ResultErrors()
+    {
+        if (ResultEnum() is not { } e)
+            return "/// A call returned a result other than success.\npub const Error = error{Failed};\n";
+        var ok = OkValue();
+        var failing = e.Values.Select(v => v.Name).Where(v => v != ok).Distinct().ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine($"/// The results of {e.Name} other than success; Failed is a value the header does not declare.");
+        sb.AppendLine($"pub const Error = error{{ {string.Join(", ", failing.Append("Failed"))} }};");
+        sb.AppendLine();
+        sb.AppendLine($"fn checkResult(code: {e.Name}) Error!void {{");
+        sb.AppendLine($"    if (code == {ok}) return;");
+        foreach (var v in failing) sb.AppendLine($"    if (code == {v}) return error.{v};");
+        sb.AppendLine("    return error.Failed;");
+        sb.AppendLine("}");
+        return sb.ToString();
     }
 
     /// <summary>The value of a call that succeeded: the number the convention names, or the enumerator ending in it.</summary>
