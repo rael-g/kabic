@@ -24,6 +24,9 @@ public sealed record BindingJob(
     string CommonNamespace,
     string MethodsClass)
 {
+    /// <summary>The only declarations the job writes; empty writes every one.</summary>
+    public IReadOnlyList<string> Includes { get; init; } = [];
+
     /// <summary>
     /// True if a type of this job is remapped into the common bindings namespace, which is then
     /// imported by every file of the job.
@@ -55,6 +58,7 @@ public sealed record BindingJob(
         if (UsesCommon) Opt("with-using", $"*={CommonNamespace}");
         if (Remaps.Count > 0) Opt("remap", Remaps);
         if (Excludes.Count > 0) Opt("exclude", Excludes);
+        if (Includes.Count > 0) Opt("include", Includes);
         Opt("config", Config);
         Opt("language", "c++");
         return sb.ToString();

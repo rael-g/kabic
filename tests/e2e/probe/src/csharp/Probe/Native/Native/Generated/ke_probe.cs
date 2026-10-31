@@ -1,3 +1,5 @@
+using global::Probe;
+
 namespace Probe.Native;
 
 public unsafe partial struct ke_probe
@@ -11,13 +13,13 @@ public unsafe partial struct ke_probe
     public delegate* unmanaged[Cdecl]<ke_probe*, uint, float> weight_of;
 
     [NativeTypeName("void (*)(struct ke_probe *, const ke_probe_item *, uint32_t)")]
-    public delegate* unmanaged[Cdecl]<ke_probe*, ProbeItem*, uint, void> fill;
+    public delegate* unmanaged[Cdecl]<ke_probe*, global::Probe.ProbeItem*, uint, void> fill;
 
     [NativeTypeName("ke_result (*)(struct ke_probe *, uint32_t, float *)")]
-    public delegate* unmanaged[Cdecl]<ke_probe*, uint, float*, Result> read;
+    public delegate* unmanaged[Cdecl]<ke_probe*, uint, float*, global::Probe.Result> read;
 
     [NativeTypeName("ke_result (*)(struct ke_probe *, ke_probe_visit_fn, void *)")]
-    public delegate* unmanaged[Cdecl]<ke_probe*, delegate* unmanaged[Cdecl]<void*, uint, void>, void*, Result> each;
+    public delegate* unmanaged[Cdecl]<ke_probe*, delegate* unmanaged[Cdecl]<void*, uint, void>, void*, global::Probe.Result> each;
 
     [NativeTypeName("const ke_probe_batch *(*)(struct ke_probe *)")]
     public delegate* unmanaged[Cdecl]<ke_probe*, ke_probe_batch*> batch;
@@ -26,13 +28,13 @@ public unsafe partial struct ke_probe
     public delegate* unmanaged[Cdecl]<ke_probe*, ke_probe_label*, void> tag;
 
     [NativeTypeName("void (*)(struct ke_probe *, uint32_t, ke_probe_done_fn, void *)")]
-    public delegate* unmanaged[Cdecl]<ke_probe*, uint, delegate* unmanaged[Cdecl]<void*, Result, uint, void>, void*, void> load;
+    public delegate* unmanaged[Cdecl]<ke_probe*, uint, delegate* unmanaged[Cdecl]<void*, global::Probe.Result, uint, void>, void*, void> load;
 
     [NativeTypeName("uint32_t (*)(struct ke_probe *, const ke_probe_item *)")]
-    public delegate* unmanaged[Cdecl]<ke_probe*, ProbeItem*, uint> count_of;
+    public delegate* unmanaged[Cdecl]<ke_probe*, global::Probe.ProbeItem*, uint> count_of;
 
     [NativeTypeName("ke_result (*)(struct ke_probe *, uint32_t, void *)")]
-    public delegate* unmanaged[Cdecl]<ke_probe*, uint, void*, Result> bind;
+    public delegate* unmanaged[Cdecl]<ke_probe*, uint, void*, global::Probe.Result> bind;
 
     [NativeTypeName("void (*)(struct ke_probe *, uint32_t)")]
     public delegate* unmanaged[Cdecl]<ke_probe*, uint, void> unbind;

@@ -12,7 +12,7 @@ foreach (var member in unsafeMembers) Console.WriteLine(member);
 if (unsafeMembers.Count > 0) return 1;
 
 using var probe = new Probe.Probe(4);
-var item = Probe.Native.ProbeItem.Default;
+var item = Probe.ProbeItem.Default;
 item.Id = 7;
 probe.Fill([item, item with { Id = 9, Weight = 2.5f }]);
 Check(probe.Count() == 2, "count");

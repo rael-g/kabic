@@ -51,6 +51,7 @@ public static class ClangSharpRunner
         {
             DefaultClass = job.MethodsClass,
             ExcludedNames = job.Excludes.ToArray(),
+            IncludedNames = job.Includes.ToArray(),
             LibraryPath = job.Library ?? "",
             MethodPrefixToStrip = job.MethodPrefix,
             RemappedNames = remaps,
@@ -108,6 +109,9 @@ public static class ClangSharpRunner
         }
         finally
         {
+            if (job.Includes.Count > 0 && Directory.Exists(outputDirectory))
+                foreach (var written in Directory.EnumerateFiles(outputDirectory, "*.cs"))
+                    File.WriteAllText(written, System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(written), @"^\s*\[NativeTypeName\(.*\)\]\r?\n", "", System.Text.RegularExpressions.RegexOptions.Multiline));
             Directory.SetCurrentDirectory(previous);
         }
 

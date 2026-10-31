@@ -26,6 +26,7 @@ public static class BindingsPlanner
     public static IReadOnlyList<BindingJob> Plan(string rootDir, string manifestPath)
     {
         var convention = ConventionLoader.Load(manifestPath);
+        var domains = DomainSpec.Load(manifestPath);
         var symbol = Regex.Escape(convention.SymbolPrefix) + @"\w+";
         var typeName = new Regex($@"\b{symbol}\b", RegexOptions.Compiled);
         Regex[] declarations =
@@ -258,7 +259,47 @@ public static class BindingsPlanner
         var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention).ToList());
         var renamed = idiomatic.Values.SelectMany(r => r).Select(r => r.Split('=', 2))
             .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).ToDictionary(r => r[0], r => r[1]);
-        return jobs.Select(j => j with { Remaps = [.. j.Remaps.Select(r => Renamed(r, renamed)), .. idiomatic[j]] }).ToList();
+        var contracts = jobs.Select(j => (Job: j, Spec: ContractSpec(j)))
+            .Where(x => x.Spec is not null).Select(x => (x.Job, Spec: x.Spec!, Types: AbstractTypes(x.Job, convention))).ToList();
+        var contractOf = contracts.SelectMany(c => c.Types.Select(t => (t, c.Spec.Namespace))).DistinctBy(x => x.t).ToDictionary(x => x.t, x => x.Item2);
+        string Located(string remap)
+        {
+            var source = remap.Split('=', 2)[0].TrimEnd();
+            return contractOf.TryGetValue(source, out var ns) ? $"{source}=global::{ns}.{renamed.GetValueOrDefault(source, source)}" : remap;
+        }
+        var result = jobs.Select(j => j with
+        {
+            Remaps = [.. j.Remaps.Select(r => Located(Renamed(r, renamed))), .. idiomatic[j].Select(Located),
+                .. contractOf.Where(c => idiomatic[j].Any(r => r.StartsWith(c.Key + "="))).Select(c => $"{c.Key}=global::{c.Value}.{renamed.GetValueOrDefault(c.Key, c.Key)}")],
+            Excludes = [.. j.Excludes, .. contractOf.Keys.Where(k => !j.Excludes.Contains(k))],
+        }).ToList();
+        foreach (var (job, spec, types) in contracts)
+        {
+            var dir = Path.GetFullPath(Path.Combine(rootDir, spec.AbstractionsOutDir!));
+            Directory.CreateDirectory(dir);
+            string Moved(string p) => Path.GetRelativePath(dir, Path.GetFullPath(Path.Combine(job.NativeDir, p))).Replace('\\', '/');
+            result.Add(new BindingJob(job.Name + "Contract", dir, "Types/", spec.Namespace, null,
+                job.IncludeDirectories.Select(Moved).ToList(), job.UmbrellaBody is null ? Moved(job.File) : job.File, job.UmbrellaBody,
+                job.Traverse.Select(Moved).ToList(), job.Additional,
+                [.. result.First(r => r.Name == job.Name).Remaps.Where(r => !types.Contains(r.Split('=')[0].TrimEnd()) && !r.Contains("::")),
+                    .. idiomatic[job].Where(r => types.Contains(r.Split("::")[0].Split('=')[0].TrimEnd()))], [],
+                [.. job.Config.Where(c => c != "generate-helper-types")],
+                convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass) { Includes = types });
+        }
+        return result;
+
+        DomainSpec? ContractSpec(BindingJob job) =>
+            domains.FirstOrDefault(d => d.AbstractionsOutDir is not null && d.NativeNamespace == job.Namespace);
+    }
+
+    /// <summary>What a contract can hold of a job: its enums and its records with no pointer.</summary>
+    static List<string> AbstractTypes(BindingJob job, Convention convention)
+    {
+        string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
+        var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
+            job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
+        return [.. model.Enums.Where(e => !e.External).Select(e => e.Name),
+            .. model.Structs.Where(CSharpWriter.IsValue).Where(s => s.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null)).Select(s => s.Name)];
     }
 
     static string Renamed(string remap, IReadOnlyDictionary<string, string> renamed)
@@ -272,12 +313,16 @@ public static class BindingsPlanner
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
             job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
+        var text = string.Concat(job.Traverse.Select(p => File.ReadAllText(Full(p))));
+        bool Captured(string value, ApiEnum owner) =>
+            Regex.Count(text, $@"\b{value}\b") > 1 && model.Enums.Any(o => o != owner
+                && o.Values.Any(v => Idioms.EnumMember(v.Name, o.Name) == Idioms.EnumMember(value, owner.Name)));
         foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
             yield return $"{cType}={target}";
         foreach (var e in model.Enums.Where(e => !e.External))
         {
             yield return $"{e.Name}={Idioms.TypeName(e.Name, convention)}";
-            foreach (var v in e.Values.DistinctBy(v => Idioms.EnumMember(v.Name, e.Name)))
+            foreach (var v in e.Values.DistinctBy(v => Idioms.EnumMember(v.Name, e.Name)).Where(v => !Captured(v.Name, e)))
                 yield return $"{e.Name}::{v.Name}={Idioms.EnumMember(v.Name, e.Name)}";
         }
         foreach (var s in model.Structs.Where(CSharpWriter.IsValue))

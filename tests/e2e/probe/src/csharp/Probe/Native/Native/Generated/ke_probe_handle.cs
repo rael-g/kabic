@@ -1,3 +1,5 @@
+using global::Probe;
+
 namespace Probe.Native;
 
 public unsafe partial struct ke_probe_handle
