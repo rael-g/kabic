@@ -1,5 +1,3 @@
-using global::Other;
-
 using global::Probe;
 
 namespace Other.Native;
