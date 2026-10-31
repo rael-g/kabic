@@ -182,9 +182,9 @@ public sealed class FactoriesExtension : IKabicExtension
         if (strings) o.Append("        {\n");
         if (f.Config is not null)
         {
-            o.Append($"{pad}{f.Job.Namespace}.{f.Config.Name} config = default;\n");
+            o.Append($"{pad}{f.Job.Namespace}.{(CSharpWriter.IsValue(f.Config) ? Idioms.TypeName(f.Config.Name, convention) : f.Config.Name)} config = default;\n");
             foreach (var a in f.Arguments.Where(a => a.Field is not null))
-                o.Append($"{pad}config.{a.Field} = {(a.IsString ? $"(sbyte*){a.Name}Ptr" : a.Assign)};\n");
+                o.Append($"{pad}config.{(CSharpWriter.IsValue(f.Config) ? Idioms.Pascal(a.Field!) : a.Field)} = {(a.IsString ? $"(sbyte*){a.Name}Ptr" : a.Assign)};\n");
         }
         o.Append($"{pad}{f.Contract.Spec.NativeNamespace}.{f.HandleType} handle;\n");
         var call = f.Arguments.Where(a => a.Field is null).Select(a => a.Assign).Concat(f.Config is null ? [] : ["&config"]).Append("&handle");
