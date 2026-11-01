@@ -170,7 +170,7 @@ public sealed class ZigWriter
         if (CTypes.FixedArray(type) is { } array)
             return ".{ " + string.Join(", ", v.Items.Select(i => DataValue(array.Element, i))) + " }";
         if ((model.Structs.FirstOrDefault(s => s.Name == bare) ?? known.FirstOrDefault(s => s.Name == bare)) is { } record)
-            return ".{ " + string.Join(", ", record.Fields.Zip(v.Items).Where(x => x.First.Type.Length > 0 || x.Second.Text.Length > 0)
+            return ".{ " + string.Join(", ", record.Fields.Zip(v.Items).Where(x => x.Second.Kind != ApiValueKind.Number || x.Second.Text.Length > 0).Where(x => !(CTypes.IsPointer(x.First.Type) && x.Second.Text == "0")).Where(x => x.First.Type.Length > 0 || x.Second.Text.Length > 0)
                 .Select(x => x.First.Type.Length > 0 ? $".{Ident(x.First.Name)} = {DataValue(x.First.Type, x.Second)}"
                     : $".{Ident(x.First.Name)} = .{{ .{Ident(x.Second.Text)} = {UnionValue(x.Second)} }}")) + " }";
         return v.Kind switch

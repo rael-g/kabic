@@ -364,6 +364,8 @@ public static class Extractor
         var inner = node["inner"] as JsonArray;
         switch (kind)
         {
+            case "ImplicitValueInitExpr":
+                return new ApiValue(ApiValueKind.Number, "", []);
             case "InitListExpr":
                 return new ApiValue(ApiValueKind.List, node["field"]?["name"]?.GetValue<string>() ?? "", (inner ?? []).Select(i => ExtractValue(i!.AsObject(), bytes)).ToList());
             case "IntegerLiteral" or "FloatingLiteral":
