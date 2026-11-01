@@ -20,6 +20,9 @@ public sealed record DomainSpec(
     string? Library,
     string? Annotations = null)
 {
+    /// <summary>Where a <c>zig</c> entry's package lives, relative to the root, when not among the others.</summary>
+    public string? PackageDir { get; init; }
+
     /// <summary>The namespaces of every domain with a contract of its own.</summary>
     public IReadOnlySet<string> ContractNamespaces { get; init; } = new HashSet<string>();
 
@@ -34,7 +37,7 @@ public sealed record DomainSpec(
         return [.. Load(manifestPath), .. extra.Select(e => new DomainSpec(e!["name"]!.GetValue<string>(),
             e["headers"]!.AsArray().Select(n => n!.GetValue<string>()).ToList(),
             e["includeDirs"]!.AsArray().Select(n => n!.GetValue<string>()).ToList(),
-            [], "", "", "", "", null, [], [], null, e["annotations"]?.GetValue<string>()))];
+            [], "", "", "", "", null, [], [], null, e["annotations"]?.GetValue<string>()) { PackageDir = e["packageDir"]?.GetValue<string>() })];
     }
 
     /// <summary>

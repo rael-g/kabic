@@ -42,7 +42,7 @@ internal static class WriteZigCommand
         {
             if (Write(options, scratch) is var code and not 0) return code;
             var generated = Files(scratch, [""]);
-            var committed = Files(options.Root, [PackagesRoot]);
+            var committed = Files(options.Root, [PackagesRoot, .. Units(options).Where(u => u.Spec.PackageDir is not null).Select(u => u.Spec.PackageDir!)]);
             var drift = generated.Union(committed).Order(StringComparer.Ordinal)
                 .Where(rel => !generated.Contains(rel) || !committed.Contains(rel)
                     || !File.ReadAllBytes(Path.Combine(scratch, rel)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(options.Root, rel))))
@@ -68,7 +68,7 @@ internal static class WriteZigCommand
 
     static List<Unit> Units(Options options) =>
         DomainSpec.LoadForZig(options.Manifest).OrderBy(d => d.Name, StringComparer.Ordinal)
-            .Select(d => new Unit(d, Path.Combine(options.Root, PackagesRoot, d.Name))).ToList();
+            .Select(d => new Unit(d, Path.Combine(options.Root, d.PackageDir ?? Path.Combine(PackagesRoot, d.Name)))).ToList();
 
     static int Write(Options options, string into)
     {
@@ -137,7 +137,7 @@ internal static class WriteZigCommand
             File.WriteAllText(Path.Combine(dir, "layout_values.c"), package.LayoutValues(models[unit.Key]));
         }
         var all = Path.Combine(root, PackagesRoot);
-        var gathered = units.Select(u => new ZigImport(u.Key, u.Package, Slashed(Path.GetRelativePath(all, u.PackageDir)))).ToList();
+        var gathered = units.Where(u => u.Spec.PackageDir is null).Select(u => new ZigImport(u.Key, u.Package, Slashed(Path.GetRelativePath(all, u.PackageDir)))).ToList();
         Directory.CreateDirectory(Path.Combine(into, PackagesRoot));
         File.WriteAllText(Path.Combine(into, PackagesRoot, "build.zig"), ZigPackage.AllBuildZig(gathered));
         File.WriteAllText(Path.Combine(into, PackagesRoot, "build.zig.zon"), ZigPackage.AllBuildZon(gathered));

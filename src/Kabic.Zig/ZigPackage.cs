@@ -205,6 +205,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
     {
         var sb = new StringBuilder();
         sb.AppendLine(".{");
+        if (name.Length > 32) name = name[..32].TrimEnd('_');
         sb.AppendLine($"    .name = .{name},");
         sb.AppendLine("    .version = \"0.1.0\",");
         sb.AppendLine($"    .fingerprint = 0x{Fingerprint(name):x16},");
