@@ -26,7 +26,14 @@ public sealed record Factory(
 /// A dependency of a factory, or a field of its config struct, as the constructor argument it
 /// becomes; <see cref="Field"/> is the config field it fills, null for a dependency.
 /// </summary>
-public sealed record FactoryArgument(string? Doc, string? Field, string Name, string ManagedType, string Assign, bool IsString);
+public sealed record FactoryArgument(string? Doc, string? Field, string Name, string ManagedType, string Assign, bool IsString)
+{
+    /// <summary>Whether the argument is a contract the factory requires.</summary>
+    public bool IsRequiredProvider => ManagedType.Contains(".INative") && !ManagedType.EndsWith('?');
+
+    /// <summary>Whether the argument is a contract the factory takes when there is one.</summary>
+    public bool IsOptionalProvider => ManagedType.Contains(".INative") && ManagedType.EndsWith('?');
+}
 
 /// <summary>
 /// Projects the factory of each bindings project its manifest section names into a partial class
@@ -136,7 +143,10 @@ public sealed class FactoriesExtension : IKabicExtension
         var domain = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == target && !s.External && s.IsVtable));
         if (domain is null) return null;
         var name = Idioms.Ident(param.Name ?? target);
-        return new FactoryArgument(param.Doc, null, name, $"{domain.Spec.Namespace}.{Idioms.NativeInterface(target, context.Convention)}", $"{name}.Native", false);
+        var iface = $"{domain.Spec.Namespace}.{Idioms.NativeInterface(target, context.Convention)}";
+        return param.Has("optional") || param.Has("nullable")
+            ? new FactoryArgument(param.Doc, null, name, iface + "?", $"({name} is null ? null : {name}.Native)", false)
+            : new FactoryArgument(param.Doc, null, name, iface, $"{name}.Native", false);
     }
 
     private static FactoryArgument? Argument(ExtensionContext context, ApiField field)
@@ -171,7 +181,7 @@ public sealed class FactoriesExtension : IKabicExtension
             o.Append($"    /// <param name=\"{a.Name}\">{Xml(a.Doc)}</param>\n");
         o.Append($"    public {f.ClassName}({Parameters(f)}) : base(Create({Names(f)}))\n    {{\n    }}\n\n");
         o.Append($"    private static {f.Contract.Spec.NativeNamespace}.{f.HandleType} Create({Parameters(f, withDefaults: false)})\n    {{\n");
-        foreach (var a in f.Arguments.Where(a => a.ManagedType.Contains(".INative")))
+        foreach (var a in f.Arguments.Where(a => a.IsRequiredProvider))
             o.Append($"        ArgumentNullException.ThrowIfNull({a.Name});\n");
         foreach (var a in f.Arguments.Where(a => a.IsString))
             o.Append($"        var {a.Name}Bytes = {a.Name} is null ? null : System.Text.Encoding.UTF8.GetBytes({a.Name} + \"\\0\");\n");
@@ -197,11 +207,11 @@ public sealed class FactoriesExtension : IKabicExtension
 
     /// <summary>
     /// The constructor's parameter list. A scalar or a string defaults to zero, which selects the
-    /// factory's default, unless a provider, which has no default, comes after it.
+    /// factory's default, unless a required provider, which has no default, comes after it.
     /// </summary>
     public static string Parameters(Factory f, bool withDefaults = true)
     {
-        var lastProvider = f.Arguments.ToList().FindLastIndex(a => a.ManagedType.Contains(".INative"));
+        var lastProvider = f.Arguments.ToList().FindLastIndex(a => a.IsRequiredProvider);
         return string.Join(", ", f.Arguments.Select((a, i) =>
             $"{a.ManagedType} {a.Name}{(withDefaults && i > lastProvider ? " = default" : "")}"));
     }
