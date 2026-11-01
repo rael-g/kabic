@@ -159,7 +159,9 @@ public sealed class FactoriesExtension : IKabicExtension
             var domain = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == target && !s.External));
             if (domain is null) return null;
             var iface = $"{domain.Spec.Namespace}.{Idioms.NativeInterface(target, context.Convention)}";
-            return new FactoryArgument(field.Doc, field.Name, name, iface, $"{name}.Native", false);
+            return field.Has("optional") || field.Has("nullable")
+                ? new FactoryArgument(field.Doc, field.Name, name, iface + "?", $"({name} is null ? null : {name}.Native)", false)
+                : new FactoryArgument(field.Doc, field.Name, name, iface, $"{name}.Native", false);
         }
         if (field.Has("utf8") && type == "char *")
             return new FactoryArgument(field.Doc, field.Name, name, "string?", "", true);
