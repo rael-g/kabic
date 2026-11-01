@@ -52,11 +52,9 @@ public static class Regeneration
     /// </summary>
     public static void GenerateOne(DomainSpec spec, string apiJson, DomainOutput output, Convention convention)
     {
-        var request = new Generation.CSharpRequest(
+        Generation.CSharp(new Generation.CSharpRequest(
             apiJson, spec.Namespace, spec.NativeNamespace, output.OutDir, output.ContractDir,
-            spec.Name, spec.Library, spec.Providers, [], spec.Usings, convention) { ContractNamespaces = spec.ContractNamespaces };
-        if (spec.Opaque) Generation.Opaque(request);
-        else Generation.CSharp(request);
+            spec.Name, spec.Library, spec.Providers, [], spec.Usings, convention) { ContractNamespaces = spec.ContractNamespaces });
         var formatter = Kabic.CSharp.CSharpFormatter.For(convention);
         SourceFormat.Directory(formatter, output.OutDir);
         if (output.ContractDir != output.OutDir) SourceFormat.Directory(formatter, output.ContractDir);

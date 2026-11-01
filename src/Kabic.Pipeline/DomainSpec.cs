@@ -23,12 +23,6 @@ public sealed record DomainSpec(
     /// <summary>Where a <c>zig</c> entry's package lives, relative to the root, when not among the others.</summary>
     public string? PackageDir { get; init; }
 
-    /// <summary>
-    /// Whether managed code only hands this domain's contracts on: each projects to an owner of
-    /// the native pointer and none of its slots.
-    /// </summary>
-    public bool Opaque { get; init; }
-
     /// <summary>The namespaces of every domain with a contract of its own.</summary>
     public IReadOnlySet<string> ContractNamespaces { get; init; } = new HashSet<string>();
 
@@ -75,6 +69,6 @@ public sealed record DomainSpec(
             Strings(d["providers"]),
             Strings(d["usings"]),
             d["library"]?.GetValue<string>(),
-            d["annotations"]?.GetValue<string>()) { Opaque = d["opaque"]?.GetValue<bool>() ?? false };
+            d["annotations"]?.GetValue<string>());
     }
 }
