@@ -74,6 +74,12 @@ public sealed class Convention
     /// <summary>The <c>vtable.slot</c> names the wrapper projects but a managed contract does not hold yet.</summary>
     public IReadOnlySet<string> Deferred { get; set; } = new HashSet<string>();
 
+    /// <summary>The slots, as <c>vtable.slot</c>, that are projected nowhere yet.</summary>
+    public IReadOnlySet<string> Unprojected { get; set; } = new HashSet<string>();
+
+    /// <summary>Per language, the text of the configuration its formatter uses instead of the default.</summary>
+    public IReadOnlyDictionary<string, string> FormatConfigs { get; set; } = new Dictionary<string, string>();
+
     /// <summary><paramref name="name"/> rewritten by the first rule of <paramref name="language"/> that matches.</summary>
     public string Spell(string language, string name)
     {
@@ -143,6 +149,7 @@ public sealed class Convention
                 builder.AddType(language, cType, target!.GetValue<string>());
         var convention = builder.Build();
         convention.Deferred = (json["deferred"]?.AsArray().Select(n => n!.GetValue<string>()) ?? []).ToHashSet();
+        convention.Unprojected = (json["unprojected"]?.AsArray().Select(n => n!.GetValue<string>()) ?? []).ToHashSet();
         return convention;
     }
 }

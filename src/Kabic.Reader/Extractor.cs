@@ -365,7 +365,7 @@ public static class Extractor
         switch (kind)
         {
             case "InitListExpr":
-                return new ApiValue(ApiValueKind.List, "", (inner ?? []).Select(i => ExtractValue(i!.AsObject(), bytes)).ToList());
+                return new ApiValue(ApiValueKind.List, node["field"]?["name"]?.GetValue<string>() ?? "", (inner ?? []).Select(i => ExtractValue(i!.AsObject(), bytes)).ToList());
             case "IntegerLiteral" or "FloatingLiteral":
                 return new ApiValue(ApiValueKind.Number, node["value"]!.ToString(), []);
             case "StringLiteral":
@@ -379,6 +379,9 @@ public static class Extractor
                 return new ApiValue(ApiValueKind.OffsetOf, text[(text.IndexOf('(') + 1)..text.IndexOf(')')].Trim(), []);
             case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof" && node["argType"] is JsonObject arg:
                 return new ApiValue(ApiValueKind.SizeOf, arg["qualType"]!.GetValue<string>(), []);
+            case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof"
+                && System.Text.RegularExpressions.Regex.Match(SliceRange(bytes, node), @"\(\s*(\w+)\s*\*\s*\)\s*0\s*\)\s*->\s*(\w+)") is { Success: true } member:
+                return new ApiValue(ApiValueKind.SizeOf, $"{member.Groups[1].Value}->{member.Groups[2].Value}", []);
         }
         if (inner is [JsonObject only]) return ExtractValue(only, bytes);
         throw new NotSupportedException($"an initializer holds a {kind}, which has no projection");

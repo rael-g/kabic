@@ -104,13 +104,14 @@ internal static class WriteZigCommand
             foreach (var name in models[unit.Key].Enums.Where(e => !e.External).SelectMany(e => e.Values).Select(v => v.Name)
                          .Concat(models[unit.Key].Constants.Select(c => c.Name)))
                 owner.TryAdd(name, unit.Key);
+        var allStructs = models.Values.SelectMany(m => m.Structs).Where(s => !s.External).ToList();
         var texts = new Dictionary<string, string>();
         var abis = new Dictionary<string, string>();
         var imports = new Dictionary<string, List<string>>();
         foreach (var unit in units)
         {
             var foreign = owner.Where(kv => kv.Value != unit.Key).ToDictionary();
-            try { (texts[unit.Key], abis[unit.Key]) = ZigWriter.RenderFiles(models[unit.Key], foreign, convention, $"{unit.Key}_c.zig"); }
+            try { (texts[unit.Key], abis[unit.Key]) = ZigWriter.RenderFiles(models[unit.Key], foreign, convention, $"{unit.Key}_c.zig", allStructs); }
             catch (NotSupportedException e) { failures[unit.Key] = e.Message; continue; }
             imports[unit.Key] = foreign.Values.Distinct().Where(k => texts[unit.Key].Contains($"@import(\"{k}\")"))
                 .Concat(Included(root, unit, units)).Where(k => k != unit.Key)

@@ -57,7 +57,8 @@ public static class Generation
             var moved = r.ContractDir != r.OutDir && value.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null);
             Directory.CreateDirectory(moved ? contractDir : outDir);
             File.WriteAllText(Path.Combine(moved ? contractDir : outDir, $"{Idioms.TypeName(value.Name, convention)}.Default.g.cs"),
-                CSharpWriter.RenderDefault(model, value, moved ? ns : nativeNs, convention));
+                moved ? CSharpWriter.RenderDefault(model, value, ns, convention)
+                    : CSharpWriter.RenderDefaultExtension(model, value, ns, [nativeNs, .. usings], convention));
         }
 
         foreach (var borrowed in model.Structs.Where(CSharpWriter.IsBorrowed))

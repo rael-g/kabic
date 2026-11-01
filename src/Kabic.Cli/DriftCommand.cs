@@ -68,7 +68,9 @@ internal static class DriftCommand
                 }
 
                 var tmpOutDir = Path.Combine(tmpRoot, name, "out");
-                var tmpContractDir = spec.AbstractionsOutDir is not null ? Path.Combine(tmpRoot, name, "abstractions") : tmpOutDir;
+                var tmpContractDir = spec.AbstractionsOutDir is not { } contract ? tmpOutDir
+                    : contract.StartsWith(spec.OutDir + "/", StringComparison.Ordinal) ? Path.Combine(tmpOutDir, Path.GetRelativePath(spec.OutDir, contract))
+                    : Path.Combine(tmpRoot, name, "abstractions");
 
                 try
                 {

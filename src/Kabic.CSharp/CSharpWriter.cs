@@ -663,6 +663,35 @@ public static class CSharpWriter
     }
 
     /// <summary>
+    /// The <c>[default:]</c> values of a struct another assembly may declare, as a static
+    /// extension in <paramref name="ns"/>, which a partial could not reach.
+    /// </summary>
+    public static string RenderDefaultExtension(ApiModel model, ApiStruct s, string ns, IEnumerable<string> usings, Convention convention)
+    {
+        var typeName = Idioms.TypeName(s.Name, convention);
+        var o = new List<string> { Header };
+        o.AddRange(usings.Distinct().Order(StringComparer.Ordinal).Select(u => $"using {u};"));
+        o.AddRange([$"\nnamespace {ns};\n", $"/// <summary>The <c>[default:]</c> values of <c>{s.Name}</c>.</summary>", $"public static class {typeName}Defaults", "{",
+            $"    extension({typeName})", "    {",
+            $"        /// <summary>The value every <c>[default:]</c> field of <c>{s.Name}</c> declares.</summary>",
+            $"        public static {typeName} Default => new()", "        {"]);
+        foreach (var f in s.Fields.Where(f => f.TagValue("default") is not null))
+            o.Add($"            {ExtensionDefault(model, s, f, typeName, convention)}");
+        o.AddRange(["        };", "    }", "}"]);
+        return string.Join('\n', o);
+    }
+
+    /// <summary>A default written from outside the struct, where an array field is ClangSharp's nested fixed buffer.</summary>
+    static string ExtensionDefault(ApiModel model, ApiStruct s, ApiField f, string typeName, Convention convention)
+    {
+        if (ValueArray(model, s, f, convention) is not { } array) return ValueDefault(model, s, f, convention);
+        var name = Idioms.Pascal(f.Name);
+        var values = f.TagValue("default")!.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var vector = $"System.Numerics.Vector{array.Arity}";
+        return $"{name} = System.Runtime.CompilerServices.Unsafe.BitCast<{vector}, {typeName}._{name}_e__FixedBuffer>(new {vector}({string.Join(", ", values.Select(v => v + "f"))})),";
+    }
+
+    /// <summary>
     /// The counted pointers of <paramref name="s"/> a span can read: one whose elements are a
     /// C# pointer type has no span, so it stays raw.
     /// </summary>
@@ -1172,7 +1201,7 @@ public static class CSharpWriter
             contract.Add("");
         }
 
-        var closures = VtableClosures(model, slots, convention);
+        var closures = VtableClosures(model, slots.Where(s => !convention.Unprojected.Contains($"{vtable.Name}.{s.Slot.Name}")), convention);
         var closureGroups = VtableClosureGroups(model, slots, typeName, convention);
         foreach (var cb in closures.DistinctBy(c => c.Delegate))
             RenderClosureDelegate(model, contract ?? o, cb, typeName, convention, contract is null ? typeName : domainIface);
@@ -1307,6 +1336,11 @@ public static class CSharpWriter
         foreach (var cs in slots)
         {
             if (!Projected(cs)) continue;
+            if (convention.Unprojected.Contains($"{vtable.Name}.{cs.Slot.Name}"))
+            {
+                Console.Error.WriteLine($"{vtable.Name}.{cs.Slot.Name}: not projected yet");
+                continue;
+            }
             if (cs.PublicParams.Any(p => !p.Has("closure") && !p.Has("completion")
                     && classified.Callbacks.Any(c => c.Name == p.Type.Trim())))
             {
@@ -1383,6 +1417,8 @@ public static class CSharpWriter
         o.Add("}");
         o.Add("");
 
+        if (retainedGroups.Any(g => g.Pairs.Any(p => convention.ReturnsResult(p.Callback.Returns))))
+            RenderRaisedFailures(o, convention);
         if (contract is null) return new ProviderSource(string.Join('\n', o), null);
 
         contract.Add($"/// <summary>The {typeName.ToLowerInvariant()} contract game code depends on, so a caller"
@@ -1440,13 +1476,14 @@ public static class CSharpWriter
     /// named the concept, so two slots taking the same one share a delegate instead of
     /// each inventing a name from the slot it appears in.
     /// </summary>
-    static string DelegateName(ApiCallback callback, Convention convention)
+    static string DelegateName(ApiModel model, ApiCallback callback, Convention convention)
     {
         var n = callback.Name;
         if (n.StartsWith(convention.SymbolPrefix, StringComparison.Ordinal)) n = n[convention.SymbolPrefix.Length..];
         if (n.EndsWith("_func", StringComparison.Ordinal)) n = n[..^5];
         else if (n.EndsWith("_fn", StringComparison.Ordinal)) n = n[..^3];
-        return Idioms.Pascal(n);
+        var name = Idioms.Pascal(n);
+        return model.Structs.Any(s => Idioms.TypeName(s.Name, convention) == name) ? name + "Callback" : name;
     }
 
     /// <summary>
@@ -1489,6 +1526,9 @@ public static class CSharpWriter
         var basis = model.ResolveAlias(t.TrimEnd('*', ' '));
         if (stars == 0 && IsBoolType(basis, convention)) return "bool";
         if (convention.ReturnsResult(basis)) return convention.ResultManagedType + new string('*', stars);
+        if (model.IdTypes.Contains(basis) || model.ForeignIdTypes.Contains(basis)
+            || model.Structs.Any(s => s.Name == basis && IsPlain(s)))
+            return Idioms.TypeName(basis, convention) + new string('*', stars);
         return Idioms.CsForeignType(basis, convention) + new string('*', stars);
     }
 
@@ -1575,7 +1615,7 @@ public static class CSharpWriter
                     + $"handler that throws has nowhere to report; {callback.Name} needs to return {convention.ResultType}, "
                     + "or [teardown] if the engine only calls it from the destroy this object drives");
 
-            pairs.Add(new CallbackPair(fn, ctx, lifetime, DelegateName(callback, convention),
+            pairs.Add(new CallbackPair(fn, ctx, lifetime, DelegateName(model, callback, convention),
                 TrampolineName(slot, fn),
                 callback, ctxLane, retainKey, retainByReturn, teardown)
             { ByResult = reportsByResult });
@@ -1880,6 +1920,33 @@ public static class CSharpWriter
     /// rethrown by the call site once the native stack has unwound, which only holds
     /// because a closure without a channel is never allowed to outlive its call.
     /// </summary>
+    /// <summary>
+    /// Makes every checked native call of a class report what retained handlers threw: such a
+    /// handler outlives the call that registered it, so the failure waits for the next call
+    /// that observes a code.
+    /// </summary>
+    static void RenderRaisedFailures(List<string> o, Convention convention)
+    {
+        var check = System.Text.RegularExpressions.Regex.Escape(convention.ResultHelperClass + ".ThrowIfFailed(");
+        for (var i = 0; i < o.Count; i++)
+            o[i] = System.Text.RegularExpressions.Regex.Replace(o[i], "(" + check + @")(Handle->.*)(, ""[^""]*""\);)$", "$1DrainRaised($2)$3");
+        var end = o.FindLastIndex(l => l == "}");
+        o.InsertRange(end, [
+            "",
+            "    /// <summary>What retained handlers threw and no call has reported yet, from any thread the engine ran them on.</summary>",
+            "    private static readonly System.Collections.Concurrent.ConcurrentQueue<Exception> s_raisedCallbackFailures = new();",
+            "",
+            "    /// <summary>Throws what retained handlers raised, or returns <paramref name=\"code\"/> when they raised nothing.</summary>",
+            "    private static T DrainRaised<T>(T code)",
+            "    {",
+            "        var collected = new List<Exception>();",
+            "        while (s_raisedCallbackFailures.TryDequeue(out var failure)) collected.Add(failure);",
+            "        if (collected.Count == 0) return code;",
+            "        throw new InvalidOperationException(\"A handler registered with this provider threw\",",
+            "            collected.Count == 1 ? collected[0] : new AggregateException(collected));",
+            "    }"]);
+    }
+
     static void RenderTrampoline(ApiModel model, List<string> o, CallbackPair pair, ClosureGroup group, Convention convention)
     {
         var lanes = pair.Callback.Lanes;
@@ -1931,8 +1998,7 @@ public static class CSharpWriter
         o.Add("        {");
         if (byResult)
         {
-            if (pair.Lifetime != ClosureLifetime.Retained)
-                o.Add("            s_parkedCallbackException ??= ex;");
+            o.Add(pair.Lifetime != ClosureLifetime.Retained ? "            s_parkedCallbackException ??= ex;" : "            s_raisedCallbackFailures.Enqueue(ex);");
             o.Add($"            return {convention.ResultHelperClass}.ToCode(ex);");
         }
         else

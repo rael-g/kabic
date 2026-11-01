@@ -21,7 +21,7 @@ public static class ClangSharpRunner
     /// reported. The current directory is the job's native directory while the generator runs and
     /// is restored afterwards, also when it throws.
     /// </summary>
-    public static BindingRun Run(BindingJob job, string rootDir, string resourceDir, string outputDirectory)
+    public static BindingRun Run(BindingJob job, string rootDir, string resourceDir, string outputDirectory, ISourceFormatter formatter)
     {
         var umbrellaDir = Path.Combine(rootDir, "build", "kabic", "umbrellas");
         string file;
@@ -116,6 +116,7 @@ public static class ClangSharpRunner
         }
 
         UsingBlock.NormalizeDirectory(outputDirectory);
+        SourceFormat.Directory(formatter, outputDirectory);
         DropAssemblyAttributeFile(outputDirectory);
         return new BindingRun(errors == 0, log);
     }

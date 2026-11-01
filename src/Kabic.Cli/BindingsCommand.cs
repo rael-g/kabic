@@ -39,7 +39,7 @@ internal static class BindingsCommand
             BindingRun run;
             try
             {
-                run = ClangSharpRunner.Run(job, options.Root, resourceDir, target);
+                run = ClangSharpRunner.Run(job, options.Root, resourceDir, target, Kabic.CSharp.CSharpFormatter.For(Kabic.Conventions.ConventionLoader.Load(options.Manifest)));
             }
             catch
             {
@@ -84,7 +84,7 @@ internal static class BindingsCommand
             {
                 var target = Path.Combine(scratch, job.Name);
                 Directory.CreateDirectory(target);
-                ClangSharpRunner.Run(job, options.Root, resourceDir, target);
+                ClangSharpRunner.Run(job, options.Root, resourceDir, target, Kabic.CSharp.CSharpFormatter.For(Kabic.Conventions.ConventionLoader.Load(options.Manifest)));
                 var committed = Path.GetFullPath(Path.Combine(job.NativeDir, job.Output));
                 if (!Directory.EnumerateFiles(target, "*.cs", SearchOption.AllDirectories).Any())
                 {
