@@ -129,7 +129,7 @@ public sealed class FactoriesExtension : IKabicExtension
         var contractClass = contract is null ? "" : Idioms.TypeName(contractName!, convention);
         var stem = convention.Spell("factory", convention.StripPrefix(function.Name));
         var contractStem = convention.StripPrefix(contractName ?? bareName);
-        var plugin = stem.StartsWith(contractStem + "_", StringComparison.Ordinal) ? stem[(contractStem.Length + 1)..] : stem;
+        var plugin = stem == contractStem ? "default" : stem.StartsWith(contractStem + "_", StringComparison.Ordinal) ? stem[(contractStem.Length + 1)..] : stem;
         var projectDir = Path.GetDirectoryName(job.NativeDir.TrimEnd('/', '\\'))!;
         var managedNamespace = job.Namespace.EndsWith(".Native", StringComparison.Ordinal) ? job.Namespace[..^".Native".Length] : job.Namespace;
         return new Factory(job, projectDir, managedNamespace, function, config, contract,
