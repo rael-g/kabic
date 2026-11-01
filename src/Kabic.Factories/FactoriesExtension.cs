@@ -166,7 +166,9 @@ public sealed class FactoriesExtension : IKabicExtension
         if (field.Has("utf8") && type == "char *")
             return new FactoryArgument(field.Doc, field.Name, name, "string?", "", true);
         if (type.Contains('*')) return null;
-        return new FactoryArgument(field.Doc, field.Name, name, Idioms.CsPrimitive(type, context.Convention), name, false);
+        var owner = context.Domains.FirstOrDefault(d => d.Model.Enums.Any(e => e.Name == type));
+        return new FactoryArgument(field.Doc, field.Name, name,
+            owner is null ? Idioms.CsPrimitive(type, context.Convention) : $"{owner.Spec.Namespace}.{Idioms.TypeName(type, context.Convention)}", name, false);
     }
 
     private static string Bare(string cType) => CType.Of(cType).Name;
