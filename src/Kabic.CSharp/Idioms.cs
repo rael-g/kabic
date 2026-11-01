@@ -109,7 +109,8 @@ public static class Idioms
         "INative" + Pascal(convention.StripPrefix(vtable));
 
     public static string TypeName(string name, Convention convention) =>
-        convention.Spell(TypeNames, name) is var spelled && spelled != name
+        convention.Project(Languages.CSharp, name) is { } projected ? projected
+        : convention.Spell(TypeNames, name) is var spelled && spelled != name
             ? spelled
             : Pascal(convention.StripPrefix(name));
 
