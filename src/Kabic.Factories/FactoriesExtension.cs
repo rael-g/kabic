@@ -115,7 +115,7 @@ public sealed class FactoriesExtension : IKabicExtension
                 config = configStruct;
                 foreach (var field in configStruct.Fields)
                 {
-                    if (Argument(context, field) is { } argument) arguments.Add(argument);
+                    if (Argument(context, field, job, model) is { } argument) arguments.Add(argument);
                     else context.Report($"factories: {configStruct.Name}.{field.Name} ({field.Type}) has no projection");
                 }
             }
@@ -151,7 +151,7 @@ public sealed class FactoriesExtension : IKabicExtension
             : new FactoryArgument(param.Doc, null, name, iface, $"{name}.Native", false);
     }
 
-    private static FactoryArgument? Argument(ExtensionContext context, ApiField field)
+    private static FactoryArgument? Argument(ExtensionContext context, ApiField field, BindingJob job, ApiModel model)
     {
         var name = Idioms.Ident(field.Name);
         var type = CTypes.Unqualified(field.Type);
@@ -170,7 +170,8 @@ public sealed class FactoriesExtension : IKabicExtension
         if (type.Contains('*')) return null;
         var owner = context.Domains.FirstOrDefault(d => d.Model.Enums.Any(e => e.Name == type));
         return new FactoryArgument(field.Doc, field.Name, name,
-            owner is null ? Idioms.CsPrimitive(type, context.Convention) : $"{owner.Spec.Namespace}.{Idioms.TypeName(type, context.Convention)}", name, false);
+            model.Enums.Any(e => e.Name == type && !e.External) ? $"{job.Namespace}.{Idioms.TypeName(type, context.Convention)}"
+            : owner is null ? Idioms.CsPrimitive(type, context.Convention) : $"{owner.Spec.NativeNamespace[..^".Native".Length]}.{Idioms.TypeName(type, context.Convention)}", name, false);
     }
 
     private static string Bare(string cType) => CType.Of(cType).Name;
