@@ -471,6 +471,22 @@ public static class CSharpWriter
     /// carries, so a slot taking two payloads spells which is which instead of leaving the
     /// caller to count positions.
     /// </summary>
+    /// <summary>
+    /// The statements filling one field of an expanded bag from its argument. A fixed array
+    /// bounded by <c>[array_of:]</c> takes a copy of the sequence, which must fit.
+    /// </summary>
+    static IEnumerable<string> BagField(string bag, ApiField f, string value)
+    {
+        if (!f.Has("array_of") || CTypes.FixedArray(f.Type) is not { } array)
+        {
+            yield return $"{bag}.{f.Name} = {value};";
+            yield break;
+        }
+        var n = Idioms.Ident(f.Name);
+        yield return $"if ({n}.Length > {array.Extent}) throw new ArgumentOutOfRangeException(nameof({n}));";
+        yield return $"for (var {n}At = 0; {n}At < {n}.Length; {n}At++) {bag}.{f.Name}[{n}At] = ({value})[{n}At];";
+    }
+
     static string BlobTypeParam(ApiParam p) => "T" + Idioms.Pascal(p.Name!);
 
     /// <summary>
@@ -2387,7 +2403,7 @@ public static class CSharpWriter
                         {
                             var arg = args.FirstOrDefault(a => a.Name == f.Name)
                                 ?? cs.Sequences.Select(s => s.Count).First(c => c.Name == f.Name);
-                            o.Add($"{fInd}{bagLocal}.{f.Name} = {CallArg(arg)};");
+                            foreach (var line in BagField(bagLocal, f, CallArg(arg))) o.Add(fInd + line);
                         }
                     }
 
@@ -2575,7 +2591,7 @@ public static class CSharpWriter
                         {
                             var arg = args.FirstOrDefault(a => a.Name == f.Name)
                                 ?? cs.Sequences.Select(s => s.Count).First(c => c.Name == f.Name);
-                            o.Add($"{pInd}{bag}.{f.Name} = {CallArg(arg)};");
+                            foreach (var line in BagField(bag, f, CallArg(arg))) o.Add(pInd + line);
                         }
                     }
                     var pCall = Call(slot, call);

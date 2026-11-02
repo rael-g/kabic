@@ -223,6 +223,13 @@ public static class Classifier
         return (expanded, bag);
     }
 
+    /// <summary>
+    /// The type a bag field takes as a parameter. A fixed array bounded by <c>[array_of:]</c>
+    /// reads as the sequence a caller passes, which the expansion copies into the array.
+    /// </summary>
+    static string BoundedArrayAsPointer(ApiField field) =>
+        field.Has("array_of") && CTypes.FixedArray(field.Type) is { } array ? $"const {array.Element} *" : field.Type;
+
     static ApiSlot AsSlot(ApiFunction fn) =>
         new(fn.Name, fn.Returns, [], fn.Doc, fn.ReturnDoc, fn.Params.ToList()) { ReturnTags = fn.ReturnTags, Symbol = fn.Name };
 
@@ -234,7 +241,7 @@ public static class Classifier
         var (expanded, bag) = ExpandedBag(model, slot);
         if (expanded is not null)
             ps = ps.SelectMany(p => p == expanded
-                ? bag!.Fields.Select(f => new ApiParam(f.Name, f.Type, f.Tags, f.Doc))
+                ? bag!.Fields.Select(f => new ApiParam(f.Name, BoundedArrayAsPointer(f), f.Tags, f.Doc))
                 : (IEnumerable<ApiParam>)[p]).ToList();
 
         var isTry = convention.BooleanReturnTypes.Contains(slot.Returns.Trim()) && ps.Any(p => p.Has("out"));
