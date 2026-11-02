@@ -266,6 +266,10 @@ public static class CSharpWriter
                 : throw new InvalidOperationException(
                     $"{slot.Name}.{p.Name}: [default:{v}] is not a value of {e.Name}.");
 
+        if (v is "none" && p.Has("utf8")) return "\"\"";
+        if (v is "none") return "default";
+        if (p.Type.Trim() is "float" && double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out _)) return v + "f";
+
         return long.TryParse(v, out _)
             ? v
             : throw new InvalidOperationException(
