@@ -69,6 +69,9 @@ public static class Idioms
         return p.Length == 0 ? p : char.ToLowerInvariant(p[0]) + p[1..];
     }
 
+    /// <summary>A native field name as C# spells it, prefixed with <c>@</c> when it is a keyword.</summary>
+    public static string Field(string s) => CsKeywords.Contains(s) ? "@" + s : s;
+
     /// <summary>
     /// A C# identifier for <paramref name="s"/>: its camelCase form, prefixed with <c>@</c> when
     /// that form is one of the C# keywords kabic escapes.

@@ -2133,7 +2133,7 @@ public static class CSharpWriter
         slot.TagValue("name") ?? Idioms.Pascal(slot.Name);
 
     static string Call(ApiSlot slot, string arguments) =>
-        slot.Symbol is { } symbol ? $"{symbol}({arguments.TrimStart(',', ' ')})" : $"Handle->{slot.Name}(Handle{arguments})";
+        slot.Symbol is { } symbol ? $"{symbol}({arguments.TrimStart(',', ' ')})" : $"Handle->{Idioms.Field(slot.Name)}(Handle{arguments})";
 
     static void RenderSlotMethod(ApiModel model, List<string> o, List<MemberDecl>? decls,
         ClassifiedSlot cs, Convention convention, string owner,
@@ -2213,7 +2213,7 @@ public static class CSharpWriter
             var cInd = new string(' ', 8 + cDepth * 4);
             o.Add($"{cInd}try");
             o.Add($"{cInd}{{");
-            o.Add($"{cInd}    Handle->{slot.Name}(Handle"
+            o.Add($"{cInd}    Handle->{Idioms.Field(slot.Name)}(Handle"
                 + string.Concat(NativeParams().Select(p => ", " + CallArg(p))) + ");");
             o.Add($"{cInd}}}");
             o.Add($"{cInd}catch");
@@ -2724,7 +2724,7 @@ public static class CSharpWriter
         o.Add("        };");
         var regLane = FailureLane.Of(convention, slot.Returns, slot.Name);
         var extraCall = string.Concat(otherParams.Select(p => ", " + Idioms.Ident(p.Name!)));
-        o.Add($"        {regLane.ThrowIfFailed($"Handle->{slot.Name}(Handle, native{extraCall})")}");
+        o.Add($"        {regLane.ThrowIfFailed($"Handle->{Idioms.Field(slot.Name)}(Handle, native{extraCall})")}");
         o.Add("    }");
         o.Add("");
 
@@ -2734,7 +2734,7 @@ public static class CSharpWriter
             + XmlDoc("    ", null, convention, otherParams.Select(p => (Idioms.Ident(p.Name!), p.Doc)), throwsOnFail: true).TrimEnd(),
             $"void {Idioms.Pascal(slot.Name)}Raw({cbParamCsType} {Idioms.Ident(cbParam.Name!)}{otherArgs})");
         o.Add("    {");
-        o.Add($"        {regLane.ThrowIfFailed($"Handle->{slot.Name}(Handle, {Idioms.Ident(cbParam.Name!)}{extraCall})")}");
+        o.Add($"        {regLane.ThrowIfFailed($"Handle->{Idioms.Field(slot.Name)}(Handle, {Idioms.Ident(cbParam.Name!)}{extraCall})")}");
         o.Add("    }");
         o.Add("");
 
