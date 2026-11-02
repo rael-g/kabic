@@ -2527,7 +2527,8 @@ public static class CSharpWriter
                 {
                     var args = cs.PublicParams;
                     var sig = Sig(args);
-                    var call = string.Concat(NativeParams().Select(p => ", " + CallArg(p)));
+                    var bag = cs.ExpandedParam is null ? null : Idioms.Ident(cs.ExpandedParam.Name!);
+                    var call = string.Concat(NativeParams().Select(p => ", " + (p == cs.ExpandedParam ? $"&{bag}" : CallArg(p))));
                     var spanElement = cs.ReturnCount is null ? null
                         : viewSequence is not null ? CsType(model, StripQualifiers(CTypes.Deref(slot.Returns)).Trim(), convention)
                         : ReturnElement(model, slot, convention);
@@ -2567,6 +2568,16 @@ public static class CSharpWriter
                         o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local"
                             + (cs.Sequences.FirstOrDefault(s => s.Count == op) is { } capacity
                                 ? $" = ({OutLocal(model, op, convention)}){Idioms.Ident(capacity.Seq.Name!)}.Length;" : ";"));
+                    if (bag is not null)
+                    {
+                        o.Add($"{pInd}{cs.ExpandedStruct!.Name} {bag} = default;");
+                        foreach (var f in cs.ExpandedStruct.Fields)
+                        {
+                            var arg = args.FirstOrDefault(a => a.Name == f.Name)
+                                ?? cs.Sequences.Select(s => s.Count).First(c => c.Name == f.Name);
+                            o.Add($"{pInd}{bag}.{f.Name} = {CallArg(arg)};");
+                        }
+                    }
                     var pCall = Call(slot, call);
                     if (model.HandleOf(slot.Returns) is not null)
                     {
