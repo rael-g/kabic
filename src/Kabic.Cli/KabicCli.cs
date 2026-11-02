@@ -20,6 +20,7 @@ public static class KabicCli
         {
             ["drift"] = o => DriftCommand.Run(o, extensions),
             ["bindings"] = BindingsCommand.CheckDrift,
+            ["api-coverage"] = ApiCoverageCheck.Execute,
             ["reconstruction"] = o => ReconstructionCheck.Execute(o, extensions),
             ["zig"] = WriteZigCommand.CheckDrift,
         };
