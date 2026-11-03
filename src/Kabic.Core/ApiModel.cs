@@ -123,8 +123,8 @@ public record ApiStruct(string Name, string? Doc, IReadOnlyList<string> Tags, IR
 
     /// <summary>
     /// Whether this struct came from a header this domain composes against rather than
-    /// describes (<c>--compose</c>). It is present so a node in this domain can reference
-    /// a bundle another domain owns and have its component set resolved; the domain still
+    /// describes (<c>--compose</c>). It is present so a declaration in this domain can name
+    /// a type another domain owns; the domain still
     /// emits nothing for it, because the owning domain already does.
     /// </summary>
     public bool External { get; init; }

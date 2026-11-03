@@ -126,7 +126,7 @@ public static class ClangSharpRunner
     /// <summary>
     /// Deletes the file declaring <c>[assembly: DisableRuntimeMarshalling]</c> that the
     /// <c>generate-disable-runtime-marshalling</c> option writes beside the bindings. The build applies
-    /// that attribute to every engine assembly, which a second declaration would make fail to compile;
+    /// that attribute to every consumer assembly, which a second declaration would make fail to compile;
     /// the option stays because it is also what makes ClangSharp spell a C <c>bool</c> as <c>bool</c>.
     /// </summary>
     static void DropAssemblyAttributeFile(string outputDirectory)

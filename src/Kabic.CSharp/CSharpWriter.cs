@@ -7,7 +7,7 @@ using Kabic;
 
 /// <summary>
 /// Renders the C# source kabic generates from one parsed ABI model: vtable projections,
-/// structs, enums, node types, borrow wrappers and free-function classes.
+/// structs, enums and free-function classes.
 /// </summary>
 public static class CSharpWriter
 {
@@ -996,9 +996,6 @@ public static class CSharpWriter
 
     /// <summary>
     /// Whether a struct is projected as a managed mirror occupying the same bytes.
-    /// <c>[node:]</c> answers this as much as <c>[value]</c> does: the node's backing state
-    /// is one of these structs, and a node whose state were the raw binding type would be
-    /// asserting a layout instead of naming one.
     /// </summary>
     public static bool IsValue(ApiStruct s) =>
         !s.External && IsPlain(s);
@@ -1136,9 +1133,8 @@ public static class CSharpWriter
 
     /// <summary>
     /// One field's seeding inside a <c>[value]</c> struct's <c>Default</c>. The header states
-    /// the neutral value per field, and it is the same statement a node's state field and the
-    /// scene loader read -- spelling it again beside a hand-written mirror is how the two come
-    /// to describe different neutral surfaces.
+    /// the neutral value per field; spelling it again beside a hand-written mirror is how the two
+    /// come to describe different neutral surfaces.
     /// </summary>
     static string ValueDefault(ApiModel model, ApiStruct s, ApiField f, Convention convention)
     {
@@ -1248,7 +1244,7 @@ public static class CSharpWriter
             o.Add("");
             o.Add("    /// <summary>");
             o.Add("    /// Keeps alive every managed object handed to the native side as an opaque");
-            o.Add("    /// pointer. The engine stores the pointer and never dereferences it, so nothing");
+            o.Add("    /// pointer. The native side stores the pointer and never dereferences it, so nothing");
             o.Add("    /// over there stops the collector from moving or reclaiming the object; the");
             o.Add("    /// handle is what makes the pointer mean anything by the time it comes back.");
             o.Add("    /// </summary>");
@@ -1266,8 +1262,8 @@ public static class CSharpWriter
                     ? "    /// Keeps the registered handlers reachable, all of them through the one"
                         + " context they share."
                     : "    /// Keeps the registered handler reachable.");
-            o.Add("    /// The engine holds only an opaque pointer to it, which stops nothing on this");
-            o.Add("    /// side from collecting or moving the object before the engine calls back into it.");
+            o.Add("    /// The native side holds only an opaque pointer to it, which stops nothing on this");
+            o.Add("    /// side from collecting or moving the object before the native side calls back into it.");
             o.Add("    /// </summary>");
             o.Add(cg.Keyed
                 ? $"    private readonly Dictionary<{cg.KeyType ?? CsType(model, cg.RetainKey!.Type, convention)}, GCHandle>"
@@ -1280,10 +1276,10 @@ public static class CSharpWriter
             o.Add("");
             o.Add("    /// <summary>");
             o.Add("    /// Where a managed exception waits out the native frames. A handler runs");
-            o.Add("    /// underneath engine code that has no way to carry an exception, so throwing");
+            o.Add("    /// underneath native code that has no way to carry an exception, so throwing");
             o.Add("    /// through it would tear down the process; the trampoline parks it here and");
             o.Add("    /// the call rethrows once the native stack has unwound. Per-thread, because");
-            o.Add("    /// a handler runs on whichever thread the engine called it from.");
+            o.Add("    /// a handler runs on whichever thread the native side called it from.");
             o.Add("    /// </summary>");
             o.Add("    [ThreadStatic]");
             o.Add("    private static Exception? s_parkedCallbackException;");
@@ -1626,14 +1622,14 @@ public static class CSharpWriter
             var teardown = fn.Has("teardown");
             if (teardown && lifetime != ClosureLifetime.Retained)
                 throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [teardown] says the engine calls this handler while the "
+                    $"{slot.Name}.{fn.Name}: [teardown] says the native side calls this handler while the "
                     + "provider is being destroyed, which only a [retained] closure survives to see");
             var reportsByResult = convention.ReturnsResult(callback.Returns);
             if (lifetime == ClosureLifetime.Retained && !reportsByResult && !teardown)
                 throw new InvalidOperationException(
                     $"{slot.Name}.{fn.Name}: a retained closure outlives the call that registered it, so a "
                     + $"handler that throws has nowhere to report; {callback.Name} needs to return {convention.ResultType}, "
-                    + "or [teardown] if the engine only calls it from the destroy this object drives");
+                    + "or [teardown] if the native side only calls it from the destroy this object drives");
 
             pairs.Add(new CallbackPair(fn, ctx, lifetime, DelegateName(model, callback, convention),
                 TrampolineName(slot, fn),
@@ -1786,7 +1782,7 @@ public static class CSharpWriter
         public string Handle => $"{Idioms.Ident(Basis)}Handle";
 
         /// <summary>
-        /// The field keeping that root reachable for as long as the engine may call back.
+        /// The field keeping that root reachable for as long as the native side may call back.
         /// </summary>
         public string Retained => $"_retained{Idioms.Pascal(Basis)}";
 
@@ -1934,7 +1930,7 @@ public static class CSharpWriter
 
     /// <summary>
     /// The trampoline a <see cref="CallbackPair"/> needs: the unmanaged entry point the
-    /// engine calls, which unwraps the handle back into the delegate. A managed exception
+    /// native side calls, which unwraps the handle back into the delegate. A managed exception
     /// cannot cross the native frame. Where the callback declares an error channel it is
     /// translated into one and reported as a failure; where it does not, it is parked and
     /// rethrown by the call site once the native stack has unwound, which only holds
@@ -1953,7 +1949,7 @@ public static class CSharpWriter
         var end = o.FindLastIndex(l => l == "}");
         o.InsertRange(end, [
             "",
-            "    /// <summary>What retained handlers threw and no call has reported yet, from any thread the engine ran them on.</summary>",
+            "    /// <summary>What retained handlers threw and no call has reported yet, from any thread the native side ran them on.</summary>",
             "    private static readonly System.Collections.Concurrent.ConcurrentQueue<Exception> s_raisedCallbackFailures = new();",
             "",
             "    /// <summary>Throws what retained handlers raised, or returns <paramref name=\"code\"/> when they raised nothing.</summary>",
@@ -2686,7 +2682,7 @@ public static class CSharpWriter
     /// <summary>
     /// The native spelling an untyped pointer parameter has to be cast back to at the
     /// call. The public surface takes <c>nint</c>, which is the idiomatic way for a
-    /// caller to hold a pointer the engine never dereferences, but the vtable slot is
+    /// caller to hold a pointer the native side never dereferences, but the vtable slot is
     /// still declared in the ABI's own terms — a return value already makes this trip
     /// in the other direction.
     /// </summary>

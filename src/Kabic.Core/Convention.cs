@@ -90,9 +90,9 @@ public sealed class Convention
 
     /// <summary>
     /// Name of the directory under which a public header lives
-    /// (<c>kernel_engine/audio/audio.h</c>), so a header is addressed without its install prefix.
+    /// (<c>mylib/audio/audio.h</c>), so a header is addressed without its install prefix.
     /// </summary>
-    public string IncludeDirectoryName { get; init; } = "kernel_engine";
+    public string IncludeDirectoryName { get; init; } = "";
 
     /// <summary>
     /// Namespace of the raw bindings every other binding assembly takes its shared types from.
@@ -134,7 +134,7 @@ public sealed class Convention
 
         var builder = new ConventionBuilder()
             .Symbols(Text(json, "symbolPrefix"))
-            .Bindings(Or(json, "includeDirectoryName", "kernel_engine"), Or(json, "commonBindingsNamespace", ""),
+            .Bindings(Or(json, "includeDirectoryName", ""), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
             .Managed(Text(json, "commonManagedNamespace"));
         if (json["resultType"] is not null)

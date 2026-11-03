@@ -23,7 +23,7 @@ public static class CTypes
 
     /// <summary>
     /// The type with its qualifiers and declaration spacing removed
-    /// (<c>"const struct ke_system_ctx *"</c> -&gt; <c>"ke_system_ctx*"</c>), which is the
+    /// (<c>"const struct lib_ctx *"</c> -&gt; <c>"lib_ctx*"</c>), which is the
     /// spelling a cast needs. A header writes a pointer type however reads best
     /// at the declaration; a generated cast has to name it one way.
     /// </summary>
@@ -47,8 +47,8 @@ public static class CTypes
     }
 
     /// <summary>
-    /// Strips exactly ONE level of pointer-ness (<c>"ke_texture_data **"</c> -&gt;
-    /// <c>"ke_texture_data *"</c>, not <c>"ke_texture_data"</c>) — a caller wanting the
+    /// Strips exactly ONE level of pointer-ness (<c>"lib_data **"</c> -&gt;
+    /// <c>"lib_data *"</c>, not <c>"lib_data"</c>) — a caller wanting the
     /// fully-dereferenced base type calls this as many times as there are
     /// <c>*</c>s, or goes through a type mapper that recurses itself (see
     /// CSharpWriter.CsType). <c>TrimEnd('*', ' ')</c> here would strip every
