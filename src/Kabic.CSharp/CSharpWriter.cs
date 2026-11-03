@@ -2137,19 +2137,35 @@ public static class CSharpWriter
                 + "(TaskCreationOptions.RunContinuationsAsynchronously);");
             o.Add($"        var completion = GCHandle.Alloc(new {completion.StateType} {{ {inits} }});");
             var (cPro, cDepth) = Utf8Prologue(model, ins, new string(' ', 8), convention);
+            var (cSeq, cSeqDepth) = SequencePrologue(model, cs.Sequences, new string(' ', 8 + cDepth * 4), convention);
             o.AddRange(cPro);
+            o.AddRange(cSeq);
+            var cSeqAt = cDepth;
+            cDepth += cSeqDepth;
+            var cClosers = SequenceClosers(model, cs.Sequences);
             var cInd = new string(' ', 8 + cDepth * 4);
+            var cBag = cs.ExpandedParam is null ? null : Idioms.Ident(cs.ExpandedParam.Name!);
+            if (cBag is not null)
+            {
+                o.Add($"{cInd}{cs.ExpandedStruct!.Name} {cBag} = default;");
+                foreach (var f in cs.ExpandedStruct.Fields)
+                {
+                    var arg = cs.PublicParams.FirstOrDefault(a => a.Name == f.Name)
+                        ?? cs.Sequences.Select(q => q.Count).First(c => c.Name == f.Name);
+                    foreach (var line in BagField(cBag, f, CallArg(arg))) o.Add(cInd + line);
+                }
+            }
             o.Add($"{cInd}try");
             o.Add($"{cInd}{{");
             o.Add($"{cInd}    Handle->{Idioms.Field(slot.Name)}(Handle"
-                + string.Concat(NativeParams().Select(p => ", " + CallArg(p))) + ");");
+                + string.Concat(NativeParams().Select(p => ", " + (p == cs.ExpandedParam ? $"&{cBag}" : CallArg(p)))) + ");");
             o.Add($"{cInd}}}");
             o.Add($"{cInd}catch");
             o.Add($"{cInd}{{");
             o.Add($"{cInd}    completion.Free();");
             o.Add($"{cInd}    throw;");
             o.Add($"{cInd}}}");
-            for (var d = cDepth; d > 0; d--) o.Add(new string(' ', 4 + d * 4) + "}");
+            CloseScopes(o, cDepth, cSeqAt, cClosers);
             o.Add("        return source.Task;");
             o.Add("    }");
             o.Add("");

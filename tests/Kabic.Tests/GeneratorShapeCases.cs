@@ -177,6 +177,30 @@ internal static class GeneratorShapeCases
                 ["slots"] = new JsonArray(),
             }]);
 
+        Expect("a completion slot with an expanded bag fills the bag before the call",
+            Vtable("ke_probe", Slot("compile", "void",
+                Param("p", "const ke_probe_compile_params *"),
+                Param("on_ready", "ke_probe_ready_func", "completion:user"),
+                Param("user", "void *"))),
+            contains: ["global::System.Threading.Tasks.Task<uint> Compile(ReadOnlySpan<uint> stages)",
+                       "ke_probe_compile_params p = default;",
+                       "p.stage_count = (uint)stages.Length;",
+                       "Handle->compile(Handle, &p, "],
+            absent: ["(ke_probe_compile_params*)p"],
+            aliases: new() { ["ke_probe_ready_func"] = "void (*)(ke_result, uint32_t, void *)" },
+            callbacks: [Callback("ke_probe_ready_func", "void",
+                Param("result", "ke_result"), Param("value", "uint32_t"), Param("user", "void *", "context"))],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_compile_params",
+                ["doc"] = null,
+                ["tags"] = new JsonArray("bag"),
+                ["fields"] = new JsonArray(
+                    Param("stages", "const uint32_t *", "array_of:stage_count"),
+                    Param("stage_count", "uint32_t")),
+                ["slots"] = new JsonArray(),
+            }]);
+
         Expect("a slot named after a keyword is called through its escaped field",
             Vtable("ke_probe", Slot("params", "uint32_t")),
             contains: ["public uint Params()", "Handle->@params(Handle)"],
