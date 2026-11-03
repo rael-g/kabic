@@ -430,7 +430,7 @@ public sealed class ZigWriter
                 Doc(o, slot.Doc, "    ");
                 Wrapper(o, "    ", Ident(method), $"self: {type}", ["self.ptr"], $"self.ptr.{Ident(slot.Name)}.?", slot.Params,
                     slot.Params.Select((p, i) => ParamName(record!, p, i)).ToList(), slot.Returns, slot.CReturns ?? slot.Returns,
-                    slot.ReturnTagValue("array_of") is not null ? Lane.Many : null);
+                    slot.ReturnCountedBy is not null ? Lane.Many : null);
                 o.AppendLine();
             }
             foreach (var f in owned.GetValueOrDefault(name) ?? [])
@@ -489,11 +489,11 @@ public sealed class ZigWriter
 
     /// <summary>The count parameter of a pointer that takes a slice, or null.</summary>
     static ApiParam? SliceCount(ApiParam p, IReadOnlyList<ApiParam> ps) =>
-        !p.Has("out") && p.TagValue("array_of") is { } count && !p.Has("optional") && CType.Of(p.Type) is { Pointers: 1, Name: not "void" }
+        !p.Has("out") && p.CountedBy is { } count && !p.Has("optional") && CType.Of(p.Type) is { Pointers: 1, Name: not "void" }
             ? ps.FirstOrDefault(c => c.Name == count && !CTypes.IsPointer(c.Type)) : null;
 
     static bool IsString(ApiParam p) =>
-        p.Has("utf8") && !p.Has("out") && !p.Has("array_of") && CType.Of(p.Type) is { Name: "char", Pointers: 1 };
+        p.Has("utf8") && !p.Has("out") && p.CountedBy is null && CType.Of(p.Type) is { Name: "char", Pointers: 1 };
 
     string Taken(ApiParam p, IReadOnlyList<ApiParam> ps)
     {
@@ -573,7 +573,7 @@ public sealed class ZigWriter
     {
         var ps = slot.Params;
         var result = convention!.ReturnsResult(slot.Returns);
-        var lane = slot.ReturnTagValue("array_of") is not null ? Lane.Many : null;
+        var lane = slot.ReturnCountedBy is not null ? Lane.Many : null;
         var cReturn = slot.CReturns ?? slot.Returns;
         var returned = Spell(cReturn, lane);
         var refuse = result ? "return resultOf(error.Failed)" : cReturn.Trim() == "void" ? "return" : $"return std.mem.zeroes({returned})";
@@ -649,7 +649,7 @@ public sealed class ZigWriter
         Doc(sb, slot.Doc, inner);
         var lanes = slot.Params.Select(p => (p.Type, (ApiParam?)p))
             .Prepend((slot.Receiver ?? $"{s.Name} *", null));
-        sb.AppendLine($"{inner}{Ident(slot.Name)}: {FnPointer(lanes, slot.CReturns ?? slot.Returns, slot.ReturnTagValue("array_of") is not null ? Lane.Many : null)} = null,");
+        sb.AppendLine($"{inner}{Ident(slot.Name)}: {FnPointer(lanes, slot.CReturns ?? slot.Returns, slot.ReturnCountedBy is not null ? Lane.Many : null)} = null,");
     }
 
     /// <summary>
@@ -676,9 +676,9 @@ public sealed class ZigWriter
     {
         public static readonly Lane Many = new(true);
 
-        public static Lane? Of(ApiParam? p) => p is not null && p.Has("array_of") ? Many : null;
+        public static Lane? Of(ApiParam? p) => p is not null && p.CountedBy is not null ? Many : null;
 
-        public static Lane? Of(ApiField f) => f.Has("array_of") ? Many : null;
+        public static Lane? Of(ApiField f) => f.CountedBy is not null ? Many : null;
     }
 
     /// <summary>

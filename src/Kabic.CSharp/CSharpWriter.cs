@@ -44,18 +44,18 @@ public static class CSharpWriter
             foreach (var f in b.Fields)
             {
                 var mirror = $"{n}.{Idioms.Pascal(f.Name)}";
-                if (f.Has("array_of"))
+                if (f.CountedBy is not null)
                 {
-                    var count = b.Fields.First(x => x.Name == f.TagValue("array_of"));
+                    var count = b.Fields.First(x => x.Name == f.CountedBy);
                     lines.Add($"{indent}using var {n}{Idioms.Pascal(f.Name)}Pin = {mirror}.Pin();");
                     lines.Add($"{indent}{n}Native.{f.Name} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}Pin.Pointer;");
                     lines.Add($"{indent}{n}Native.{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;");
                 }
-                else if (!b.Fields.Any(x => x.TagValue("array_of") == f.Name))
+                else if (!b.Fields.Any(x => x.CountedBy == f.Name))
                     lines.Add($"{indent}{n}Native.{f.Name} = {mirror};");
             }
         }
-        foreach (var p in ps.Where(x => x.Has("utf8") && !x.Has("array_of")))
+        foreach (var p in ps.Where(x => x.Has("utf8") && x.CountedBy is null))
         {
             var n = Idioms.Ident(p.Name!);
             lines.Add($"{indent}var {n}Text = {n} ?? \"\";");
@@ -169,7 +169,7 @@ public static class CSharpWriter
     /// </summary>
     /// <summary>The <c>[borrowed]</c> struct one parameter points at, not as a sequence.</summary>
     static ApiStruct? SingleBorrowed(ApiModel model, ApiParam p) =>
-        !p.Has("array_of") && !p.Has("out") && !p.Has("optional") && Pointee(model, p.Type) is { } target && IsBorrowed(target) ? target : null;
+        p.CountedBy is null && !p.Has("out") && !p.Has("optional") && Pointee(model, p.Type) is { } target && IsBorrowed(target) ? target : null;
 
     static ApiStruct? BorrowedOf(ApiModel model, ApiParam seq)
     {
@@ -191,14 +191,14 @@ public static class CSharpWriter
         {
             var native = $"{n}Native[{at}].{f.Name}";
             var mirror = $"{n}[{at}].{Idioms.Pascal(f.Name)}";
-            if (f.Has("array_of"))
+            if (f.CountedBy is not null)
             {
-                var count = b.Fields.First(x => x.Name == f.TagValue("array_of"));
+                var count = b.Fields.First(x => x.Name == f.CountedBy);
                 yield return $"    {n}Pins[{at}] = {mirror}.Pin();";
                 yield return $"    {native} = ({CsType(model, f.Type, convention)}){n}Pins[{at}].Pointer;";
                 yield return $"    {n}Native[{at}].{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;";
             }
-            else if (!b.Fields.Any(x => x.TagValue("array_of") == f.Name))
+            else if (!b.Fields.Any(x => x.CountedBy == f.Name))
                 yield return $"    {native} = {mirror};";
         }
         yield return "}";
@@ -239,7 +239,7 @@ public static class CSharpWriter
     /// </summary>
     static string DefaultLiteral(ApiModel model, ClassifiedSlot cs, ApiParam p, ApiSlot slot, Convention convention)
     {
-        var v = p.TagValue("default")!.Trim();
+        var v = p.Default!.Trim();
         if (p.Has("closure"))
             return v is "none"
                 ? "null"
@@ -481,7 +481,7 @@ public static class CSharpWriter
     /// </summary>
     static IEnumerable<string> BagField(string bag, ApiField f, string value)
     {
-        if (!f.Has("array_of") || CTypes.FixedArray(f.Type) is not { } array)
+        if (f.CountedBy is null || CTypes.FixedArray(f.Type) is not { } array)
         {
             yield return $"{bag}.{f.Name} = {value};";
             yield break;
@@ -675,7 +675,7 @@ public static class CSharpWriter
         var o = new List<string> { Header, $"namespace {nativeNs};\n", $"public partial struct {typeName}", "{",
             $"    /// <summary>The value every <c>[default:]</c> field of <c>{s.Name}</c> declares.</summary>",
             $"    public static {typeName} Default => new()", "    {" };
-        foreach (var f in s.Fields.Where(f => f.TagValue("default") is not null))
+        foreach (var f in s.Fields.Where(f => f.Default is not null))
             o.Add($"        {ValueDefault(model, s, f, convention)}");
         o.Add("    };");
         o.Add("}");
@@ -695,7 +695,7 @@ public static class CSharpWriter
             $"    extension({typeName})", "    {",
             $"        /// <summary>The value every <c>[default:]</c> field of <c>{s.Name}</c> declares.</summary>",
             $"        public static {typeName} Default => new()", "        {"]);
-        foreach (var f in s.Fields.Where(f => f.TagValue("default") is not null))
+        foreach (var f in s.Fields.Where(f => f.Default is not null))
             o.Add($"            {ExtensionDefault(model, s, f, typeName, convention)}");
         o.AddRange(["        };", "    }", "}"]);
         return string.Join('\n', o);
@@ -706,7 +706,7 @@ public static class CSharpWriter
     {
         if (ValueArray(model, s, f, convention) is not { } array) return ValueDefault(model, s, f, convention);
         var name = Idioms.Pascal(f.Name);
-        var values = f.TagValue("default")!.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var values = f.Default!.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var vector = $"System.Numerics.Vector{array.Arity}";
         return $"{name} = System.Runtime.CompilerServices.Unsafe.BitCast<{vector}, {typeName}._{name}_e__FixedBuffer>(new {vector}({string.Join(", ", values.Select(v => v + "f"))})),";
     }
@@ -716,7 +716,7 @@ public static class CSharpWriter
     /// C# pointer type has no span, so it stays raw.
     /// </summary>
     public static IEnumerable<ApiField> SpannedFields(ApiModel model, ApiStruct s, Convention convention) =>
-        s.Fields.Where(f => f.Has("array_of")
+        s.Fields.Where(f => f.CountedBy is not null
             && !(CTypes.IsPointer(f.Type) && ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention).EndsWith('*')));
 
     /// <summary>
@@ -748,11 +748,7 @@ public static class CSharpWriter
                     $"{s.Name}.{f.Name}: [array_of] bounds the elements a pointer reaches, and "
                     + $"{f.Type.Trim()} is not one");
 
-            var countName = f.TagValue("array_of");
-            var count = s.Fields.FirstOrDefault(x => x.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of:{countName}] names a length field the struct "
-                    + "does not declare");
+            var count = s.Fields.First(x => x.Name == f.CountedBy);
 
             var element = ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
             o.Add(!string.IsNullOrEmpty(f.Doc)
@@ -800,8 +796,8 @@ public static class CSharpWriter
     public static string RenderView(ApiModel model, ApiStruct s, string ns,
         IEnumerable<string> extraUsings, Convention convention)
     {
-        var counts = s.Fields.Where(f => f.Has("array_of"))
-            .Select(f => f.TagValue("array_of")).ToHashSet();
+        var counts = s.Fields.Where(f => f.CountedBy is not null)
+            .Select(f => f.CountedBy).ToHashSet();
         if (model.SafeViews) return RenderSafeView(model, s, ns, extraUsings, counts, convention);
 
         var o = new List<string> { Header };
@@ -858,7 +854,7 @@ public static class CSharpWriter
 
     static string SafeViewType(ApiModel model, ApiField f, Convention convention)
     {
-        if (f.Has("array_of"))
+        if (f.CountedBy is not null)
         {
             var cType = StripQualifiers(CTypes.Deref(f.Type)).Trim();
             if (model.Structs.Any(v => v.Name == cType && v.Has("view")))
@@ -891,10 +887,10 @@ public static class CSharpWriter
     /// <summary>The expression that reads the native <paramref name="pointer"/> as its safe view.</summary>
     static string SafeViewFrom(ApiModel model, ApiStruct s, string pointer, Convention convention)
     {
-        var counts = s.Fields.Where(f => f.Has("array_of")).Select(f => f.TagValue("array_of")).ToHashSet();
+        var counts = s.Fields.Where(f => f.CountedBy is not null).Select(f => f.CountedBy).ToHashSet();
         var args = s.Fields.Where(f => !counts.Contains(f.Name)).Select(f =>
         {
-            if (f.TagValue("array_of") is { } count)
+            if (f.CountedBy is { } count)
             {
                 var element = ViewElement(model, StripQualifiers(CTypes.Deref(f.Type)).Trim(), convention);
                 return $"new ReadOnlySpan<{element}>(({element}*){pointer}->{f.Name}, (int){pointer}->{count})";
@@ -925,7 +921,7 @@ public static class CSharpWriter
         if (!CTypes.IsPointer(f.Type))
             return $"private readonly {ValueTypeName(model, f.Type, convention)} {f.Name};";
 
-        if (!f.Has("array_of"))
+        if (f.CountedBy is null)
             throw new InvalidOperationException(
                 $"{s.Name}.{f.Name}: a [view] reads a pointer as the sequence it bounds, so the"
                 + " field has to name the count bounding it with [array_of:<field>]. A pointer"
@@ -945,13 +941,9 @@ public static class CSharpWriter
     {
         var name = Idioms.Pascal(f.Name);
 
-        if (f.Has("array_of"))
+        if (f.CountedBy is not null)
         {
-            var countName = f.TagValue("array_of");
-            var count = s.Fields.FirstOrDefault(x => x.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of:{countName}] names a length field the struct"
-                    + " does not declare");
+            var count = s.Fields.First(x => x.Name == f.CountedBy);
             var element = ViewElement(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
             return [$"public readonly ReadOnlySpan<{element}> {name} => {f.Name} == null"
                 + $" ? default : new ReadOnlySpan<{element}>({f.Name}, (int){count.Name});"];
@@ -1024,13 +1016,11 @@ public static class CSharpWriter
         {
             if (!CTypes.IsPointer(f.Type)) continue;
 
-            var countName = f.TagValue("array_of")
+            var countName = f.CountedBy
                 ?? throw new InvalidOperationException(
                     $"{s.Name}.{f.Name}: a pointer in a [borrowed] struct is memory the call reads, and"
                     + " one that names no count has no extent to read -- tag it [array_of:<count field>].");
-            var count = s.Fields.FirstOrDefault(x => x.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of:{countName}] names a length field the struct does not declare");
+            var count = s.Fields.First(x => x.Name == countName);
             counts.Add(count.Name);
 
             var element = ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
@@ -1138,7 +1128,7 @@ public static class CSharpWriter
     /// </summary>
     static string ValueDefault(ApiModel model, ApiStruct s, ApiField f, Convention convention)
     {
-        var d = f.TagValue("default")!.Trim();
+        var d = f.Default!.Trim();
         var name = Idioms.Pascal(f.Name);
         var parts = d.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -1578,12 +1568,7 @@ public static class CSharpWriter
         var pairs = new List<CallbackPair>();
         foreach (var fn in scope.Where(p => p.Has("closure") && !p.Has("completion")))
         {
-            var ctxName = fn.TagValue("closure")
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure] must name the context parameter, as [closure:<name>]");
-            var ctx = scope.FirstOrDefault(p => p.Name == ctxName)
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure:{ctxName}] names no parameter of this slot");
+            var ctx = scope.First(p => p.Name == fn.ClosureContext);
 
             var callback = model.CallbackOf(fn)
                 ?? throw new InvalidOperationException(
@@ -1593,7 +1578,7 @@ public static class CSharpWriter
                 .Where(x => x.l.Has("context"))
                 .Select(x => (int?)x.i).FirstOrDefault()
                 ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure:{ctxName}] hands the context to {callback.Name}, "
+                    $"{slot.Name}.{fn.Name}: [closure:{fn.ClosureContext}] hands the context to {callback.Name}, "
                     + "which declares no lane to receive it — a lane's type says nothing about which one "
                     + "carries the context, so the typedef has to mark it [context]");
             if (callback.Lanes[ctxLane].Type.Replace(" ", "") != "void*")
@@ -2178,15 +2163,15 @@ public static class CSharpWriter
                         : $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"))
                 .ToList();
 
-            var optionalFrom = parts.FindIndex(x => x.Param.Has("default"));
-            if (optionalFrom >= 0 && parts.Skip(optionalFrom).Any(x => !x.Param.Has("default")))
+            var optionalFrom = parts.FindIndex(x => x.Param.Default is not null);
+            if (optionalFrom >= 0 && parts.Skip(optionalFrom).Any(x => x.Param.Default is null))
                 throw new InvalidOperationException(
                     $"{slot.Name}: a parameter carrying [default] is one the caller may leave out, so"
                     + " every parameter after it must carry one too. Reorder the fields so the ones"
                     + $" with a default come last -- {string.Join(", ", parts.Skip(optionalFrom)
-                        .Where(x => !x.Param.Has("default")).Select(x => x.Param.Name))} has none.");
+                        .Where(x => x.Param.Default is null).Select(x => x.Param.Name))} has none.");
 
-            return parts.Select(x => x.Param.Has("default")
+            return parts.Select(x => x.Param.Default is not null
                 ? $"{x.Text} = {DefaultLiteral(model, cs, x.Param, slot, convention)}"
                 : x.Text);
         }

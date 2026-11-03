@@ -52,7 +52,7 @@ public static class Generation
 
         Directory.CreateDirectory(outDir);
 
-        foreach (var value in model.Structs.Where(CSharpWriter.IsValue).Where(s => s.Fields.Any(f => f.Has("default"))))
+        foreach (var value in model.Structs.Where(CSharpWriter.IsValue).Where(s => s.Fields.Any(f => f.Default is not null)))
         {
             var moved = r.ContractDir != r.OutDir && value.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null);
             Directory.CreateDirectory(moved ? contractDir : outDir);

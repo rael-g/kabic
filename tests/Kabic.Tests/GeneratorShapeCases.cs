@@ -665,6 +665,7 @@ internal static class GeneratorShapeCases
                 string emitted;
                 try
                 {
+                    ApiModelChecks.Validate(model);
                     emitted = CSharpWriter.RenderStructSpans(model, s, "Probe.Native", ProbeConvention.Value);
                 }
                 catch (Exception ex)
@@ -750,6 +751,7 @@ internal static class GeneratorShapeCases
                 string emitted;
                 try
                 {
+                    ApiModelChecks.Validate(model);
                     emitted = CSharpWriter.RenderBorrowed(model, s, "Probe", [], ProbeConvention.Value);
                 }
                 catch (Exception ex)

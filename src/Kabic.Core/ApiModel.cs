@@ -18,6 +18,15 @@ public record ApiParam(string? Name, string Type, IReadOnlyList<string> Tags, st
     /// The text after the colon of the first tag named <paramref name="tag"/>, or null.
     /// </summary>
     public string? TagValue(string tag) => Tags.FirstOrDefault(t => t.StartsWith(tag + ":"))?[(tag.Length + 1)..];
+
+    /// <summary>The sibling that holds how many elements this pointer reaches (<c>[array_of:]</c>), or null.</summary>
+    public string? CountedBy => TagValue("array_of");
+
+    /// <summary>The value a caller may leave this at (<c>[default:]</c>), or null.</summary>
+    public string? Default => TagValue("default");
+
+    /// <summary>The parameter carrying this callback's state (<c>[closure:]</c>), or null.</summary>
+    public string? ClosureContext => TagValue("closure");
 }
 
 /// <summary>
@@ -58,6 +67,9 @@ public record ApiSlot(string Name, string Returns, IReadOnlyList<string> Tags, s
     /// <summary>The value of <paramref name="tag"/> on the slot's return, or null.</summary>
     public string? ReturnTagValue(string tag) =>
         ReturnTags.FirstOrDefault(t => t.StartsWith(tag + ":"))?[(tag.Length + 1)..];
+
+    /// <summary>The parameter holding how many elements the returned pointer reaches, or null.</summary>
+    public string? ReturnCountedBy => ReturnTagValue("array_of");
 }
 
 /// <summary>
@@ -106,6 +118,12 @@ public record ApiField(string Name, string Type, IReadOnlyList<string> Tags, str
     /// The text after the colon of the first tag named <paramref name="tag"/>, or null.
     /// </summary>
     public string? TagValue(string tag) => Tags.FirstOrDefault(t => t.StartsWith(tag + ":"))?[(tag.Length + 1)..];
+
+    /// <summary>The sibling field that holds how many elements this field reaches (<c>[array_of:]</c>), or null.</summary>
+    public string? CountedBy => TagValue("array_of");
+
+    /// <summary>The value the field starts at (<c>[default:]</c>), or null.</summary>
+    public string? Default => TagValue("default");
 }
 
 /// <summary>
@@ -437,6 +455,7 @@ public static class ApiReader
             m.Variables.Add(new ApiVariable(Str(o, "name")!, Str(o, "type")!, Str(o, "doc")));
         }
 
+        ApiModelChecks.Validate(m);
         return m;
     }
 

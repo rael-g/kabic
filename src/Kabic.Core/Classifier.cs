@@ -228,7 +228,7 @@ public static class Classifier
     /// reads as the sequence a caller passes, which the expansion copies into the array.
     /// </summary>
     static string BoundedArrayAsPointer(ApiField field) =>
-        field.Has("array_of") && CTypes.FixedArray(field.Type) is { } array ? $"const {array.Element} *" : field.Type;
+        field.CountedBy is not null && CTypes.FixedArray(field.Type) is { } array ? $"const {array.Element} *" : field.Type;
 
     static ApiSlot AsSlot(ApiFunction fn) =>
         new(fn.Name, fn.Returns, [], fn.Doc, fn.ReturnDoc, fn.Params.ToList()) { ReturnTags = fn.ReturnTags, Symbol = fn.Name };
@@ -247,13 +247,9 @@ public static class Classifier
         var isTry = convention.BooleanReturnTypes.Contains(slot.Returns.Trim()) && ps.Any(p => p.Has("out"));
 
         var sequences = new List<SequencePair>();
-        foreach (var seq in ps.Where(p => p.Has("array_of")))
+        foreach (var seq in ps.Where(p => p.CountedBy is not null))
         {
-            var countName = seq.TagValue("array_of");
-            var count = ps.FirstOrDefault(p => p.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{seq.Name}: [array_of:{countName}] names a length parameter "
-                    + "the slot does not declare");
+            var count = ps.First(p => p.Name == seq.CountedBy);
             sequences.Add(new SequencePair(seq, count));
         }
         ps = ps.Where(p => sequences.All(s => s.Count != p || CTypes.IsPointer(p.Type))).ToList();
@@ -280,7 +276,7 @@ public static class Classifier
         ps = ps.Where(p => blobs.All(b => b.Size != p)).ToList();
 
         ApiParam? returnCount = null;
-        if (slot.ReturnTagValue("array_of") is { } returnCountName)
+        if (slot.ReturnCountedBy is { } returnCountName)
         {
             if (!CTypes.IsPointer(slot.Returns))
                 throw new InvalidOperationException(
@@ -293,7 +289,7 @@ public static class Classifier
             ps = ps.Where(p => p != returnCount).ToList();
         }
 
-        var allOut = ps.Where(p => p.Has("out") && !p.Has("array_of")).ToList();
+        var allOut = ps.Where(p => p.Has("out") && p.CountedBy is null).ToList();
 
         foreach (var rooted in allOut.Where(p => p.Has("rooted")))
             if (rooted.Type.Replace(" ", "") is not "void**")
