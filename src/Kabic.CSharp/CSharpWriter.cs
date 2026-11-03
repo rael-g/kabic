@@ -406,17 +406,9 @@ public static class CSharpWriter
 
     static OwnedProjection OwnedBy(ApiModel model, ApiSlot release, Convention convention)
     {
-        var typeName = release.TagValue("releases")
-            ?? throw new InvalidOperationException(
-                $"{release.Name}: [releases] must name the projection that owns what this slot takes"
-                + " back, as [releases:<name>]");
+        var typeName = release.TagValue("releases")!;
 
         var released = release.Params.Where(p => !model.Structs.Any(s => s.IsVtable && s.Name == StripQualifiers(CTypes.Deref(p.Type)).Trim())).ToList();
-        if (released.Count != 1)
-            throw new InvalidOperationException(
-                $"{release.Name}: [releases:{typeName}] releases the one pointer this slot takes back,"
-                + $" and it takes {released.Count} parameter(s) besides the provider itself");
-
         var view = PointerToView(model, released[0].Type, convention)
             ?? throw new InvalidOperationException(
                 $"{release.Name}: [releases:{typeName}] hands back {released[0].Type.Trim()}, and a"
@@ -743,11 +735,6 @@ public static class CSharpWriter
             if (!first) o.Add("");
             first = false;
 
-            if (!CTypes.IsPointer(f.Type))
-                throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of] bounds the elements a pointer reaches, and "
-                    + $"{f.Type.Trim()} is not one");
-
             var count = s.Fields.First(x => x.Name == f.CountedBy);
 
             var element = ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
@@ -1016,10 +1003,7 @@ public static class CSharpWriter
         {
             if (!CTypes.IsPointer(f.Type)) continue;
 
-            var countName = f.CountedBy
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: a pointer in a [borrowed] struct is memory the call reads, and"
-                    + " one that names no count has no extent to read -- tag it [array_of:<count field>].");
+            var countName = f.CountedBy!;
             var count = s.Fields.First(x => x.Name == countName);
             counts.Add(count.Name);
 

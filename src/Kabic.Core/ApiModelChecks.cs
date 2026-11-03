@@ -15,9 +15,18 @@ public static class ApiModelChecks
         foreach (var s in model.Structs)
         {
             foreach (var f in s.Fields)
+            {
                 if (f.CountedBy is { } count && s.Fields.All(x => x.Name != count))
                     throw new InvalidOperationException(
                         $"{s.Name}.{f.Name}: [array_of:{count}] names a length field the struct does not declare");
+                if (f.CountedBy is not null && !CTypes.IsPointer(f.Type) && CTypes.FixedArray(f.Type) is null)
+                    throw new InvalidOperationException(
+                        $"{s.Name}.{f.Name}: [array_of] bounds the elements a pointer or an array reaches, and {f.Type.Trim()} is neither");
+                if (s.Has("borrowed") && CTypes.IsPointer(f.Type) && f.CountedBy is null)
+                    throw new InvalidOperationException(
+                        $"{s.Name}.{f.Name}: a pointer in a [borrowed] struct is memory the call reads, and"
+                        + " one that names no count has no extent to read -- tag it [array_of:<count field>].");
+            }
             foreach (var slot in s.Slots) Validate(model, slot);
             if (s.Has("bag"))
                 Validate(model, new ApiSlot(s.Name, "", [], null, null,
@@ -66,6 +75,17 @@ public static class ApiModelChecks
                 throw new InvalidOperationException(
                     $"{slot.Name}.{p.Name}: [teardown] says the native side calls this handler while the provider"
                     + " is being destroyed, which only a [retained] closure survives to see");
+        }
+        if (slot.Has("releases"))
+        {
+            var name = slot.TagValue("releases")
+                ?? throw new InvalidOperationException(
+                    $"{slot.Name}: [releases] must name the projection that owns what this slot takes back, as [releases:<name>]");
+            var released = slot.Params.Count(p => !model.Structs.Any(v => v.IsVtable && v.Name == CTypes.Unqualified(CTypes.Deref(p.Type)).Trim()));
+            if (released != 1)
+                throw new InvalidOperationException(
+                    $"{slot.Name}: [releases:{name}] releases the one pointer this slot takes back,"
+                    + $" and it takes {released} parameter(s) besides the provider itself");
         }
         if (slot.ReturnCountedBy is { } returned && !Declares(returned))
             throw new InvalidOperationException(
