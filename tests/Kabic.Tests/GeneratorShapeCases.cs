@@ -157,6 +157,40 @@ internal static class GeneratorShapeCases
             contains: [], absent: [],
             throws: "already names one");
 
+        Expect("a bounded fixed array of an expanded bag is a sequence copied into the array",
+            Vtable("ke_probe", Slot("build", "ke_result",
+                Param("p", "const ke_probe_build_params *"),
+                Param("out_size", "uint32_t *", "out"))),
+            contains: ["ReadOnlySpan<uint> layouts",
+                       "if (layouts.Length > 4) throw new ArgumentOutOfRangeException(nameof(layouts));",
+                       "p.layouts[layoutsAt] = (layoutsPtr)[layoutsAt];",
+                       "p.layout_count = (uint)layouts.Length;"],
+            absent: ["p.layouts = layoutsPtr;"],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_build_params",
+                ["doc"] = null,
+                ["tags"] = new JsonArray("bag"),
+                ["fields"] = new JsonArray(
+                    Param("layouts", "uint32_t [4]", "array_of:layout_count"),
+                    Param("layout_count", "uint32_t")),
+                ["slots"] = new JsonArray(),
+            }]);
+
+        Expect("a slot named after a keyword is called through its escaped field",
+            Vtable("ke_probe", Slot("params", "uint32_t")),
+            contains: ["public uint Params()", "Handle->@params(Handle)"],
+            absent: ["Handle->params(Handle)"]);
+
+        Expect("a float default and an absent string or handle default are spelled as constants",
+            Vtable("ke_probe", Slot("make", "void",
+                Param("key", "const char *", "utf8"),
+                Param("roughness", "float", "default:0.5"),
+                Param("parent", "ke_entity", "default:none"),
+                Param("shader", "const char *", "utf8,default:none"))),
+            contains: ["float roughness = 0.5f", "ulong parent = default", "string shader = \"\""],
+            absent: []);
+
         Expect("a callback and its context become one delegate parameter",
             Vtable("ke_probe", Slot("watch", "ke_result",
                 Param("on_event", "ke_probe_event_func", "closure:event_ctx"),
