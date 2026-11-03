@@ -18,13 +18,16 @@ public static class ApiModelChecks
                 if (f.CountedBy is { } count && s.Fields.All(x => x.Name != count))
                     throw new InvalidOperationException(
                         $"{s.Name}.{f.Name}: [array_of:{count}] names a length field the struct does not declare");
-            foreach (var slot in s.Slots) Validate(slot);
+            foreach (var slot in s.Slots) Validate(model, slot);
+            if (s.Has("bag"))
+                Validate(model, new ApiSlot(s.Name, "", [], null, null,
+                    s.Fields.Select(f => new ApiParam(f.Name, f.Type, f.Tags, f.Doc)).ToList()));
         }
         foreach (var fn in model.Functions)
-            Validate(new ApiSlot(fn.Name, fn.Returns, [], fn.Doc, fn.ReturnDoc, fn.Params.ToList()) { ReturnTags = fn.ReturnTags });
+            Validate(model, new ApiSlot(fn.Name, fn.Returns, [], fn.Doc, fn.ReturnDoc, fn.Params.ToList()) { ReturnTags = fn.ReturnTags });
     }
 
-    static void Validate(ApiSlot slot)
+    static void Validate(ApiModel model, ApiSlot slot)
     {
         bool Declares(string name) => slot.Params.Any(p => p.Name == name);
         foreach (var p in slot.Params)
@@ -32,15 +35,37 @@ public static class ApiModelChecks
             if (p.CountedBy is { } count && !Declares(count))
                 throw new InvalidOperationException(
                     $"{slot.Name}.{p.Name}: [array_of:{count}] names a length parameter the slot does not declare");
-            if (p.Has("closure") && !p.Has("completion"))
+            foreach (var form in new[] { "completion", "closure" })
             {
-                var ctx = p.ClosureContext
+                if (!p.Has(form) || (form == "closure" && p.Has("completion"))) continue;
+                var ctx = p.TagValue(form)
                     ?? throw new InvalidOperationException(
-                        $"{slot.Name}.{p.Name}: [closure] must name the context parameter, as [closure:<name>]");
+                        $"{slot.Name}.{p.Name}: [{form}] must name the context parameter it travels with, as [{form}:<name>]");
                 if (!Declares(ctx))
                     throw new InvalidOperationException(
-                        $"{slot.Name}.{p.Name}: [closure:{ctx}] names no parameter of this slot");
+                        $"{slot.Name}.{p.Name}: [{form}:{ctx}] names no parameter of this slot");
+                var callback = model.CallbackOf(p)
+                    ?? throw new InvalidOperationException(
+                        $"{slot.Name}.{p.Name}: [{form}] needs a function-pointer typedef, but {p.Type.Trim()} is not one");
+                var lane = callback.Lanes.FirstOrDefault(l => l.Has("context"))
+                    ?? throw new InvalidOperationException(
+                        $"{slot.Name}.{p.Name}: [{form}:{ctx}] hands the context to {callback.Name}, which declares"
+                        + " no lane to receive it -- the typedef has to mark it [context]");
+                if (lane.Type.Replace(" ", "") != "void*")
+                    throw new InvalidOperationException(
+                        $"{slot.Name}.{p.Name}: {callback.Name}'s [context] lane is {lane.Type.Trim()}, and a context travels as void*");
             }
+            if (p.TagValue("retained") is { } key)
+            {
+                if (key == "return" ? slot.Returns.Trim() is "void" : !Declares(key))
+                    throw new InvalidOperationException(key == "return"
+                        ? $"{slot.Name}.{p.Name}: [retained:return] keys the registration on what the slot returns, and this one returns nothing"
+                        : $"{slot.Name}.{p.Name}: [retained:{key}] names no parameter of this slot");
+            }
+            if (p.Has("teardown") && !p.Has("retained"))
+                throw new InvalidOperationException(
+                    $"{slot.Name}.{p.Name}: [teardown] says the native side calls this handler while the provider"
+                    + " is being destroyed, which only a [retained] closure survives to see");
         }
         if (slot.ReturnCountedBy is { } returned && !Declares(returned))
             throw new InvalidOperationException(

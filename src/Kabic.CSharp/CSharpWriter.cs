@@ -1570,45 +1570,18 @@ public static class CSharpWriter
         {
             var ctx = scope.First(p => p.Name == fn.ClosureContext);
 
-            var callback = model.CallbackOf(fn)
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure] needs a function-pointer typedef, but {fn.Type.Trim()} is not one");
-
-            var ctxLane = callback.Lanes.Select((l, i) => (l, i))
-                .Where(x => x.l.Has("context"))
-                .Select(x => (int?)x.i).FirstOrDefault()
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure:{fn.ClosureContext}] hands the context to {callback.Name}, "
-                    + "which declares no lane to receive it — a lane's type says nothing about which one "
-                    + "carries the context, so the typedef has to mark it [context]");
-            if (callback.Lanes[ctxLane].Type.Replace(" ", "") != "void*")
-                throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: {callback.Name}'s [context] lane is "
-                    + $"{callback.Lanes[ctxLane].Type.Trim()}, and a context travels as void*");
+            var callback = model.CallbackOf(fn)!;
+            var ctxLane = callback.Lanes.Select((l, i) => (l, i)).First(x => x.l.Has("context")).i;
 
             var lifetime = fn.Has("retained") ? ClosureLifetime.Retained : ClosureLifetime.Scoped;
             ApiParam? retainKey = null;
             var retainByReturn = false;
             if (fn.TagValue("retained") is { } keyName)
             {
-                if (keyName == ReturnKey)
-                {
-                    if (slot.Returns.Trim() is "void")
-                        throw new InvalidOperationException(
-                            $"{slot.Name}.{fn.Name}: [retained:{ReturnKey}] keys the registration on what the "
-                            + "slot returns, and this one returns nothing");
-                    retainByReturn = true;
-                }
-                else
-                    retainKey = scope.FirstOrDefault(p => p.Name == keyName)
-                        ?? throw new InvalidOperationException(
-                            $"{slot.Name}.{fn.Name}: [retained:{keyName}] names no parameter of this slot");
+                if (keyName == ReturnKey) retainByReturn = true;
+                else retainKey = scope.First(p => p.Name == keyName);
             }
             var teardown = fn.Has("teardown");
-            if (teardown && lifetime != ClosureLifetime.Retained)
-                throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [teardown] says the native side calls this handler while the "
-                    + "provider is being destroyed, which only a [retained] closure survives to see");
             var reportsByResult = convention.ReturnsResult(callback.Returns);
             if (lifetime == ClosureLifetime.Retained && !reportsByResult && !teardown)
                 throw new InvalidOperationException(
@@ -1667,24 +1640,10 @@ public static class CSharpWriter
         var fn = slot.Params.FirstOrDefault(p => p.Has("completion"));
         if (fn is null) return null;
 
-        var ctxName = fn.TagValue("completion")
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion] must name the context parameter it travels"
-                + " with, as [completion:<name>]");
-        var ctx = slot.Params.FirstOrDefault(p => p.Name == ctxName)
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion:{ctxName}] names no parameter of this slot");
-
-        var callback = model.CallbackOf(fn)
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion] needs a function-pointer typedef, but"
-                + $" {fn.Type.Trim()} is not one");
-
-        var ctxLane = callback.Lanes.Select((l, i) => (l, i)).Where(x => x.l.Has("context"))
-            .Select(x => (int?)x.i).FirstOrDefault()
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion:{ctxName}] hands the context to {callback.Name},"
-                + " which declares no lane to receive it — the typedef has to mark it [context]");
+        var ctxName = fn.TagValue("completion")!;
+        var ctx = slot.Params.First(p => p.Name == ctxName);
+        var callback = model.CallbackOf(fn)!;
+        var ctxLane = callback.Lanes.Select((l, i) => (l, i)).First(x => x.l.Has("context")).i;
 
         var errorLane = callback.Lanes.Select((l, i) => (l, i))
             .Where(x => convention.ReturnsResult(x.l.Type))
