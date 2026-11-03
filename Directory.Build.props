@@ -8,6 +8,12 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>0.1.0</Version>
+    <Authors>rael-g</Authors>
+    <RepositoryUrl>https://github.com/rael-g/kabic</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/rael-g/kabic</PackageProjectUrl>
+    <IsPackable>false</IsPackable>
+    <IsPackable Condition="$(MSBuildProjectDirectory.Contains('/src/')) Or $(MSBuildProjectDirectory.Contains('\src\'))">true</IsPackable>
   </PropertyGroup>
 
 </Project>

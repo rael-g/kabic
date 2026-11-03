@@ -1,0 +1,21 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test kabic.slnx
+      - run: dotnet pack kabic.slnx -c Release -p:Version=${GITHUB_REF_NAME#v} -o build/packages
+      - run: dotnet nuget push "build/packages/*.nupkg" --source https://nuget.pkg.github.com/rael-g/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
