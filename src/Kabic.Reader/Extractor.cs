@@ -184,6 +184,12 @@ public static class Extractor
             var fieldName = f["name"]?.GetValue<string>() ?? $"unnamed_{unnamed++}";
             var (ret, paramTypes) = CTypes.FunctionPointer(qual);
             var (summaryTags, summary, pdocs, retTags, retDoc) = DocParser.Parse(f);
+            if (TrailingOnDeclLine(f, bytes) is { } declOffset)
+            {
+                var (leadingTags, leadingDoc) = DocParser.LeadingBlock(bytes, declOffset);
+                summaryTags = [.. leadingTags, .. summaryTags];
+                summary = string.Join(' ', new[] { leadingDoc, summary }.Where(x => x.Length > 0));
+            }
             order.Add(fieldName);
 
             if (ret is null)
@@ -398,5 +404,22 @@ public static class Extractor
         if (b is null || e is null) return "";
         var end = Math.Min(e.Value + tokLen, bytes.Length);
         return System.Text.Encoding.UTF8.GetString(bytes, b.Value, end - b.Value);
+    }
+
+    /// <summary>
+    /// The offset of the line a field is declared on, when that line carries a trailing
+    /// <c>///&lt;</c> comment; null otherwise.
+    /// </summary>
+    static int? TrailingOnDeclLine(JsonObject field, byte[] bytes)
+    {
+        var range = field["range"]?["begin"]?["offset"] ?? field["loc"]?["offset"];
+        if (range is null) return null;
+        var at = Math.Min(range.GetValue<int>(), bytes.Length);
+        var start = at;
+        while (start > 0 && bytes[start - 1] != (byte)'\n') start--;
+        var end = at;
+        while (end < bytes.Length && bytes[end] != (byte)'\n') end++;
+        var line = System.Text.Encoding.UTF8.GetString(bytes, start, end - start);
+        return line.Contains("///<", StringComparison.Ordinal) ? start : null;
     }
 }
