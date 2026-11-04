@@ -303,6 +303,17 @@ public class ApiModel
         return parsed.Pointers == outer && TypeAliases.TryGetValue(parsed.Name, out var target) && target.EndsWith('*') && !target.Contains('(') ? parsed.Name : null;
     }
 
+    /// <summary>
+    /// The vtable an <c>[owner]</c> struct named <paramref name="type"/> owns, when that vtable
+    /// has slots a projection can wrap; null for any other type.
+    /// </summary>
+    public string? OwnedVtableOf(string type)
+    {
+        var owner = Structs.FirstOrDefault(s => s.Name == Bare(type) && s.Has("owner"));
+        var held = owner?.Fields.FirstOrDefault(f => f.Name == "ref") is { } r ? Bare(r.Type) : null;
+        return held is not null && Structs.Any(s => s.Name == held && s.IsVtable) ? held : null;
+    }
+
     /// <summary>The <c>[owner]</c> struct that holds <paramref name="vtable"/>, or null. Fails when two do.</summary>
     public ApiStruct? OwnerOf(string vtable)
     {

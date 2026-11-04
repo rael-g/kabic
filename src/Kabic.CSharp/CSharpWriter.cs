@@ -512,6 +512,7 @@ public static class CSharpWriter
     /// </summary>
     static string OutElement(ApiModel model, ApiParam p, Convention convention) =>
         p.Has("rooted") ? "object?"
+        : model.OwnedVtableOf(CTypes.Deref(p.Type)) is { } owned ? "I" + Idioms.TypeName(owned, convention)
         : model.HandleOf(p.Type, 1) is { } handle ? Idioms.TypeName(handle, convention)
         : OutLocal(model, p, convention);
 
@@ -531,7 +532,8 @@ public static class CSharpWriter
     /// rather than a handle to reconstruct.
     /// </summary>
     static string OutRead(ApiModel model, ApiParam p, string local, Convention convention) =>
-        model.HandleOf(p.Type, 1) is { } handle ? $"new {Idioms.TypeName(handle, convention)}({local})"
+        model.OwnedVtableOf(CTypes.Deref(p.Type)) is { } owned ? $"new {Idioms.TypeName(owned, convention)}({local})"
+        : model.HandleOf(p.Type, 1) is { } handle ? $"new {Idioms.TypeName(handle, convention)}({local})"
         : p.Has("rooted")
             ? $"{local} == 0 ? null : System.Runtime.InteropServices.GCHandle.FromIntPtr({local}).Target"
             : local;
@@ -1430,7 +1432,7 @@ public static class CSharpWriter
             .FirstOrDefault(n => Regex.IsMatch(code, $@"(?<![\w.]){Regex.Escape(n)}\b"));
         if (native is not null)
             throw new InvalidOperationException(
-                $"{vtable.Name}: {domainIface} names {native}, which is the ABI's own spelling rather"
+                $"{vtable.Name}: {domainIface} names {native} in `{code.Split('\n').First(l => Regex.IsMatch(l, $@"(?<![\w.]){Regex.Escape(native)}\b")).Trim()}`, which is the ABI's own spelling rather"
                 + " than a managed projection of it. A contract stands apart from the call that"
                 + " satisfies it, so every type it mentions has to be one a caller can reach without"
                 + " the native layer.");

@@ -201,6 +201,24 @@ internal static class GeneratorShapeCases
                 ["slots"] = new JsonArray(),
             }]);
 
+        Expect("an owner written through out is returned as the wrapper of the vtable it owns",
+            Vtable("ke_probe", Slot("open_child", "ke_result",
+                Param("out_child", "ke_probe_child_handle *", "out"))),
+            contains: ["public IProbeChild OpenChild()", "ke_probe_child_handle resultOut = default;",
+                       "return new ProbeChild(resultOut);"],
+            absent: ["ke_probe_child_handle OpenChild"],
+            vtables: [Vtable("ke_probe_child", Slot("flush", "void"))],
+            structs: [new JsonObject
+                {
+                    ["name"] = "ke_probe_child_handle",
+                    ["doc"] = null,
+                    ["tags"] = new JsonArray("owner"),
+                    ["fields"] = new JsonArray(
+                        Param("ref", "ke_probe_child *"),
+                        Param("destroy", "void (*)(ke_probe_child *)")),
+                    ["slots"] = new JsonArray(),
+                }]);
+
         Expect("a slot named after a keyword is called through its escaped field",
             Vtable("ke_probe", Slot("params", "uint32_t")),
             contains: ["public uint Params()", "Handle->@params(Handle)"],
@@ -503,7 +521,8 @@ internal static class GeneratorShapeCases
 
         void Expect(string what, JsonObject vtable, string[] contains, string[] absent,
             Dictionary<string, string>? aliases = null, JsonObject[]? callbacks = null,
-            JsonObject[]? structs = null, string? throws = null, JsonObject[]? functions = null)
+            JsonObject[]? structs = null, string? throws = null, JsonObject[]? functions = null,
+            JsonObject[]? vtables = null)
 
         {
             Register(what, failures =>
@@ -527,7 +546,7 @@ internal static class GeneratorShapeCases
                         new JsonObject { ["name"] = "destroy", ["type"] = "void (*)(ke_probe *)", ["tags"] = new JsonArray(), ["doc"] = null }),
                         ["slots"] = new JsonArray(),
                     }),
-                    ["vtables"] = new JsonArray(vtable),
+                    ["vtables"] = new JsonArray(new[] { vtable }.Concat(vtables ?? []).Cast<JsonNode>().ToArray()),
                     ["callbacks"] = new JsonArray((callbacks ?? []).Cast<JsonNode>().ToArray()),
                     ["functions"] = new JsonArray((functions ?? []).Cast<JsonNode>().ToArray()),
                     ["type_aliases"] = new JsonObject { ["ke_entity"] = "uint64_t" },
@@ -543,7 +562,7 @@ internal static class GeneratorShapeCases
                     var model = ApiReader.Read(api);
                     var convention = ProbeConvention.Value;
                     var classified = Classifier.Classify(model, [], [], convention);
-                    var provider = classified.Providers.Single();
+                    var provider = classified.Providers.First(p => p.Name == "ke_probe");
                     var source = CSharpWriter.RenderProvider(model, provider, classified, "Probe", "Probe.Native", [], convention);
                     emitted = source.Class + (source.Contract ?? "");
                 }
