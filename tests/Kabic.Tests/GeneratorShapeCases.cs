@@ -219,6 +219,16 @@ internal static class GeneratorShapeCases
                     ["slots"] = new JsonArray(),
                 }]);
 
+        Register("a fixed char array of a value struct reads and writes as text", failures =>
+        {
+            var s = new ApiStruct("ke_probe_label", null, [], [new ApiField("text", "char [16]", [], null)], []);
+            var emitted = CSharpWriter.RenderText(s, "Probe", [], ProbeConvention.Value) ?? "";
+            foreach (var needle in new[] { "extension(ref ProbeLabel self)", "public string TextText",
+                         "CreateSpan(ref self.Text.e0, 16)", "bytes.IndexOf((byte)0)", "bytes.Length - 1" })
+                if (!emitted.Contains(needle, StringComparison.Ordinal))
+                    failures.Add($"fixed char text: expected to find \"{needle}\"");
+        });
+
         Expect("a slot named after a keyword is called through its escaped field",
             Vtable("ke_probe", Slot("params", "uint32_t")),
             contains: ["public uint Params()", "Handle->@params(Handle)"],

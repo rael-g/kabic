@@ -677,6 +677,49 @@ public static class CSharpWriter
     }
 
     /// <summary>
+    /// The text accessors of a <c>[value]</c> struct's fixed <c>char</c> arrays: each reads the
+    /// bytes up to the first NUL as UTF-8 and writes a string truncated to leave room for one.
+    /// Null when the struct has no such field.
+    /// </summary>
+    public static string? RenderText(ApiStruct s, string ns, IEnumerable<string> usings, Convention convention)
+    {
+        var texts = s.Fields.Where(f => CTypes.FixedArray(f.Type) is { } a && StripQualifiers(a.Element).Trim() == "char").ToList();
+        if (texts.Count == 0) return null;
+        var typeName = Idioms.TypeName(s.Name, convention);
+        var o = new List<string> { Header };
+        o.AddRange(usings.Distinct().Order(StringComparer.Ordinal).Select(u => $"using {u};"));
+        o.AddRange([$"\nnamespace {ns};\n", $"/// <summary>The text of <c>{s.Name}</c>'s fixed character arrays.</summary>",
+            $"public static class {typeName}Text", "{", $"    extension(ref {typeName} self)", "    {"]);
+        foreach (var f in texts)
+        {
+            var name = Idioms.Pascal(f.Name);
+            var extent = CTypes.FixedArray(f.Type)!.Value.Extent;
+            var bytes = $"System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref self.{name}.e0, {extent}))";
+            o.AddRange([
+                $"    /// <summary><c>{f.Name}</c> as text.</summary>",
+                $"    public string {name}Text",
+                "    {",
+                "        get",
+                "        {",
+                $"            var bytes = {bytes};",
+                "            var end = bytes.IndexOf((byte)0);",
+                "            return System.Text.Encoding.UTF8.GetString(end < 0 ? bytes : bytes[..end]);",
+                "        }",
+                "        set",
+                "        {",
+                $"            var bytes = {bytes};",
+                "            bytes.Clear();",
+                "            var text = System.Text.Encoding.UTF8.GetBytes(value ?? \"\");",
+                "            text.AsSpan(0, Math.Min(text.Length, bytes.Length - 1)).CopyTo(bytes);",
+                "        }",
+                "    }",
+            ]);
+        }
+        o.AddRange(["    }", "}"]);
+        return string.Join('\n', o);
+    }
+
+    /// <summary>
     /// The <c>[default:]</c> values of a struct another assembly may declare, as a static
     /// extension in <paramref name="ns"/>, which a partial could not reach.
     /// </summary>

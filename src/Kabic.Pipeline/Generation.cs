@@ -61,6 +61,12 @@ public static class Generation
                     : CSharpWriter.RenderDefaultExtension(model, value, ns, [nativeNs, .. usings], convention));
         }
 
+        foreach (var value in model.Structs.Where(CSharpWriter.IsValue))
+        {
+            if (CSharpWriter.RenderText(value, ns, [nativeNs, .. usings], convention) is not { } text) continue;
+            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(value.Name, convention)}.Text.g.cs"), text);
+        }
+
         foreach (var borrowed in model.Structs.Where(CSharpWriter.IsBorrowed))
         {
             Directory.CreateDirectory(contractDir);
