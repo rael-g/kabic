@@ -14,6 +14,32 @@ namespace Kabic.Bindings;
 /// </summary>
 public static class BindingsPlanner
 {
+    /// <summary>
+    /// The header each type is declared in, keyed by name. A definition wins over a forward
+    /// declaration, and among headers of the same kind the first in ordinal path order wins, so
+    /// the answer does not depend on the order <paramref name="headers"/> arrive in.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> DeclaredIn(string symbolPrefix, IReadOnlyList<(string Path, string Text)> headers)
+    {
+        var symbol = Regex.Escape(symbolPrefix) + @"\w+";
+        Regex[] definitions =
+        [
+            new($@"^\s*\}}\s*({symbol})\s*;", RegexOptions.Multiline),
+            new($@"typedef\s+(?:struct|enum|union)\s+\w*\s*\{{[^{{}}]*\}}\s*({symbol})\s*;"),
+        ];
+        var opaque = new Regex($@"^\s*typedef\s+(?:struct|enum|union)\s+({symbol})\s+\1\s*;", RegexOptions.Multiline);
+        var ordered = headers.OrderBy(h => h.Path, StringComparer.Ordinal).ToList();
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (path, text) in ordered)
+            foreach (var rx in definitions)
+                foreach (Match m in rx.Matches(text))
+                    found.TryAdd(m.Groups[1].Value, path);
+        foreach (var (path, text) in ordered)
+            foreach (Match m in opaque.Matches(text))
+                found.TryAdd(m.Groups[1].Value, path);
+        return found;
+    }
+
     static readonly Regex Include = new(@"#\s*include\s*<([^>]+)>", RegexOptions.Compiled);
     static readonly Regex ProjectReference = new(@"ProjectReference\s+Include=""([^""]+)""", RegexOptions.Compiled);
 
@@ -29,12 +55,6 @@ public static class BindingsPlanner
         var domains = DomainSpec.Load(manifestPath);
         var symbol = Regex.Escape(convention.SymbolPrefix) + @"\w+";
         var typeName = new Regex($@"\b{symbol}\b", RegexOptions.Compiled);
-        Regex[] declarations =
-        [
-            new($@"^\s*\}}\s*({symbol})\s*;", RegexOptions.Multiline | RegexOptions.Compiled),
-            new($@"typedef\s+(?:struct|enum|union)\s+\w*\s*\{{[^{{}}]*\}}\s*({symbol})\s*;", RegexOptions.Compiled),
-        ];
-        var opaque = new Regex($@"^\s*typedef\s+(?:struct|enum|union)\s+({symbol})\s+\1\s*;", RegexOptions.Multiline | RegexOptions.Compiled);
         var alias = new Regex($@"^\s*typedef\s+[\w \*]+?\s+({symbol})\s*;", RegexOptions.Multiline | RegexOptions.Compiled);
         var functionPointer = new Regex($@"typedef\s+[^;(]*\(\s*\*\s*({symbol})\s*\)\s*\(([^;]*)\)\s*;", RegexOptions.Compiled);
         var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
@@ -82,13 +102,8 @@ public static class BindingsPlanner
             .Order(StringComparer.Ordinal)
             .ToList();
         var sourceTexts = sourceHeaders.ToDictionary(h => h, File.ReadAllText);
-        foreach (var header in sourceHeaders)
-            foreach (var rx in declarations)
-                foreach (Match m in rx.Matches(sourceTexts[header]))
-                    declaredIn.TryAdd(m.Groups[1].Value, header);
-        foreach (var header in sourceHeaders)
-            foreach (Match m in opaque.Matches(sourceTexts[header]))
-                declaredIn.TryAdd(m.Groups[1].Value, header);
+        foreach (var (name, header) in DeclaredIn(convention.SymbolPrefix, sourceHeaders.Select(h => (h, sourceTexts[h])).ToList()))
+            declaredIn[name] = header;
         foreach (var header in sourceHeaders)
             foreach (Match m in alias.Matches(sourceTexts[header]))
                 if (!declaredIn.ContainsKey(m.Groups[1].Value)) aliases.Add(m.Groups[1].Value);
