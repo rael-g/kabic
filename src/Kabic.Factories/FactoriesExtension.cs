@@ -170,7 +170,8 @@ public sealed class FactoriesExtension : IKabicExtension
         if (type.Contains('*')) return null;
         var owner = context.Domains.FirstOrDefault(d => d.Model.Enums.Any(e => e.Name == type));
         return new FactoryArgument(field.Doc, field.Name, name,
-            model.Enums.Any(e => e.Name == type && !e.External) ? $"{job.Namespace}.{Idioms.TypeName(type, context.Convention)}"
+            context.Convention.Project(Languages.CSharp, type) is { } projected ? projected
+            : model.Enums.Any(e => e.Name == type && !e.External) ? $"{job.Namespace}.{Idioms.TypeName(type, context.Convention)}"
             : owner is null ? Idioms.CsPrimitive(type, context.Convention) : $"{owner.Spec.NativeNamespace[..^".Native".Length]}.{Idioms.TypeName(type, context.Convention)}", name, false);
     }
 
