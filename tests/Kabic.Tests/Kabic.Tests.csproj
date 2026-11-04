@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\src\Kabic.Cli\Kabic.Cli.csproj" />
     <ProjectReference Include="..\..\src\Kabic.Pipeline\Kabic.Pipeline.csproj" />
     <ProjectReference Include="..\..\src\Kabic.Bindings\Kabic.Bindings.csproj" />
+    <ProjectReference Include="..\..\src\Kabic.Factories\Kabic.Factories.csproj" />
   </ItemGroup>
 
 </Project>
