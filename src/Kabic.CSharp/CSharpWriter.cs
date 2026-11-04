@@ -1216,6 +1216,9 @@ public static class CSharpWriter
         o.Add($"public unsafe interface {nativeIface}");
         o.Add("{");
         o.Add($"    {vtable.Name}* Native {{ get; }}");
+        o.Add("");
+        o.Add("    /// <summary>Counts the references to the native object; null when it is owned elsewhere.</summary>");
+        o.Add($"    {convention.OwnerClass}? Owner {{ get; }}");
         o.Add("}");
         o.Add("");
 
@@ -1250,8 +1253,10 @@ public static class CSharpWriter
             + (domainIface is null ? "" : $", {domainIface}"));
         o.Add("{");
         o.Add($"    private {vtable.Name}* _native;");
+        o.Add($"    private readonly {vtable.Name}* _owned;");
         o.Add($"    private readonly delegate* unmanaged[Cdecl]<{vtable.Name}*, void> _destroy;");
-        o.Add("    private readonly bool _borrowed;");
+        o.Add($"    private readonly {convention.OwnerClass}? _owner;");
+        o.Add($"    private readonly List<{convention.OwnerClass}> _held = new();");
 
         var rootedKey = vtable.Slots
             .SelectMany(s => s.Params.Where(p => p.Has("rooted")).Select(p => (Slot: s, Param: p)))
@@ -1308,7 +1313,18 @@ public static class CSharpWriter
         o.Add($"    private {vtable.Name}* Handle => _native != null ? _native");
         o.Add($"        : throw new ObjectDisposedException(nameof({typeName}));");
         o.Add("");
-        o.Add($"    {vtable.Name}* {nativeIface}.Native => Handle;");
+        o.Add($"    {vtable.Name}* {nativeIface}.Native => _owner is {{ IsClosed: false }} ? _owned : Handle;");
+        o.Add("");
+        o.Add($"    {convention.OwnerClass}? {nativeIface}.Owner => _owner;");
+        o.Add("");
+        o.Add("    /// <summary>Keeps the object <paramref name=\"owner\"/> counts alive until this one is torn down.</summary>");
+        o.Add($"    public void Hold({convention.OwnerClass}? owner)");
+        o.Add("    {");
+        o.Add("        if (owner is null) return;");
+        o.Add("        var added = false;");
+        o.Add("        owner.DangerousAddRef(ref added);");
+        o.Add("        _held.Add(owner);");
+        o.Add("    }");
         o.Add("");
 
         classified.LifecycleInit.TryGetValue(vtable.Name, out var initSlot);
@@ -1337,7 +1353,9 @@ public static class CSharpWriter
             o.Add($"        {madeHandle} handle;");
             o.Add($"        {convention.ResultHelperClass}.ThrowIfFailed(global::{nativeNs}.NativeMethods.{convention.StripPrefix(factory.Name)}({(call.Length > 0 ? call + ", " : "")}&handle), \"{factory.Name}\");");
             o.Add("        _native = handle.@ref;");
+            o.Add("        _owned = handle.@ref;");
             o.Add("        _destroy = handle.destroy;");
+            o.Add($"        _owner = new {convention.OwnerClass}(Teardown);");
             if (initCall is not null) o.Add(initCall);
             o.Add("    }");
             o.Add("");
@@ -1351,7 +1369,9 @@ public static class CSharpWriter
             o.Add("    {");
             o.Add("        if (handle.@ref == null) throw new ArgumentNullException(nameof(handle));");
             o.Add("        _native = handle.@ref;");
+            o.Add("        _owned = handle.@ref;");
             o.Add("        _destroy = handle.destroy;");
+            o.Add($"        _owner = new {convention.OwnerClass}(Teardown);");
             if (initCall is not null) o.Add(initCall);
             o.Add("    }");
             o.Add("");
@@ -1363,8 +1383,9 @@ public static class CSharpWriter
         o.Add($"    private {typeName}({vtable.Name}* native, bool borrowed)");
         o.Add("    {");
         o.Add("        _native = native;");
+        o.Add("        _owned = native;");
         o.Add("        _destroy = null;");
-        o.Add("        _borrowed = borrowed;");
+        o.Add("        _owner = null;");
         o.Add("    }");
         o.Add("");
 
@@ -1399,45 +1420,57 @@ public static class CSharpWriter
         o.Add("    {");
         o.Add("        OnDispose();");
         o.Add("        if (_native == null) return;");
-        if (rootedKey is not null)
-        {
-            o.Add("        foreach (var rooted in _rooted.Values) rooted.Free();");
-            o.Add("        _rooted.Clear();");
-        }
+        o.Add("        _native = null;");
+        o.Add("        if (_owner is not null)");
+        o.Add("        {");
+        o.Add("            _owner.Dispose();");
+        o.Add("            return;");
+        o.Add("        }");
         var retainedGroups = closureGroups.Where(c => c.Lifetime == ClosureLifetime.Retained).ToList();
         var survivors = retainedGroups.Where(c => c.Pairs.Any(p => p.Teardown)).ToList();
 
-        void FreeRetained(IEnumerable<ClosureGroup> gs, string ind = "        ")
+        void FreeRetained(IEnumerable<ClosureGroup> gs)
         {
             foreach (var cg in gs)
             {
                 if (cg.Keyed)
                 {
-                    o.Add($"{ind}foreach (var retained in {cg.Retained}.Values) retained.Free();");
-                    o.Add($"{ind}{cg.Retained}.Clear();");
+                    o.Add($"        foreach (var retained in {cg.Retained}.Values) retained.Free();");
+                    o.Add($"        {cg.Retained}.Clear();");
                 }
                 else
-                    o.Add($"{ind}if ({cg.Retained}.IsAllocated) {cg.Retained}.Free();");
+                    o.Add($"        if ({cg.Retained}.IsAllocated) {cg.Retained}.Free();");
             }
         }
 
-        FreeRetained(retainedGroups.Except(survivors));
-        if (survivors.Count > 0)
+        void FreeRooted()
         {
-            o.Add("        if (_borrowed)");
-            o.Add("        {");
-            FreeRetained(survivors, "            ");
-            o.Add("            _native = null;");
-            o.Add("            return;");
-            o.Add("        }");
+            if (rootedKey is null) return;
+            o.Add("        foreach (var rooted in _rooted.Values) rooted.Free();");
+            o.Add("        _rooted.Clear();");
         }
-        else
-            o.Add("        if (_borrowed) { _native = null; return; }");
-        if (shutdownSlot is not null) o.Add($"        _native->{shutdownSlot}(_native);");
+
+        void ReleaseHeld()
+        {
+            o.Add("        foreach (var held in _held) held.DangerousRelease();");
+            o.Add("        _held.Clear();");
+        }
+
+        FreeRooted();
+        FreeRetained(retainedGroups);
+        ReleaseHeld();
+        o.Add("    }");
+        o.Add("");
+        o.Add($"    /// <summary>Destroys the native {typeName.ToLowerInvariant()} once its last reference is released, then releases what it held.</summary>");
+        o.Add("    private void Teardown()");
+        o.Add("    {");
+        FreeRooted();
+        FreeRetained(retainedGroups.Except(survivors));
+        if (shutdownSlot is not null) o.Add($"        _owned->{shutdownSlot}(_owned);");
         if (teardownParks) o.Add("        s_parkedCallbackException = null;");
-        o.Add("        _destroy(_native);");
-        o.Add("        _native = null;");
+        o.Add("        _destroy(_owned);");
         FreeRetained(survivors);
+        ReleaseHeld();
         if (teardownParks)
         {
             o.Add("        if (s_parkedCallbackException is { } parked)");

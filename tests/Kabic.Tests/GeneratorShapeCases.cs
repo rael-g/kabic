@@ -56,8 +56,8 @@ internal static class GeneratorShapeCases
 
         Expect("a shutdown slot with no failure lane is called with its handle alone",
             Vtable("ke_probe", Slot("on_shutdown", "void", "lifecycle:shutdown")),
-            contains: ["_native->on_shutdown(_native);"],
-            absent: ["_native->on_shutdown(_native, null);"]);
+            contains: ["_owned->on_shutdown(_owned);", "private void Teardown()", "_owner.Dispose();", "public void Hold(global::KernelEngine.Interop.NativeOwner? owner)"],
+            absent: ["_owned->on_shutdown(_owned, null);"]);
 
         Expect("a result-returning slot that writes memory a projection owns answers with that projection",
             Vtable("ke_probe",
@@ -295,7 +295,7 @@ internal static class GeneratorShapeCases
                        "state.OnLoad is { } handler",
                        "state.OnUnload is { } handler",
                        "s_parkedCallbackException ??= ex;",
-                       "s_parkedCallbackException = null;\n        _destroy(_native);",
+                       "s_parkedCallbackException = null;\n        _destroy(_owned);",
                        "foreach (var retained in _retainedUserData.Values) retained.Free();",
                        "throw parked;"],
             absent: ["ke_probe_module_params* p", "void* userData", "onLoadHandle", "onUnloadHandle"],

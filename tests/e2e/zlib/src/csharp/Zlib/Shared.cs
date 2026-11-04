@@ -2,6 +2,16 @@ namespace Zlib.Shared { internal static class Anchor { } }
 
 namespace Zlib
 {
+    public sealed class NativeOwner(System.Action teardown) : System.Runtime.InteropServices.SafeHandle(new System.IntPtr(1), true)
+    {
+        public override bool IsInvalid => false;
+        protected override bool ReleaseHandle()
+        {
+            teardown();
+            return true;
+        }
+    }
+
     public sealed class ZlibException(int code, string call) : Exception($"{call}: {code}");
 
     public static class Results

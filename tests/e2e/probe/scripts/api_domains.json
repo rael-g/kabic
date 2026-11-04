@@ -1,6 +1,6 @@
 {
   "convention": { "symbolPrefix": "ke_",
-    "commonManagedNamespace": "Probe", "resultType": "ke_result", "resultOk": "Ok", "resultManagedType": "global::Probe.Result", "resultHelperClass": "global::Probe.Results", "commonBindingsNamespace": "Probe.Shared", "includeDirectoryName": "kernel_engine",
+    "commonManagedNamespace": "Probe", "ownerClass": "global::Probe.NativeOwner", "resultType": "ke_result", "resultOk": "Ok", "resultManagedType": "global::Probe.Result", "resultHelperClass": "global::Probe.Results", "commonBindingsNamespace": "Probe.Shared", "includeDirectoryName": "kernel_engine",
     "names": { "csharp": [ { "match": "^out_(.+)$", "replace": "$1" } ] } },
   "domains": [ { "name": "probe", "headers": ["src/c/kernel_engine/probe/probe.h"], "includeDirs": ["src/c"],
     "apiJson": "src/csharp/ke_api.json", "namespace": "Probe", "nativeNamespace": "Probe.Native",

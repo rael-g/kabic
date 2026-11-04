@@ -192,14 +192,17 @@ public sealed class FactoriesExtension : IKabicExtension
         foreach (var a in f.Arguments)
             o.Append($"    /// <param name=\"{a.Name}\">{Xml(a.Doc)}</param>\n");
         var handle = f.Contract is null ? $"{f.Job.Namespace}.{f.HandleType}" : $"{f.Contract.Spec.NativeNamespace}.{f.HandleType}";
+        var holds = string.Concat(f.Arguments.Where(a => a.IsRequiredProvider || a.IsOptionalProvider)
+            .Select(a => $"        Hold({a.Name}{(a.IsOptionalProvider ? "?" : "")}.Owner);\n"));
         if (f.Contract is null)
         {
-            o.Append($"    public {f.ClassName}({Parameters(f)}) : this(Create({Names(f)}))\n    {{\n    }}\n\n");
-            o.Append($"    private {handle} _handle;\n\n    private {f.ClassName}({handle} handle) => _handle = handle;\n\n");
-            o.Append("    /// <summary>Releases the native object.</summary>\n    public void Dispose()\n    {\n        if (_handle.@ref == null) return;\n        _handle.destroy(_handle.@ref);\n        _handle = default;\n    }\n\n");
+            o.Append($"    public {f.ClassName}({Parameters(f)}) : this(Create({Names(f)}))\n    {{\n{holds}    }}\n\n");
+            o.Append($"    private {handle} _handle;\n\n    private readonly List<{convention.OwnerClass}> _held = new();\n\n    private {f.ClassName}({handle} handle) => _handle = handle;\n\n");
+            o.Append($"    private void Hold({convention.OwnerClass}? owner)\n    {{\n        if (owner is null) return;\n        var added = false;\n        owner.DangerousAddRef(ref added);\n        _held.Add(owner);\n    }}\n\n");
+            o.Append("    /// <summary>Releases the native object, then what it held.</summary>\n    public void Dispose()\n    {\n        if (_handle.@ref == null) return;\n        _handle.destroy(_handle.@ref);\n        _handle = default;\n        foreach (var held in _held) held.DangerousRelease();\n        _held.Clear();\n    }\n\n");
         }
         else
-            o.Append($"    public {f.ClassName}({Parameters(f)}) : base(Create({Names(f)}))\n    {{\n    }}\n\n");
+            o.Append($"    public {f.ClassName}({Parameters(f)}) : base(Create({Names(f)}))\n    {{\n{holds}    }}\n\n");
         o.Append($"    private static {handle} Create({Parameters(f, withDefaults: false)})\n    {{\n");
         foreach (var a in f.Arguments.Where(a => a.IsRequiredProvider))
             o.Append($"        ArgumentNullException.ThrowIfNull({a.Name});\n");

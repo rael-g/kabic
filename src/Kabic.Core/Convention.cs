@@ -51,6 +51,13 @@ public sealed class Convention
     /// </summary>
     public string ResultHelperClass { get; init; } = "";
 
+    /// <summary>
+    /// The fully qualified <see cref="System.Runtime.InteropServices.SafeHandle"/> subclass that
+    /// counts the references to a native object an owner wrapper created, constructed over the
+    /// action that destroys it.
+    /// </summary>
+    public string OwnerClass { get; init; } = "";
+
 
 
     /// <summary>
@@ -136,7 +143,7 @@ public sealed class Convention
             .Symbols(Text(json, "symbolPrefix"))
             .Bindings(Or(json, "includeDirectoryName", ""), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
-            .Managed(Text(json, "commonManagedNamespace"));
+            .Managed(Text(json, "commonManagedNamespace"), Text(json, "ownerClass"));
         if (json["resultType"] is not null)
             builder.Result(Text(json, "resultType"), Text(json, "resultOk"), Text(json, "resultManagedType"),
                 Text(json, "resultHelperClass"));

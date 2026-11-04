@@ -1,5 +1,5 @@
 {
-  "convention": { "symbolPrefix": "sqlite3_", "resultManagedType": "int", "resultOk": "0", "resultType": "[none]", "resultHelperClass": "global::Sqlite.Results", "commonManagedNamespace": "Sqlite", "commonBindingsNamespace": "Sqlite.Shared", "includeDirectoryName": "kernel_engine",
+  "convention": { "symbolPrefix": "sqlite3_", "resultManagedType": "int", "resultOk": "0", "resultType": "[none]", "resultHelperClass": "global::Sqlite.Results", "commonManagedNamespace": "Sqlite", "ownerClass": "global::Sqlite.NativeOwner", "commonBindingsNamespace": "Sqlite.Shared", "includeDirectoryName": "kernel_engine",
     "names": { "csharp": [] } },
   "domains": [ { "name": "sqlite", "headers": ["src/c/kernel_engine/sqlite/sqlite_api.h"], "includeDirs": ["src/c"],
     "apiJson": "src/csharp/ke_api.json", "namespace": "Sqlite", "nativeNamespace": "Sqlite.Native",
