@@ -110,6 +110,20 @@ internal static class ZigShapeCases
             contains: ["path: [256]u8 = std.mem.zeroes([256]u8),", "m: [16]f32 = std.mem.zeroes([16]f32),", "columns: [8]?*anyopaque = std.mem.zeroes([8]?*anyopaque),"],
             absent: ["char[256]", "float[16]"]);
 
+        Expect("a field starts at the value its default tag names, and at zero for none or empty",
+            m => m.Structs.Add(new ApiStruct("ke_probe", null, [], [
+                F("title", "const char *", "utf8", "default:Probe"),
+                F("width", "int32_t", "default:1280"),
+                F("shown", "bool", "default:true"),
+                F("color", "float[3]", "default:1 0.5 0"),
+                F("pivot", "ke_far_vec2", "default:0.5 0.5"),
+                F("names", "const char *const *", "default:empty"),
+            ], [])),
+            contains: ["title: ?[*:0]const u8 = \"Probe\",", "width: i32 = 1280,", "shown: bool = true,", "color: [3]f32 = .{ 1, 0.5, 0 },",
+                       "pivot: far.ke_far_vec2 = @bitCast([_]std.meta.fields(far.ke_far_vec2)[0].type{ 0.5, 0.5 }),",
+                       "names: ?*const ?[*:0]const u8 = std.mem.zeroes("],
+            foreign: new Dictionary<string, string> { ["ke_far_vec2"] = "far" });
+
         Expect("an enum is its C integer type and a constant per value, an alias included",
             m => m.Enums.Add(new ApiEnum("ke_probe_button", null, [
                 new ApiEnumValue("KE_PROBE_BUTTON_1", "0", true, null),

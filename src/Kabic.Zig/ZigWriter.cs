@@ -1,4 +1,4 @@
-namespace Kabic.Zig;
+﻿namespace Kabic.Zig;
 
 using System.Text;
 
@@ -653,15 +653,34 @@ public sealed class ZigWriter
     }
 
     /// <summary>
-    /// The default of a struct member, since a union member takes none: zero, as C gives a member an initializer leaves out, so a
-    /// params struct written with only the members it sets selects every other default.
+    /// The default of a struct member, since a union member takes none: the value its <c>[default:&lt;value&gt;]</c> tag names,
+    /// and otherwise zero, as C gives a member an initializer leaves out.
     /// </summary>
     string Zero(ApiField field, string type)
     {
+        if (field.TagValue("default") is { } given && Given(field, type, given.Trim()) is { } spelled) return spelled;
         if (field.Inline is not { } record) { usesStd = true; return $"std.mem.zeroes({type})"; }
         if (!record.IsUnion) return ".{}";
         var first = record.Fields[0];
         return $".{{ .{Ident(first.Name)} = {Zero(first, first.Inline is not null ? "" : Spell(first.Type, Lane.Of(first)))} }}";
+    }
+
+    /// <summary>
+    /// The Zig spelling of a <c>[default:&lt;value&gt;]</c> tag, or null for <c>none</c>, <c>empty</c> and <c>null</c>, which name
+    /// the zero. Several numbers fill a fixed array in order, or a struct of that many members of one type.
+    /// </summary>
+    string? Given(ApiField field, string type, string given)
+    {
+        if (given is "none" or "empty" or "null") return null;
+        if (field.Has("utf8")) return $"\"{given}\"";
+        if (given is "true" or "false") return given;
+        var numbers = given.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (!numbers.All(n => double.TryParse(n, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)))
+            throw new InvalidOperationException($"{field.Name}: [default:{given}] is not a literal Zig can spell.");
+        if (numbers.Length == 1) return given;
+        if (type.StartsWith('[')) return $".{{ {string.Join(", ", numbers)} }}";
+        usesStd = true;
+        return $"@bitCast([_]std.meta.fields({type})[0].type{{ {string.Join(", ", numbers)} }})";
     }
 
     string FnPointer(IEnumerable<(string Type, ApiParam? Param)> lanes, string returns, Lane? returned) =>
