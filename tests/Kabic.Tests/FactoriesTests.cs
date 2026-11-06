@@ -44,6 +44,15 @@ public class FactoriesTests
     }
 
     [Fact]
+    public void A_positional_string_is_pinned_as_utf8_and_passed_before_the_config()
+    {
+        var output = new FactoryArgument("The group it writes.", null, "output", "string?", "(sbyte*)outputPtr", true);
+        var text = FactoriesExtension.Render(Standalone(Pool, output, Depth), ProbeConvention.Value);
+        Assert.Contains("fixed (byte* outputPtr = outputBytes)", text);
+        Assert.Contains("NativeMethods.probe_create(pool.Native, (sbyte*)outputPtr, &config, &handle)", text);
+    }
+
+    [Fact]
     public void Only_the_arguments_after_the_last_required_provider_default()
     {
         var f = Standalone(Depth, Pool, Name);

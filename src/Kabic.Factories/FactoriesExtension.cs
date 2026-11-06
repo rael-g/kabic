@@ -23,7 +23,7 @@ public sealed record Factory(
     IReadOnlyList<FactoryArgument> Arguments);
 
 /// <summary>
-/// A dependency of a factory, or a field of its config struct, as the constructor argument it
+/// A dependency or a [utf8] string of a factory, or a field of its config struct, as the constructor argument it
 /// becomes; <see cref="Field"/> is the config field it fills, null for a dependency.
 /// </summary>
 public sealed record FactoryArgument(string? Doc, string? Field, string Name, string ManagedType, string Assign, bool IsString)
@@ -110,6 +110,8 @@ public sealed class FactoriesExtension : IKabicExtension
             }
             if (Dependency(context, param) is { } dependency)
                 arguments.Add(dependency);
+            else if (param.Has("utf8") && CTypes.Unqualified(param.Type) == "char *")
+                arguments.Add(new FactoryArgument(param.Doc, null, Idioms.Ident(param.Name!), "string?", $"(sbyte*){Idioms.Ident(param.Name!)}Ptr", true));
             else if (model.Structs.FirstOrDefault(s => s.Name == Bare(param.Type)) is { } configStruct && param.Type.Contains('*'))
             {
                 config = configStruct;
