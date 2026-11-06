@@ -667,13 +667,15 @@ public sealed class ZigWriter
 
     /// <summary>
     /// The Zig spelling of a <c>[default:&lt;value&gt;]</c> tag, or null for <c>none</c>, <c>empty</c> and <c>null</c>, which name
-    /// the zero. Several numbers fill a fixed array in order, or a struct of that many members of one type.
+    /// the zero. A value of an enum of the model is its constant. Several numbers fill a fixed array in
+    /// order, or a struct of that many members of one type.
     /// </summary>
     string? Given(ApiField field, string type, string given)
     {
         if (given is "none" or "empty" or "null") return null;
         if (field.Has("utf8")) return $"\"{given}\"";
         if (given is "true" or "false") return given;
+        if (model.Enums.Any(e => e.Values.Any(v => v.Name == given))) return given;
         var numbers = given.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (!numbers.All(n => double.TryParse(n, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)))
             throw new InvalidOperationException($"{field.Name}: [default:{given}] is not a literal Zig can spell.");
