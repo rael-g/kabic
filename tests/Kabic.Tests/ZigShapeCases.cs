@@ -119,15 +119,17 @@ internal static class ZigShapeCases
                 F("pivot", "ke_far_vec2", "default:0.5 0.5"),
                 F("names", "const char *const *", "default:empty"),
                 F("mode", "ke_probe_mode", "default:KE_PROBE_MODE_FAST"),
+                F("kind", "ke_far_kind", "default:KE_FAR_KIND_B"),
             ], [])); m.Enums.Add(new ApiEnum("ke_probe_mode", null, [
                 new ApiEnumValue("KE_PROBE_MODE_SLOW", "0", true, null),
                 new ApiEnumValue("KE_PROBE_MODE_FAST", "1", true, null),
             ]));
+            m.Enums.Add(new ApiEnum("ke_far_kind", null, [new ApiEnumValue("KE_FAR_KIND_B", "1", true, null)]) { External = true });
             },
             contains: ["title: ?[*:0]const u8 = \"Probe\",", "width: i32 = 1280,", "shown: bool = true,", "color: [3]f32 = .{ 1, 0.5, 0 },",
                        "pivot: far.ke_far_vec2 = @bitCast([_]std.meta.fields(far.ke_far_vec2)[0].type{ 0.5, 0.5 }),",
-                       "names: ?*const ?[*:0]const u8 = std.mem.zeroes(", "mode: ke_probe_mode = KE_PROBE_MODE_FAST,"],
-            foreign: new Dictionary<string, string> { ["ke_far_vec2"] = "far" });
+                       "names: ?*const ?[*:0]const u8 = std.mem.zeroes(", "mode: ke_probe_mode = KE_PROBE_MODE_FAST,", "kind: far.ke_far_kind = far.KE_FAR_KIND_B,"],
+            foreign: new Dictionary<string, string> { ["ke_far_vec2"] = "far", ["ke_far_kind"] = "far" });
 
         Expect("an enum is its C integer type and a constant per value, an alias included",
             m => m.Enums.Add(new ApiEnum("ke_probe_button", null, [
