@@ -417,7 +417,8 @@ public static class Extractor
                 var begin = node["range"]!["begin"]!;
                 var at = (begin["offset"] ?? begin["expansionLoc"]!["offset"])!.GetValue<int>();
                 var text = System.Text.Encoding.UTF8.GetString(bytes, at, bytes.Length - at);
-                return new ApiValue(ApiValueKind.OffsetOf, text[(text.IndexOf('(') + 1)..text.IndexOf(')')].Trim(), []);
+                var operands = text[(text.IndexOf('(') + 1)..text.IndexOf(')')].Split(',').Select(o => o.Trim()).ToList();
+                return new ApiValue(ApiValueKind.OffsetOf, $"{operands[0]}, {operands[1]}", []);
             case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof" && node["argType"] is JsonObject arg:
                 return new ApiValue(ApiValueKind.SizeOf, arg["qualType"]!.GetValue<string>(), []);
             case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof"

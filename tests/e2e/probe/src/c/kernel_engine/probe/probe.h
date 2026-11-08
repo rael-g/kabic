@@ -49,6 +49,17 @@ static const ke_probe_item ke_probe_item_start = {
 
 #define KE_PROBE_SIZE_OF(T, m) (uint32_t)sizeof(((T *)0)->m)
 
+#define KE_PROBE_PLACE(T, m, extra) { (uint32_t)__builtin_offsetof(T, m), (extra) }
+
+typedef struct ke_probe_place
+{
+    uint32_t offset;
+    uint32_t extra;
+} ke_probe_place;
+
+/** Where an item's kind lives, measured through a macro taking more than the member. */
+static const ke_probe_place ke_probe_kind_place = KE_PROBE_PLACE(ke_probe_item, kind, 3);
+
 /** The width of an item's weight, measured through a macro. */
 static const uint32_t ke_probe_weight_size = KE_PROBE_SIZE_OF(ke_probe_item, weight);
 

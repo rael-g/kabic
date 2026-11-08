@@ -62,6 +62,25 @@
       ]
     },
     {
+      "name": "ke_probe_place",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "offset",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        },
+        {
+          "name": "extra",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        }
+      ]
+    },
+    {
       "name": "ke_probe_batch",
       "doc": "Items a call hands out.",
       "tags": [
@@ -498,6 +517,25 @@
           {
             "kind": "Name",
             "text": "KE_PROBE_KIND_FAR"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ke_probe_kind_place",
+      "type": "ke_probe_place",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "OffsetOf",
+            "text": "ke_probe_item, kind"
+          },
+          {
+            "kind": "Number",
+            "text": "3"
           }
         ]
       }
