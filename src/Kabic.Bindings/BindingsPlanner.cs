@@ -12,8 +12,12 @@ namespace Kabic.Bindings;
 /// Derives, from the <c>bindings</c> array of the manifest and the headers it names, the ClangSharp
 /// job of every binding assembly.
 /// </summary>
+
 public static class BindingsPlanner
 {
+    /// <summary>A variable a header defines as static: it has no symbol, so no binding can reach it.</summary>
+    static readonly Regex StaticVariable = new(@"^\s*static\s+const\s+[\w\s\*]+?\b(\w+)\s*(?:\[[^\]]*\])?\s*=", RegexOptions.Multiline | RegexOptions.Compiled);
+
     /// <summary>
     /// The header each type is declared in, keyed by name. A definition wins over a forward
     /// declaration, and among headers of the same kind the first in ordinal path order wins, so
@@ -240,6 +244,10 @@ public static class BindingsPlanner
                     }
                 }
             }
+
+            foreach (var h in traversed)
+                foreach (Match m in StaticVariable.Matches(File.ReadAllText(h)))
+                    excludes.Add(m.Groups[1].Value);
 
             string file;
             string? umbrellaBody = null;
