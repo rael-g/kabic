@@ -180,6 +180,8 @@ public sealed class ZigWriter
                 ? $"@offsetOf({Named(owner, byValue: true)}, \"{member}\")" : throw new NotSupportedException($"offsetof({v.Text})"),
             ApiValueKind.SizeOf => v.Text.Split("->") is [var owner2, var field]
                 ? $"@sizeOf(@FieldType({Named(owner2, byValue: true)}, \"{field}\"))" : $"@sizeOf({Spell(v.Text, null)})",
+            ApiValueKind.List when CTypes.IsPointer(type) && type.TrimEnd().EndsWith('*')
+                => $"@ptrCast(&[_]{Spell(type.TrimEnd()[..^1].TrimEnd(), null)}{{ " + string.Join(", ", v.Items.Select(i => DataValue(type.TrimEnd()[..^1].TrimEnd(), i))) + " })",
             ApiValueKind.List => throw new NotSupportedException($"a list initializes {type}, which is no array or struct here"),
             _ => v.Text,
         };
