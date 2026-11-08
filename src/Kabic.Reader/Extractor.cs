@@ -204,7 +204,7 @@ public static class Extractor
                 continue;
             }
 
-            var pnames = DeclText.FnPtrParamNames(bytes, fieldName);
+            var pnames = DeclText.FnPtrParamNames(SliceRange(bytes, f) is { Length: > 0 } own ? System.Text.Encoding.UTF8.GetBytes(own) : bytes, fieldName);
             foreach (var tagged in pdocs.Keys)
             {
                 if (!pnames.Contains(tagged))
