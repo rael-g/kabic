@@ -62,6 +62,30 @@
       ]
     },
     {
+      "name": "ke_probe_options",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "name",
+          "type": "const char *",
+          "tags": [
+            "utf8",
+            "default:probe"
+          ],
+          "doc": null
+        },
+        {
+          "name": "loud",
+          "type": "_Bool",
+          "tags": [
+            "default:true"
+          ],
+          "doc": null
+        }
+      ]
+    },
+    {
       "name": "ke_probe_place",
       "doc": null,
       "tags": [],
@@ -517,6 +541,25 @@
           {
             "kind": "Name",
             "text": "KE_PROBE_KIND_FAR"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ke_probe_options_defaults",
+      "type": "ke_probe_options",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "String",
+            "text": "\u0022probe\u0022"
+          },
+          {
+            "kind": "Number",
+            "text": "1"
           }
         ]
       }

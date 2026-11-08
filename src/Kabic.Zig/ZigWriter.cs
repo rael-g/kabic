@@ -183,6 +183,7 @@ public sealed class ZigWriter
             ApiValueKind.List when CTypes.IsPointer(type) && type.TrimEnd().EndsWith('*')
                 => $"@ptrCast(&[_]{Spell(type.TrimEnd()[..^1].TrimEnd(), null)}{{ " + string.Join(", ", v.Items.Select(i => DataValue(type.TrimEnd()[..^1].TrimEnd(), i))) + " })",
             ApiValueKind.List => throw new NotSupportedException($"a list initializes {type}, which is no array or struct here"),
+            ApiValueKind.Number when CTypes.Unqualified(type) is "bool" or "_Bool" => v.Text is "0" ? "false" : "true",
             _ => v.Text,
         };
     }

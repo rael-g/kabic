@@ -1,6 +1,7 @@
 #ifndef KERNEL_ENGINE_PROBE_PROBE_H_
 #define KERNEL_ENGINE_PROBE_PROBE_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -50,6 +51,18 @@ static const ke_probe_item ke_probe_item_start = {
 #define KE_PROBE_SIZE_OF(T, m) (uint32_t)sizeof(((T *)0)->m)
 
 #define KE_PROBE_PLACE(T, m, extra) { (uint32_t)__builtin_offsetof(T, m), (extra) }
+
+typedef struct ke_probe_options
+{
+    const char *name; ///< [utf8]
+    bool loud;
+} ke_probe_options;
+
+/** [defaults] */
+static const ke_probe_options ke_probe_options_defaults = {
+    .name = "probe",
+    .loud = true,
+};
 
 typedef struct ke_probe_place
 {

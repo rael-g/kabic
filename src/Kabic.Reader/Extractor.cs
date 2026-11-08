@@ -132,7 +132,8 @@ public static class Extractor
     {
         ApiValueKind.Number when value.Text.Length == 0 => null,
         ApiValueKind.Number when field.Type is "bool" or "_Bool" => value.Text == "0" ? "false" : "true",
-        ApiValueKind.Number or ApiValueKind.String or ApiValueKind.Name => value.Text,
+        ApiValueKind.String => value.Text.Length >= 2 && value.Text[0] == '"' && value.Text[^1] == '"' ? value.Text[1..^1] : value.Text,
+        ApiValueKind.Number or ApiValueKind.Name => value.Text,
         ApiValueKind.List when value.Items.All(v => v.Kind == ApiValueKind.Number && v.Text.Length > 0) => string.Join(' ', value.Items.Select(v => v.Text)),
         _ => null,
     };
