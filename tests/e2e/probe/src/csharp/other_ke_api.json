@@ -65,6 +65,26 @@
       "external": true
     },
     {
+      "name": "ke_probe_place",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "offset",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        },
+        {
+          "name": "extra",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        }
+      ],
+      "external": true
+    },
+    {
       "name": "ke_probe_batch",
       "doc": "Items a call hands out.",
       "tags": [
