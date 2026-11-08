@@ -478,6 +478,15 @@
           }
         ]
       }
+    },
+    {
+      "name": "ke_probe_weight_size",
+      "type": "uint32_t",
+      "readonly": true,
+      "value": {
+        "kind": "SizeOf",
+        "text": "float"
+      }
     }
   ]
 }

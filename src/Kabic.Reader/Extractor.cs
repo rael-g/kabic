@@ -392,10 +392,16 @@ public static class Extractor
             case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof"
                 && System.Text.RegularExpressions.Regex.Match(SliceRange(bytes, node), @"\(\s*(\w+)\s*\*\s*\)\s*0\s*\)\s*->\s*(\w+)") is { Success: true } member:
                 return new ApiValue(ApiValueKind.SizeOf, $"{member.Groups[1].Value}->{member.Groups[2].Value}", []);
+            case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof"
+                && OperandType(inner) is { } operandType:
+                return new ApiValue(ApiValueKind.SizeOf, operandType, []);
         }
         if (inner is [JsonObject only]) return ExtractValue(only, bytes);
         throw new NotSupportedException($"an initializer holds a {kind}, which has no projection");
     }
+
+    static string? OperandType(JsonArray? inner) =>
+        inner is [JsonObject operand] && operand["type"] is JsonObject type ? type["qualType"]?.GetValue<string>() : null;
 
     static string SliceRange(byte[] bytes, JsonObject node)
     {

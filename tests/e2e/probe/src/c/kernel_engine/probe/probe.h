@@ -42,6 +42,11 @@ static const ke_probe_item ke_probe_item_start = {
     .kind = KE_PROBE_KIND_FAR,
 };
 
+#define KE_PROBE_SIZE_OF(T, m) (uint32_t)sizeof(((T *)0)->m)
+
+/** The width of an item's weight, measured through a macro. */
+static const uint32_t ke_probe_weight_size = KE_PROBE_SIZE_OF(ke_probe_item, weight);
+
 /// [view] Items a call hands out.
 typedef struct ke_probe_batch
 {
