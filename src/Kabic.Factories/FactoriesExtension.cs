@@ -184,7 +184,7 @@ public sealed class FactoriesExtension : IKabicExtension
 
     private static string? DefaultLiteral(ApiField field, string managedType)
     {
-        if (field.Default?.Trim() is not { Length: > 0 } v) return null;
+        if (field.Default?.Trim() is not { Length: > 0 } v || v is "null" or "none") return null;
         return managedType switch
         {
             "string?" => $"\"{v}\"",
