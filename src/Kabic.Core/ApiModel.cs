@@ -194,7 +194,11 @@ public record ApiValue(ApiValueKind Kind, string Text, IReadOnlyList<ApiValue> I
 /// A variable the headers define with an initializer: its name, its C type without const, whether
 /// it is const, and its value.
 /// </summary>
-public record ApiData(string Name, string Type, bool ReadOnly, ApiValue Value);
+public record ApiData(string Name, string Type, bool ReadOnly, ApiValue Value)
+{
+    /// <summary>The tags of the variable's own documentation; <c>[defaults]</c> makes its value the default of each field of its struct type.</summary>
+    public IReadOnlyList<string> Tags { get; init; } = [];
+}
 
 /// <summary>A function the header declares, with its return type and its parameters.</summary>
 public record ApiFunction(string Name, string Returns, string? Doc, string? ReturnDoc, IReadOnlyList<ApiParam> Params)

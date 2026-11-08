@@ -31,9 +31,14 @@ typedef uint32_t ke_probe_id;
 typedef struct ke_probe_item
 {
     ke_probe_id id;
-    float weight; ///< [default:1]
+    float weight;
     ke_probe_kind kind;
 } ke_probe_item;
+
+/** [defaults] */
+static const ke_probe_item ke_probe_item_defaults = {
+    .weight = 1.0f,
+};
 
 /** The item a probe starts from. */
 static const ke_probe_item ke_probe_item_start = {

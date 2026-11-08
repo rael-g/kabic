@@ -27,6 +27,7 @@ public static class Extractor
     {
         var api = new ApiModel();
         var errors = new List<string>();
+        var defaults = new List<ApiData>();
         string? currentFile = null;
         auxHeaderNames ??= [];
 
@@ -59,7 +60,7 @@ public static class Extractor
 
             if (auxOnly && kind != "TypedefDecl") continue;
 
-            if (compose && kind is not ("TypedefDecl" or "RecordDecl" or "EnumDecl")) continue;
+            if (compose && kind is not ("TypedefDecl" or "RecordDecl" or "EnumDecl" or "VarDecl")) continue;
 
             switch (kind)
             {
@@ -80,14 +81,15 @@ public static class Extractor
                     else api.Functions.Add(ExtractFunction(node, name, errors, api));
                     break;
 
-                case "VarDecl" when name is not null && node["storageClass"]?.GetValue<string>() == "extern" && HasSymbol(node):
+                case "VarDecl" when name is not null && !compose && node["storageClass"]?.GetValue<string>() == "extern" && HasSymbol(node):
                     api.Variables.Add(new ApiVariable(name, node["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "",
                         DocParser.Parse(node).Summary is { Length: > 0 } doc ? doc : null));
                     break;
 
-                case "VarDecl" when name is not null && !compose
-                    && ExtractData(node, name, bytes) is { } data:
-                    api.Data.Add(data);
+                case "VarDecl" when name is not null && ExtractData(node, name, bytes) is { } data:
+                    var tagged = data with { Tags = DocParser.Parse(node).SummaryTags };
+                    if (!compose) api.Data.Add(tagged);
+                    if (tagged.Tags.Contains("defaults")) defaults.Add(tagged);
                     break;
 
                 case "TypedefDecl" when name is not null:
@@ -103,8 +105,37 @@ public static class Extractor
         }
 
         api.Opaques.RemoveAll(o => defined.Contains(o));
+        foreach (var data in defaults) ApplyDefaults(api, data, errors);
         return (api, errors);
     }
+
+    /// <summary>
+    /// Gives each field of the struct a <c>[defaults]</c> value has the value written for it as its
+    /// <c>default:</c> tag, so every writer starts the field there; a field the value leaves unset
+    /// keeps zero.
+    /// </summary>
+    static void ApplyDefaults(ApiModel api, ApiData data, List<string> errors)
+    {
+        var at = api.Structs.FindIndex(s => s.Name == data.Type);
+        if (at < 0 || data.Value.Kind != ApiValueKind.List || data.Value.Items.Count != api.Structs[at].Fields.Count)
+        {
+            errors.Add($"{data.Name}: [defaults] needs a value of a struct the headers define, one item per field");
+            return;
+        }
+        var target = api.Structs[at];
+        var fields = target.Fields.Select((f, i) => DefaultSpelling(f, data.Value.Items[i]) is { } given && f.Default is null
+            ? f with { Tags = f.Tags.Append($"default:{given}").ToList() } : f).ToList();
+        api.Structs[at] = target with { Fields = fields };
+    }
+
+    static string? DefaultSpelling(ApiField field, ApiValue value) => value.Kind switch
+    {
+        ApiValueKind.Number when value.Text.Length == 0 => null,
+        ApiValueKind.Number when field.Type is "bool" or "_Bool" => value.Text == "0" ? "false" : "true",
+        ApiValueKind.Number or ApiValueKind.String or ApiValueKind.Name => value.Text,
+        ApiValueKind.List when value.Items.All(v => v.Kind == ApiValueKind.Number && v.Text.Length > 0) => string.Join(' ', value.Items.Select(v => v.Text)),
+        _ => null,
+    };
 
     static ApiEnum ExtractEnum(JsonObject node, string name, byte[] bytes)
     {

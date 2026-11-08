@@ -457,6 +457,29 @@
   },
   "data": [
     {
+      "name": "ke_probe_item_defaults",
+      "type": "ke_probe_item",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "Number",
+            "text": ""
+          },
+          {
+            "kind": "Number",
+            "text": "1"
+          },
+          {
+            "kind": "Number",
+            "text": ""
+          }
+        ]
+      }
+    },
+    {
       "name": "ke_probe_item_start",
       "type": "ke_probe_item",
       "readonly": true,
