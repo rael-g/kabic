@@ -454,5 +454,30 @@
     "ke_probe_visit_fn": "void (*)(void *, uint32_t)",
     "ke_probe_id": "uint32_t",
     "ke_probe_done_fn": "void (*)(void *, ke_result, uint32_t)"
-  }
+  },
+  "data": [
+    {
+      "name": "ke_probe_item_start",
+      "type": "ke_probe_item",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "Number",
+            "text": "7"
+          },
+          {
+            "kind": "Number",
+            "text": "1"
+          },
+          {
+            "kind": "Name",
+            "text": "KE_PROBE_KIND_FAR"
+          }
+        ]
+      }
+    }
+  ]
 }

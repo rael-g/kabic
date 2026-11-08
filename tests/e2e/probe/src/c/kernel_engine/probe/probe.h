@@ -35,6 +35,13 @@ typedef struct ke_probe_item
     ke_probe_kind kind;
 } ke_probe_item;
 
+/** The item a probe starts from. */
+static const ke_probe_item ke_probe_item_start = {
+    .id = _Generic((ke_probe_id)0, uint32_t: 7u, default: 0u),
+    .weight = 1.0f,
+    .kind = KE_PROBE_KIND_FAR,
+};
+
 /// [view] Items a call hands out.
 typedef struct ke_probe_batch
 {

@@ -378,6 +378,8 @@ public static class Extractor
                 return new ApiValue(ApiValueKind.Number, node["value"]!.ToString(), []);
             case "StringLiteral":
                 return new ApiValue(ApiValueKind.String, node["value"]!.GetValue<string>(), []);
+            case "GenericSelectionExpr" when (inner ?? []).OfType<JsonObject>().FirstOrDefault(a => a["selected"]?.GetValue<bool>() == true) is { } chosen:
+                return ExtractValue(((JsonArray)chosen["inner"]!).Last()!.AsObject(), bytes);
             case "DeclRefExpr":
                 return new ApiValue(ApiValueKind.Name, node["referencedDecl"]!["name"]!.GetValue<string>(), []);
             case "OffsetOfExpr":
