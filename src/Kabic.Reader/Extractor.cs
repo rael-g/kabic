@@ -406,6 +406,9 @@ public static class Extractor
                 return new ApiValue(ApiValueKind.Number, "", []);
             case "InitListExpr":
                 return new ApiValue(ApiValueKind.List, node["field"]?["name"]?.GetValue<string>() ?? "", (inner ?? []).Select(i => ExtractValue(i!.AsObject(), bytes)).ToList());
+            case "UnaryOperator" when node["opcode"]?.GetValue<string>() == "-" && inner is [JsonObject negated]
+                && ExtractValue(negated, bytes) is { Kind: ApiValueKind.Number, Text.Length: > 0 } magnitude:
+                return magnitude with { Text = magnitude.Text.StartsWith('-') ? magnitude.Text[1..] : "-" + magnitude.Text };
             case "IntegerLiteral" or "FloatingLiteral":
                 return new ApiValue(ApiValueKind.Number, node["value"]!.ToString(), []);
             case "StringLiteral":

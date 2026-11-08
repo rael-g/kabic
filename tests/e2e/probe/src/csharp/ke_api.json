@@ -49,7 +49,7 @@
           "name": "weight",
           "type": "float",
           "tags": [
-            "default:1"
+            "default:-1.5"
           ],
           "doc": null
         },
@@ -513,7 +513,7 @@
           },
           {
             "kind": "Number",
-            "text": "1"
+            "text": "-1.5"
           },
           {
             "kind": "Number",

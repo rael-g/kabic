@@ -38,7 +38,7 @@ typedef struct ke_probe_item
 
 /** [defaults] */
 static const ke_probe_item ke_probe_item_defaults = {
-    .weight = 1.0f,
+    .weight = -1.5f,
 };
 
 /** The item a probe starts from. */
