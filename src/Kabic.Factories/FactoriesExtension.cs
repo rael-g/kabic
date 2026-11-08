@@ -28,6 +28,9 @@ public sealed record Factory(
 /// </summary>
 public sealed record FactoryArgument(string? Doc, string? Field, string Name, string ManagedType, string Assign, bool IsString)
 {
+    /// <summary>The C# literal the argument starts at when the caller leaves it out: its field's default, or null for zero.</summary>
+    public string? Default { get; init; }
+
     /// <summary>Whether the argument is a contract the factory requires.</summary>
     public bool IsRequiredProvider => ManagedType.Contains(".INative") && !ManagedType.EndsWith('?');
 
@@ -117,7 +120,7 @@ public sealed class FactoriesExtension : IKabicExtension
                 config = configStruct;
                 foreach (var field in configStruct.Fields)
                 {
-                    if (Argument(context, field, job, model) is { } argument) arguments.Add(argument);
+                    if (Argument(context, field, job, model) is { } argument) arguments.Add(argument with { Default = DefaultLiteral(field, argument.ManagedType) });
                     else context.Report($"factories: {configStruct.Name}.{field.Name} ({field.Type}) has no projection");
                 }
             }
@@ -179,6 +182,22 @@ public sealed class FactoriesExtension : IKabicExtension
 
     private static string Bare(string cType) => CType.Of(cType).Name;
 
+    private static string? DefaultLiteral(ApiField field, string managedType)
+    {
+        if (field.Default?.Trim() is not { Length: > 0 } v) return null;
+        return managedType switch
+        {
+            "string?" => $"\"{v}\"",
+            "bool" when v is "true" or "false" => v,
+            "float" when double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _) => v + "f",
+            "double" when double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _) => v,
+            "sbyte" or "byte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong" when long.TryParse(v, out _) => v,
+            var t when t.Contains('.') && !t.EndsWith('?') && !t.StartsWith("System.", StringComparison.Ordinal) =>
+                long.TryParse(v, out _) ? $"({t}){v}" : $"{t}.{Idioms.EnumMember(v, CTypes.Unqualified(field.Type))}",
+            _ => null,
+        };
+    }
+
     /// <summary>
     /// The partial class of <paramref name="f"/>: a constructor taking its dependencies and config
     /// fields, deriving from its contract's class when it has one and owning the handle otherwise.
@@ -231,14 +250,14 @@ public sealed class FactoriesExtension : IKabicExtension
     }
 
     /// <summary>
-    /// The constructor's parameter list. A scalar or a string defaults to zero, which selects the
-    /// factory's default, unless a required provider, which has no default, comes after it.
+    /// The constructor's parameter list. A scalar or a string starts at its field's default, or zero
+    /// without one, unless a required provider, which has no default, comes after it.
     /// </summary>
     public static string Parameters(Factory f, bool withDefaults = true)
     {
         var lastProvider = f.Arguments.ToList().FindLastIndex(a => a.IsRequiredProvider);
         return string.Join(", ", f.Arguments.Select((a, i) =>
-            $"{a.ManagedType} {a.Name}{(withDefaults && i > lastProvider ? " = default" : "")}"));
+            $"{a.ManagedType} {a.Name}{(withDefaults && i > lastProvider ? $" = {a.Default ?? "default"}" : "")}"));
     }
 
     /// <summary>The constructor's argument names, in order.</summary>
