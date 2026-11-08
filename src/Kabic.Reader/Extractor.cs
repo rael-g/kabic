@@ -409,6 +409,9 @@ public static class Extractor
             case "UnaryOperator" when node["opcode"]?.GetValue<string>() == "-" && inner is [JsonObject negated]
                 && ExtractValue(negated, bytes) is { Kind: ApiValueKind.Number, Text.Length: > 0 } magnitude:
                 return magnitude with { Text = magnitude.Text.StartsWith('-') ? magnitude.Text[1..] : "-" + magnitude.Text };
+            case "FloatingLiteral" when SliceRange(bytes, node).Trim().TrimEnd('f', 'F', 'l', 'L') is var written
+                && double.TryParse(written, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _):
+                return new ApiValue(ApiValueKind.Number, written, []);
             case "IntegerLiteral" or "FloatingLiteral":
                 return new ApiValue(ApiValueKind.Number, node["value"]!.ToString(), []);
             case "StringLiteral":
