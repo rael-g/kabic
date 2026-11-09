@@ -24,6 +24,9 @@ public sealed record Factory(
 {
     /// <summary>The values the factory writes through an <c>[out]</c> before its handle, each a read-only property of the class.</summary>
     public IReadOnlyList<FactoryOutput> Outputs { get; init; } = [];
+
+    /// <summary>The bindings namespace that declares the handle, the one whose job traverses the contract's header.</summary>
+    public string? HandleNamespace { get; init; }
 }
 
 /// <summary>A value a factory writes through an <c>[out]</c> parameter besides its handle, as the property it becomes.</summary>
@@ -78,7 +81,7 @@ public sealed class FactoriesExtension : IKabicExtension
                 context.Report($"factories: no bindings entry is called '{name}'");
                 continue;
             }
-            if (Of(context, job) is { } factory) factories.Add(factory);
+            factories.AddRange(Of(context, job).Select(f => f with { HandleNamespace = HandleHome(context, jobs.Values, f) }));
         }
         return factories;
     }
@@ -90,18 +93,19 @@ public sealed class FactoriesExtension : IKabicExtension
             context.Emit(Path.Combine(Path.GetRelativePath(context.Root, f.ProjectDir), "Generated", $"{f.ClassName}.g.cs").Replace('\\', '/'), Render(f, context.Convention));
     }
 
-    private static Factory? Of(ExtensionContext context, BindingJob job)
+    private static IEnumerable<Factory> Of(ExtensionContext context, BindingJob job)
     {
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
-        var convention = context.Convention;
         var model = context.ReadHeaders(job.Traverse.Select(Full), job.IncludeDirectories.Select(Full), []);
         var functions = model.Functions.Where(f => model.Makes(f) is not null).ToList();
-        if (functions.Count != 1)
-        {
-            context.Report($"factories: {job.Name} declares {functions.Count} factories; one is projected");
-            return null;
-        }
-        var function = functions[0];
+        if (functions.Count == 0) context.Report($"factories: {job.Name} declares no factory");
+        foreach (var function in functions)
+            if (Of(context, job, model, function) is { } factory) yield return factory;
+    }
+
+    private static Factory? Of(ExtensionContext context, BindingJob job, ApiModel model, ApiFunction function)
+    {
+        var convention = context.Convention;
         if (function.Params is not [.., var outParam] || model.Makes(function) is null)
         {
             context.Report($"factories: {function.Name} does not end in a <handle>* out; it is not projected");
@@ -342,7 +346,14 @@ public sealed class FactoriesExtension : IKabicExtension
 
     /// <summary>The native handle type the factory fills.</summary>
     public static string HandleTypeName(Factory f) =>
-        f.Contract is null ? $"{f.Job.Namespace}.{f.HandleType}" : $"{f.Contract.Spec.NativeNamespace}.{f.HandleType}";
+        f.Contract is null ? $"{f.Job.Namespace}.{f.HandleType}" : $"{f.HandleNamespace ?? f.Contract.Spec.NativeNamespace}.{f.HandleType}";
+
+    private static string? HandleHome(ExtensionContext context, IEnumerable<BindingJob> jobs, Factory f)
+    {
+        if (f.Contract is null) return null;
+        var headers = f.Contract.Spec.Headers.Select(h => Path.GetFullPath(Path.Combine(context.Root, h))).ToHashSet();
+        return jobs.FirstOrDefault(j => j.Traverse.Any(t => headers.Contains(Path.GetFullPath(Path.Combine(j.NativeDir, t)))))?.Namespace;
+    }
 
     /// <summary>What <c>Create</c> returns: the handle, or a tuple of the handle and each output when the factory has any.</summary>
     public static string CreatedType(Factory f) =>

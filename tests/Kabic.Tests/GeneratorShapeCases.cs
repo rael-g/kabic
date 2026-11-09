@@ -398,6 +398,25 @@ internal static class GeneratorShapeCases
             absent: ["TermCount", "term_count", "ProbeTerm*", "StructLayout"],
             alongside: [ValueStruct("ke_probe_term", ("cid", "uint32_t"))]);
 
+        Expect("an [inout] pointer to a plain struct is lent by reference",
+            Vtable("ke_probe", Slot("resolve", "float",
+                Param("cursor", "ke_probe_cursor_state *", "inout"))),
+            contains: ["public float Resolve(ref ProbeCursorState cursor)", "Unsafe.AsPointer(ref cursor)"],
+            absent: ["nint cursor"],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_cursor_state",
+                ["doc"] = null,
+                ["tags"] = new JsonArray(),
+                ["fields"] = new JsonArray(Param("id", "int32_t")),
+                ["slots"] = new JsonArray(),
+            }]);
+
+        Expect("a [typed] return is a reference to the type the caller names",
+            Vtable("ke_probe", Slot("get", "void *", Returning("typed"), Param("cid", "uint32_t"))),
+            contains: ["public ref T Get<T>(uint cid) where T : unmanaged", "return ref *(T*)at;"],
+            absent: ["nint Get("]);
+
         ExpectBorrowedStruct("a borrowed struct holds a utf8 field as a string",
             BorrowedStruct("ke_probe_named",
                 ("name", "const char *", "utf8"),

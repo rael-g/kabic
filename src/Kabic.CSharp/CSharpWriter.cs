@@ -359,8 +359,18 @@ public static class CSharpWriter
         : model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
             : Pointee(model, cType) is { } s && ByValue(cType, s) ? Idioms.TypeName(s.Name, convention)
+            : LentReturn(model, cType) is { } lent ? "I" + Idioms.TypeName(lent.Name, convention)
             : CTypes.IsPointer(cType) ? "nint"
             : CsType(model, cType, convention);
+
+    /// <summary>
+    /// The vtable a slot hands back for the caller to use while its owner lives: the answer is
+    /// that vtable's class, borrowed, never the pointer it arrived as.
+    /// </summary>
+    static ApiStruct? LentReturn(ApiModel model, string cType) =>
+        CTypes.IsPointer(cType) && !CTypes.IsPointer(CTypes.Deref(cType))
+        && Pointee(model, cType) is { IsVtable: true } v && !v.Has("bag") && !v.Has("owner")
+        && (v.External || model.OwnerOf(v.Name) is not null) ? v : null;
 
     /// <summary>
     /// The cast carrying the ABI's answer into what <see cref="ReturnType"/> spells, or
@@ -370,6 +380,7 @@ public static class CSharpWriter
         model.Enums.Any(e => e.Name == cType.Trim())
             ? $"({Idioms.TypeName(cType.Trim(), convention)})"
             : Pointee(model, cType) is { } s && ByValue(cType, s) ? $"*({Idioms.TypeName(s.Name, convention)}*)"
+            : LentReturn(model, cType) is { } lent ? $"{Idioms.TypeName(lent.Name, convention)}.Borrow"
             : CTypes.IsPointer(cType) ? "(nint)"
             : "";
 
@@ -611,6 +622,7 @@ public static class CSharpWriter
         if (p.Has("rooted")) return "object";
         if (model.Enums.Any(e => e.Name == p.Type.Trim()))
             return Idioms.TypeName(p.Type.Trim(), convention);
+        if (ByReference(model, p) is { } lent) return "ref " + Idioms.TypeName(lent.Name, convention);
         var passed = Passed(model, p.Type, convention) ?? CsType(model, p.Type, convention);
         return IsOptionalValue(model, p) ? passed + "?" : passed;
     }
@@ -661,6 +673,14 @@ public static class CSharpWriter
         return ByValue(cType, target) ? Idioms.TypeName(target.Name, convention) : "nint";
     }
 
+    /// <summary>
+    /// The plain struct an <c>[inout]</c> parameter lends: the caller passes its own value by
+    /// reference, so what the call reads it reads there and what it writes lands there.
+    /// </summary>
+    static ApiStruct? ByReference(ApiModel model, ApiParam p) =>
+        p.Has("inout") && CTypes.IsPointer(p.Type) && !CType.Of(p.Type).Const
+        && Pointee(model, p.Type) is { } target && IsPlain(target) ? target : null;
+
     static bool HasInterface(ApiModel model, ApiStruct target) =>
         target.IsVtable && !target.Has("bag") && (target.External || model.OwnerOf(target.Name) is not null);
 
@@ -674,7 +694,9 @@ public static class CSharpWriter
         if (IsOptionalValue(model, p))
             return $"{name}.HasValue ? ({native})Unsafe.AsPointer(ref Unsafe.AsRef(in Nullable.GetValueRefOrDefaultRef(in {name}))) : null";
         return Pointee(model, p.Type) is { } target
-            ? HasInterface(model, target) ? $"{name}.Native" : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
+            ? HasInterface(model, target) ? $"{name}.Native"
+            : ByReference(model, p) is not null ? $"({native})Unsafe.AsPointer(ref {name})"
+            : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
             : $"({native}){name}";
     }
 
@@ -1386,9 +1408,10 @@ public static class CSharpWriter
             o.Add("    }");
             o.Add("");
         }
-        else if (plan.Kind == ConstructorKind.FromHandle)
+        if (plan.Kind == ConstructorKind.FromHandle
+            || (plan.Kind == ConstructorKind.FromFactory && model.OwnerOf(vtable.Name) is not null))
         {
-            var handleType = plan.HandleTypeName!;
+            var handleType = plan.HandleTypeName ?? model.OwnerOf(vtable.Name)!.Name;
             o.Add($"    /// <summary>Wraps an owner <c>{handleType}</c> and runs {typeName.ToLowerInvariant()}'s startup lifecycle hook.</summary>");
             if (initCall is not null) o.Add($"    /// <exception cref=\"Exception\">The native call failed.</exception>");
             o.Add($"    public {typeName}({handleType} handle)");
@@ -1415,9 +1438,16 @@ public static class CSharpWriter
         o.Add("    }");
         o.Add("");
 
+        RenderDataFields(model, o, decls, vtable, convention);
+
         foreach (var cs in slots)
         {
             if (!Projected(cs)) continue;
+            if (cs.Slot.ReturnTags.Contains("typed"))
+            {
+                RenderTypedSlot(model, o, decls, cs.Slot, convention);
+                continue;
+            }
             if (convention.Unprojected.Contains($"{vtable.Name}.{cs.Slot.Name}"))
             {
                 Console.Error.WriteLine($"{vtable.Name}.{cs.Slot.Name}: not projected yet");
@@ -2146,6 +2176,68 @@ public static class CSharpWriter
     /// from these, so a signature the class emits and the signature the interface promises are
     /// the same string rather than two renderings of the same intent.
     /// </summary>
+    /// <summary>
+    /// The fields of a vtable its implementation writes for the caller to read, beside the
+    /// slots: a scalar reads as a property, and a <c>[typed]</c> pointer as a reference to the
+    /// type the caller names, since only the caller knows what the memory holds.
+    /// </summary>
+    static void RenderDataFields(ApiModel model, List<string> o, List<MemberDecl>? decls, ApiStruct vtable, Convention convention)
+    {
+        foreach (var f in vtable.Fields.Where(f => f.Name != "handle"))
+        {
+            var doc = string.IsNullOrEmpty(f.Doc) ? "" : $"    /// <summary>{Escape(f.Doc)}</summary>";
+            var name = Idioms.Pascal(f.Name);
+            if (f.Has("typed"))
+            {
+                var readOnly = CType.Of(f.Type).Const ? "readonly " : "";
+                var decl = $"ref {readOnly}T {name}<T>() where T : unmanaged";
+                if (doc.Length > 0) o.Add(doc);
+                o.Add($"    /// <exception cref=\"InvalidOperationException\">The field holds no memory.</exception>");
+                o.Add($"    public {decl}");
+                o.Add("    {");
+                o.Add($"        var at = Handle->{Idioms.Member(f.Name)};");
+                o.Add($"        if (at == null) throw new InvalidOperationException(\"{f.Name} holds no memory\");");
+                o.Add("        return ref *(T*)at;");
+                o.Add("    }");
+                o.Add("");
+                decls?.Add(new MemberDecl(doc, decl, false));
+                continue;
+            }
+            if (CTypes.IsPointer(f.Type)) continue;
+            var type = CsType(model, f.Type, convention);
+            if (doc.Length > 0) o.Add(doc);
+            o.Add($"    public {type} {name} => Handle->{Idioms.Member(f.Name)};");
+            o.Add("");
+            decls?.Add(new MemberDecl(doc, $"{type} {name}", true));
+        }
+    }
+
+    /// <summary>
+    /// A slot whose <c>[typed]</c> return points at memory of a type only the caller knows:
+    /// it takes that type as a parameter and answers a reference into the memory, refusing
+    /// the null the slot answers when there is none.
+    /// </summary>
+    static void RenderTypedSlot(ApiModel model, List<string> o, List<MemberDecl>? decls, ApiSlot slot, Convention convention)
+    {
+        var ps = slot.Params.ToList();
+        var name = Idioms.Pascal(slot.Name);
+        var sig = string.Join(", ", ps.Select(p => $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"));
+        var args = string.Join("", ps.Select(p => ", " + (p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr" : Idioms.Ident(p.Name!))));
+        var readOnly = CType.Of(slot.Returns).Const ? "readonly " : "";
+        var decl = $"ref {readOnly}T {name}<T>({sig}) where T : unmanaged";
+        var doc = XmlDoc("    ", slot.Doc, convention, ps.Select(p => (Idioms.Ident(p.Name!), p.Doc))).TrimEnd();
+        if (doc.Length > 0) o.Add(doc);
+        o.Add($"    /// <exception cref=\"InvalidOperationException\">The call answered no memory.</exception>");
+        o.Add($"    public {decl}");
+        o.Add("    {");
+        o.Add($"        var at = Handle->{slot.Name}(Handle{args});");
+        o.Add($"        if (at == null) throw new InvalidOperationException(\"{slot.Name} answered no memory\");");
+        o.Add("        return ref *(T*)at;");
+        o.Add("    }");
+        o.Add("");
+        decls?.Add(new MemberDecl(doc, decl, false));
+    }
+
     sealed record MemberDecl(string Doc, string Decl, bool Property)
     {
         /// <summary>
@@ -2692,9 +2784,9 @@ public static class CSharpWriter
                         }
                     }
                     else if (pHolds)
-                        o.Add($"{pInd}var result = {needsCast}{pCall};");
+                        o.Add($"{pInd}var result = {(needsCast.EndsWith(".Borrow") ? $"{needsCast}({pCall})" : needsCast + pCall)};");
                     else
-                        o.Add($"{pInd}return {needsCast}{pCall};");
+                        o.Add($"{pInd}return {(needsCast.EndsWith(".Borrow") ? $"{needsCast}({pCall})" : needsCast + pCall)};");
                     foreach (var op in cs.TrailingOuts)
                         o.Add($"{pInd}{Idioms.Ident(WrittenName(op, convention))} = "
                             + $"{OutRead(model, op, $"{Idioms.Ident(WrittenName(op, convention))}Local", convention)};");

@@ -76,6 +76,9 @@ public static class Idioms
     /// A C# identifier for <paramref name="s"/>: its camelCase form, prefixed with <c>@</c> when
     /// that form is one of the C# keywords kabic escapes.
     /// </summary>
+    /// <summary>A native field's name as C# spells a member access to it: itself, escaped when a keyword.</summary>
+    public static string Member(string s) => CsKeywords.Contains(s) ? "@" + s : s;
+
     public static string Ident(string s)
     {
         var c = Camel(s);
