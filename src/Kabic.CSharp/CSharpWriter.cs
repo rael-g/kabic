@@ -40,6 +40,9 @@ public static class CSharpWriter
         {
             var b = SingleBorrowed(model, p)!;
             var n = Idioms.Ident(p.Name!);
+            if (BorrowedAllocates(b))
+                throw new InvalidOperationException(
+                    $"{p.Name}: a single [borrowed] {b.Name} holding text is not projected yet; pass it as a sequence or leave the slot unprojected");
             lines.Add($"{indent}var {n}Native = new {CsType(model, CTypes.Deref(p.Type), convention).TrimStart()}();");
             foreach (var f in b.Fields)
             {
@@ -102,8 +105,8 @@ public static class CSharpWriter
             {
                 var native = CsType(model, CTypes.Deref(s.Seq.Type), convention);
                 lines.Add($"{at}var {n}Pins = new System.Buffers.MemoryHandle[{n}.Length];");
-                if (BorrowedTexts(borrowed).Count > 0)
-                    lines.Add($"{at}var {n}Texts = new nint[{n}.Length * {BorrowedTexts(borrowed).Count}];");
+                if (BorrowedAllocates(borrowed))
+                    lines.Add($"{at}var {n}Texts = new List<nint>();");
                 lines.Add($"{at}var {n}Native = new {native}[{n}.Length];");
                 lines.Add($"{at}try");
                 lines.Add($"{at}{{");
@@ -146,7 +149,7 @@ public static class CSharpWriter
             var n = Idioms.Ident(s.Seq.Name!);
             var release = new List<string> { "}", "finally", "{",
                 $"    for (var {n}At = 0; {n}At < {n}Pins.Length; {n}At++) {n}Pins[{n}At].Dispose();" };
-            if (BorrowedTexts(borrowed).Count > 0)
+            if (BorrowedAllocates(borrowed))
                 release.Add($"    foreach (var {n}Text in {n}Texts) Marshal.FreeCoTaskMem({n}Text);");
             release.Add("}");
             closers.Add([.. release]);
@@ -196,11 +199,23 @@ public static class CSharpWriter
         {
             var native = $"{n}Native[{at}].{f.Name}";
             var mirror = $"{n}[{at}].{Idioms.Pascal(f.Name)}";
-            if (texts.IndexOf(f) is var text and >= 0)
+            if (texts.Contains(f))
             {
-                var slot = $"{n}Texts[{at} * {texts.Count} + {text}]";
-                yield return $"    {slot} = Marshal.StringToCoTaskMemUTF8({mirror});";
-                yield return $"    {native} = ({CsType(model, f.Type, convention)}){slot};";
+                yield return $"    {n}Texts.Add(Marshal.StringToCoTaskMemUTF8({mirror}));";
+                yield return $"    {native} = ({CsType(model, f.Type, convention)}){n}Texts[^1];";
+            }
+            else if (f.CountedBy is not null && f.Has("utf8"))
+            {
+                var count = b.Fields.First(x => x.Name == f.CountedBy);
+                yield return $"    var {n}{Idioms.Pascal(f.Name)}At = Marshal.AllocCoTaskMem({mirror}.Length * nint.Size);";
+                yield return $"    {n}Texts.Add({n}{Idioms.Pascal(f.Name)}At);";
+                yield return $"    for (var {n}Each = 0; {n}Each < {mirror}.Length; {n}Each++)";
+                yield return "    {";
+                yield return $"        {n}Texts.Add(Marshal.StringToCoTaskMemUTF8({mirror}.Span[{n}Each]));";
+                yield return $"        Marshal.WriteIntPtr({n}{Idioms.Pascal(f.Name)}At, {n}Each * nint.Size, {n}Texts[^1]);";
+                yield return "    }";
+                yield return $"    {native} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}At;";
+                yield return $"    {n}Native[{at}].{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;";
             }
             else if (f.CountedBy is not null)
             {
@@ -221,6 +236,17 @@ public static class CSharpWriter
     /// </summary>
     static List<ApiField> BorrowedTexts(ApiStruct b) =>
         b.Fields.Where(f => CTypes.IsPointer(f.Type) && f.CountedBy is null && f.Has("utf8")).ToList();
+
+    /// <summary>Whether a call encodes any text of a <c>[borrowed]</c> struct, which it frees when it returns.</summary>
+    static bool BorrowedAllocates(ApiStruct b) => b.Fields.Any(f => CTypes.IsPointer(f.Type) && f.Has("utf8"));
+
+    /// <summary>
+    /// Whether a <c>[borrowed]</c> struct holds a value the bindings declare and no managed
+    /// projection mirrors, so it lives beside the bindings rather than in the contract project.
+    /// </summary>
+    public static bool BorrowedNeedsNative(ApiModel model, ApiStruct b, Convention convention) =>
+        b.Fields.Any(f => !CTypes.IsPointer(f.Type) && model.Structs.Any(v => v.Name == f.Type.Trim())
+            && convention.Project(Languages.CSharp, f.Type.Trim()) is null);
 
     /// <summary>
     /// The element type a sequence parameter is spelled with. A <c>[value]</c> element
@@ -344,7 +370,10 @@ public static class CSharpWriter
     /// reads the bytes through the projection it already holds.
     /// </summary>
     static string ReturnElement(ApiModel model, ApiSlot slot, Convention convention) =>
-        ValueTypeName(model, StripQualifiers(CTypes.Deref(slot.Returns)), convention);
+        model.Structs.FirstOrDefault(v => v.Name == StripQualifiers(CTypes.Deref(slot.Returns)).Trim() && IsBorrowed(v)) is { } borrowed
+            ? throw new InvalidOperationException(
+                $"{slot.Name}: answers native memory laid out as the [borrowed] {borrowed.Name}, whose managed mirror is not that memory; the slot is not projected yet")
+            : ValueTypeName(model, StripQualifiers(CTypes.Deref(slot.Returns)), convention);
 
     /// <summary>
     /// What a slot answers with, as its caller reads it. A declared enum names its own
@@ -1072,7 +1101,7 @@ public static class CSharpWriter
     /// it reaches someone else's question; here the lifetime is stated -- the call -- so the
     /// pointer is projected as memory the caller keeps alive for it.
     /// </summary>
-    public static bool IsBorrowed(ApiStruct s) => !s.External && !s.IsVtable && s.Has("borrowed");
+    public static bool IsBorrowed(ApiStruct s) => !s.IsVtable && s.Has("borrowed");
 
     /// <summary>
     /// Emits the managed side of a <c>[borrowed]</c> struct: each counted pointer is memory
@@ -1098,7 +1127,7 @@ public static class CSharpWriter
             var count = s.Fields.First(x => x.Name == countName);
             counts.Add(count.Name);
 
-            var element = ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
+            var element = f.Has("utf8") ? "string" : ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
             if (!string.IsNullOrEmpty(f.Doc)) fields.Add($"    /// <summary>{Escape(f.Doc)}</summary>");
             fields.Add($"    public ReadOnlyMemory<{element}> {Idioms.Pascal(f.Name)};");
         }

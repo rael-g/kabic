@@ -67,10 +67,11 @@ public static class Generation
             File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(value.Name, convention)}.Text.g.cs"), text);
         }
 
-        foreach (var borrowed in model.Structs.Where(CSharpWriter.IsBorrowed))
+        foreach (var borrowed in model.Structs.Where(b => CSharpWriter.IsBorrowed(b) && !b.External))
         {
-            Directory.CreateDirectory(contractDir);
-            File.WriteAllText(Path.Combine(contractDir, $"{Idioms.TypeName(borrowed.Name, convention)}.g.cs"),
+            var home = CSharpWriter.BorrowedNeedsNative(model, borrowed, convention) ? outDir : contractDir;
+            Directory.CreateDirectory(home);
+            File.WriteAllText(Path.Combine(home, $"{Idioms.TypeName(borrowed.Name, convention)}.g.cs"),
                 CSharpWriter.RenderBorrowed(model, borrowed, ns, [.. usings, nativeNs], convention));
         }
 

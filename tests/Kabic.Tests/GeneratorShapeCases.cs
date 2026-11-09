@@ -429,8 +429,8 @@ internal static class GeneratorShapeCases
             Vtable("ke_probe", Slot("declare", "uint64_t",
                 Param("decls", "const ke_probe_named *", "array_of:decl_count"),
                 Param("decl_count", "uint32_t"))),
-            contains: ["var declsTexts = new nint[decls.Length * 1];",
-                       "declsTexts[declsAt * 1 + 0] = Marshal.StringToCoTaskMemUTF8(decls[declsAt].Name);",
+            contains: ["var declsTexts = new List<nint>();",
+                       "declsTexts.Add(Marshal.StringToCoTaskMemUTF8(decls[declsAt].Name));",
                        "foreach (var declsText in declsTexts) Marshal.FreeCoTaskMem(declsText);"],
             absent: [],
             structs: [new JsonObject
