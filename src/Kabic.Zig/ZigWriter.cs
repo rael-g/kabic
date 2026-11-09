@@ -175,6 +175,7 @@ public sealed class ZigWriter
                     : $".{Ident(x.First.Name)} = .{{ .{Ident(x.Second.Text)} = {UnionValue(x.Second)} }}")) + " }";
         return v.Kind switch
         {
+            ApiValueKind.Name when model.Data.Any(d => d.Name == v.Text) => CTypes.IsPointer(type) ? $"@ptrCast(&{v.Text})" : v.Text,
             ApiValueKind.Name => Value(v.Text),
             ApiValueKind.OffsetOf => v.Text.Split(',', StringSplitOptions.TrimEntries) is [var owner, var member]
                 ? $"@offsetOf({Named(owner, byValue: true)}, \"{member}\")" : throw new NotSupportedException($"offsetof({v.Text})"),

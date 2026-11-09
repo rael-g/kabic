@@ -417,6 +417,22 @@ internal static class GeneratorShapeCases
             contains: ["public ref T Get<T>(uint cid) where T : unmanaged", "return ref *(T*)at;"],
             absent: ["nint Get("]);
 
+        Register("a header constant reads as a property building its value, and a list of borrowed structs as an array", failures =>
+        {
+            var model = NewModel();
+            model.Structs.Add(new ApiStruct("ke_probe_pose", null, [], [new ApiField("speed", "float", [], null), new ApiField("count", "uint32_t", [], null)], []));
+            model.Structs.Add(BorrowedStruct("ke_probe_named", ("name", "const char *", "utf8"), ("bytes", "const void *", "array_of:size"), ("size", "size_t", "")));
+            model.Data.Add(new ApiData("ke_probe_pose_initial", "ke_probe_pose", true,
+                new ApiValue(ApiValueKind.List, "", [new ApiValue(ApiValueKind.Number, "1.5", []), new ApiValue(ApiValueKind.Number, "", [])])));
+            model.Data.Add(new ApiData("ke_probe_named_list", "ke_probe_named[1]", true,
+                new ApiValue(ApiValueKind.List, "", [new ApiValue(ApiValueKind.List, "", [
+                    new ApiValue(ApiValueKind.String, "\"pose\"", []), new ApiValue(ApiValueKind.Name, "ke_probe_pose_initial", []), new ApiValue(ApiValueKind.SizeOf, "ke_probe_pose", [])])])));
+            var emitted = DataWriter.Render(model, "ProbeData", "Probe", [], ProbeConvention.Value)!;
+            foreach (var needle in new[] { "public static ProbePose ProbePoseInitial", "value.Speed = 1.5f;", "public static ProbeNamed[] ProbeNamedList => [", "new() { Name = \"pose\", Bytes = Bytes(ProbePoseInitial) }," })
+                if (!emitted.Contains(needle, StringComparison.Ordinal)) failures.Add($"expected to find \"{needle}\"");
+            if (emitted.Contains("value.Count", StringComparison.Ordinal)) failures.Add("a zero the initializer leaves out is assigned");
+        });
+
         ExpectBorrowedStruct("a borrowed struct holds a utf8 field as a string",
             BorrowedStruct("ke_probe_named",
                 ("name", "const char *", "utf8"),

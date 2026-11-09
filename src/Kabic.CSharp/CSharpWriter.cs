@@ -207,8 +207,8 @@ public static class CSharpWriter
             else if (f.CountedBy is not null && f.Has("utf8"))
             {
                 var count = b.Fields.First(x => x.Name == f.CountedBy);
-                yield return $"    var {n}{Idioms.Pascal(f.Name)}At = Marshal.AllocCoTaskMem({mirror}.Length * nint.Size);";
-                yield return $"    {n}Texts.Add({n}{Idioms.Pascal(f.Name)}At);";
+                yield return $"    var {n}{Idioms.Pascal(f.Name)}At = {mirror}.Length == 0 ? 0 : Marshal.AllocCoTaskMem({mirror}.Length * nint.Size);";
+                yield return $"    if ({n}{Idioms.Pascal(f.Name)}At != 0) {n}Texts.Add({n}{Idioms.Pascal(f.Name)}At);";
                 yield return $"    for (var {n}Each = 0; {n}Each < {mirror}.Length; {n}Each++)";
                 yield return "    {";
                 yield return $"        {n}Texts.Add(Marshal.StringToCoTaskMemUTF8({mirror}.Span[{n}Each]));";

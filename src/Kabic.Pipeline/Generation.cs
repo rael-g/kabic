@@ -67,6 +67,9 @@ public static class Generation
             File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(value.Name, convention)}.Text.g.cs"), text);
         }
 
+        if (DataWriter.Render(model, Idioms.TypeName(r.Domain ?? "data", convention), ns, [nativeNs, convention.CommonManagedNamespace, .. usings], convention) is { } constants)
+            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(r.Domain ?? "data", convention)}.Data.g.cs"), constants);
+
         foreach (var borrowed in model.Structs.Where(b => CSharpWriter.IsBorrowed(b) && !b.External))
         {
             var home = CSharpWriter.BorrowedNeedsNative(model, borrowed, convention) ? outDir : contractDir;
