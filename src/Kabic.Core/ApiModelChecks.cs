@@ -22,7 +22,7 @@ public static class ApiModelChecks
                 if (f.CountedBy is not null && !CTypes.IsPointer(f.Type) && CTypes.FixedArray(f.Type) is null)
                     throw new InvalidOperationException(
                         $"{s.Name}.{f.Name}: [array_of] bounds the elements a pointer or an array reaches, and {f.Type.Trim()} is neither");
-                if (s.Has("borrowed") && CTypes.IsPointer(f.Type) && f.CountedBy is null)
+                if (s.Has("borrowed") && CTypes.IsPointer(f.Type) && f.CountedBy is null && !f.Has("utf8"))
                     throw new InvalidOperationException(
                         $"{s.Name}.{f.Name}: a pointer in a [borrowed] struct is memory the call reads, and"
                         + " one that names no count has no extent to read -- tag it [array_of:<count field>].");

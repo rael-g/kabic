@@ -398,6 +398,43 @@ internal static class GeneratorShapeCases
             absent: ["TermCount", "term_count", "ProbeTerm*", "StructLayout"],
             alongside: [ValueStruct("ke_probe_term", ("cid", "uint32_t"))]);
 
+        ExpectBorrowedStruct("a borrowed struct holds a utf8 field as a string",
+            BorrowedStruct("ke_probe_named",
+                ("name", "const char *", "utf8"),
+                ("bytes", "const void *", "array_of:size"),
+                ("size", "size_t", "")),
+            contains: ["public string? Name;", "public ReadOnlyMemory<byte> Bytes;"],
+            absent: ["sbyte*", "ReadOnlyMemory<void>", "Size;"]);
+
+        Expect("a sequence of borrowed structs encodes each utf8 field for the call and frees it after",
+            Vtable("ke_probe", Slot("declare", "uint64_t",
+                Param("decls", "const ke_probe_named *", "array_of:decl_count"),
+                Param("decl_count", "uint32_t"))),
+            contains: ["var declsTexts = new nint[decls.Length * 1];",
+                       "declsTexts[declsAt * 1 + 0] = Marshal.StringToCoTaskMemUTF8(decls[declsAt].Name);",
+                       "foreach (var declsText in declsTexts) Marshal.FreeCoTaskMem(declsText);"],
+            absent: [],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_named",
+                ["doc"] = null,
+                ["tags"] = new JsonArray((JsonNode)"borrowed"),
+                ["fields"] = new JsonArray(Param("name", "const char *", "utf8")),
+                ["slots"] = new JsonArray(),
+            }]);
+
+        Expect("a callback lane pointing at a vtable of the model hands the handler its class, borrowed",
+            Vtable("ke_probe", Slot("watch", "ke_result",
+                Param("on_event", "ke_probe_visit_fn", "closure:event_ctx"),
+                Param("event_ctx", "void *"))),
+            contains: ["public delegate void ProbeVisit(IProbeCursor cursor);",
+                       "handler(ProbeCursor.Borrow(arg0))"],
+            absent: ["ProbeVisit(nint cursor)"],
+            aliases: new() { ["ke_probe_visit_fn"] = "void (*)(ke_probe_cursor *, void *)" },
+            callbacks: [Callback("ke_probe_visit_fn", "void",
+                Param("cursor", "ke_probe_cursor *"), Param("ctx", "void *", "context"))],
+            vtables: [Vtable("ke_probe_cursor", Slot("next", "bool"))]);
+
         ExpectBorrowedStruct("a borrowed struct refuses a pointer nothing counts",
             BorrowedStruct("ke_probe_decl", ("terms", "const ke_probe_term *", "")),
             contains: [], absent: [],

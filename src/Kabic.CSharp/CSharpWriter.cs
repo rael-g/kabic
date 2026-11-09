@@ -102,6 +102,8 @@ public static class CSharpWriter
             {
                 var native = CsType(model, CTypes.Deref(s.Seq.Type), convention);
                 lines.Add($"{at}var {n}Pins = new System.Buffers.MemoryHandle[{n}.Length];");
+                if (BorrowedTexts(borrowed).Count > 0)
+                    lines.Add($"{at}var {n}Texts = new nint[{n}.Length * {BorrowedTexts(borrowed).Count}];");
                 lines.Add($"{at}var {n}Native = new {native}[{n}.Length];");
                 lines.Add($"{at}try");
                 lines.Add($"{at}{{");
@@ -139,13 +141,15 @@ public static class CSharpWriter
                 closers.Add(["}"]);
                 continue;
             }
-            if (BorrowedOf(model, s.Seq) is null) { closers.Add(["}"]); continue; }
+            if (BorrowedOf(model, s.Seq) is not { } borrowed) { closers.Add(["}"]); continue; }
 
             var n = Idioms.Ident(s.Seq.Name!);
-            closers.Add([
-                "}", "finally", "{",
-                $"    for (var {n}At = 0; {n}At < {n}Pins.Length; {n}At++) {n}Pins[{n}At].Dispose();",
-                "}"]);
+            var release = new List<string> { "}", "finally", "{",
+                $"    for (var {n}At = 0; {n}At < {n}Pins.Length; {n}At++) {n}Pins[{n}At].Dispose();" };
+            if (BorrowedTexts(borrowed).Count > 0)
+                release.Add($"    foreach (var {n}Text in {n}Texts) Marshal.FreeCoTaskMem({n}Text);");
+            release.Add("}");
+            closers.Add([.. release]);
             closers.Add(["}"]);
         }
         return closers;
@@ -185,13 +189,20 @@ public static class CSharpWriter
     static IEnumerable<string> BorrowedFill(ApiModel model, ApiStruct b, string n, Convention convention)
     {
         var at = $"{n}At";
+        var texts = BorrowedTexts(b);
         yield return $"for (var {at} = 0; {at} < {n}.Length; {at}++)";
         yield return "{";
         foreach (var f in b.Fields)
         {
             var native = $"{n}Native[{at}].{f.Name}";
             var mirror = $"{n}[{at}].{Idioms.Pascal(f.Name)}";
-            if (f.CountedBy is not null)
+            if (texts.IndexOf(f) is var text and >= 0)
+            {
+                var slot = $"{n}Texts[{at} * {texts.Count} + {text}]";
+                yield return $"    {slot} = Marshal.StringToCoTaskMemUTF8({mirror});";
+                yield return $"    {native} = ({CsType(model, f.Type, convention)}){slot};";
+            }
+            else if (f.CountedBy is not null)
             {
                 var count = b.Fields.First(x => x.Name == f.CountedBy);
                 yield return $"    {n}Pins[{at}] = {mirror}.Pin();";
@@ -203,6 +214,13 @@ public static class CSharpWriter
         }
         yield return "}";
     }
+
+    /// <summary>
+    /// The <c>[utf8]</c> fields of a <c>[borrowed]</c> struct, in declaration order: each is a
+    /// string the call encodes for its own length and frees when it returns.
+    /// </summary>
+    static List<ApiField> BorrowedTexts(ApiStruct b) =>
+        b.Fields.Where(f => CTypes.IsPointer(f.Type) && f.CountedBy is null && f.Has("utf8")).ToList();
 
     /// <summary>
     /// The element type a sequence parameter is spelled with. A <c>[value]</c> element
@@ -1047,6 +1065,12 @@ public static class CSharpWriter
         foreach (var f in s.Fields)
         {
             if (!CTypes.IsPointer(f.Type)) continue;
+            if (f.CountedBy is null && f.Has("utf8"))
+            {
+                if (!string.IsNullOrEmpty(f.Doc)) fields.Add($"    /// <summary>{Escape(f.Doc)}</summary>");
+                fields.Add($"    public string? {Idioms.Pascal(f.Name)};");
+                continue;
+            }
 
             var countName = f.CountedBy!;
             var count = s.Fields.First(x => x.Name == countName);
@@ -1073,7 +1097,8 @@ public static class CSharpWriter
             var named = StripQualifiers(CTypes.IsPointer(f.Type) ? CTypes.Deref(f.Type) : f.Type).Trim();
             if (convention.Project(Languages.CSharp, named) is not null) return false;
             return model.Enums.Any(e => e.Name == named && e.External)
-                || model.Structs.Any(v => v.Name == named && v.External);
+                || model.Structs.Any(v => v.Name == named && v.External)
+                || model.ForeignIdTypes.Contains(named);
         });
 
         var o = new List<string> { Header, "using System;" };
@@ -1120,7 +1145,8 @@ public static class CSharpWriter
     /// type whose fields are the other.
     /// </summary>
     static string ValueTypeName(ApiModel model, string cType, Convention convention) =>
-        convention.Project(Languages.CSharp, cType) is { } mat ? mat
+        cType.Trim() == "void" ? "byte"
+        : convention.Project(Languages.CSharp, cType) is { } mat ? mat
         : convention.Project(Languages.CSharp, cType) is { } handle ? handle
         : model.Structs.Any(v => v.Name == cType.Trim() && (IsValue(v) || IsBorrowed(v) || v.Has("view")))
         || model.Enums.Any(e => e.Name == cType.Trim())
@@ -1600,12 +1626,22 @@ public static class CSharpWriter
         return Idioms.CsForeignType(basis, convention) + new string('*', stars);
     }
 
+    /// <summary>
+    /// The vtable of this model a callback lane lends for the length of the call: the handler
+    /// receives the class that projects it, borrowed, never the pointer it arrived as.
+    /// </summary>
+    static ApiStruct? LentVtable(ApiModel model, ApiParam lane) =>
+        CTypes.IsPointer(lane.Type) && !CTypes.IsPointer(CTypes.Deref(lane.Type))
+        && Pointee(model, lane.Type) is { IsVtable: true, External: false } v && !v.Has("bag") && !v.Has("owner")
+        && model.Structs.Any(s => s.Slots.Count > 0 && s.Name == v.Name) ? v : null;
+
     /// <summary>How a lane is spelled in the delegate the caller implements.</summary>
     static bool IsOwnerLane(ApiParam lane, string owner, Convention convention) =>
         CTypes.IsPointer(lane.Type) && Idioms.TypeName(StripQualifiers(CTypes.Deref(lane.Type)).Trim(), convention) == owner;
 
     static string ManagedLane(ApiModel model, ApiParam lane, string selfType, Convention convention) =>
         IsOwnerLane(lane, selfType, convention) ? selfType
+        : LentVtable(model, lane) is { } lent ? "I" + Idioms.TypeName(lent.Name, convention)
         : CTypes.IsPointer(lane.Type) && !lane.Has("utf8") ? "nint"
         : lane.Has("utf8") ? "string"
         : IsBoolType(lane.Type, convention) ? "bool"
@@ -1979,6 +2015,8 @@ public static class CSharpWriter
             ? "state.Owner"
             : lanes[i].Has("utf8")
             ? $"Marshal.PtrToStringUTF8((nint)arg{i}) ?? \"\""
+            : LentVtable(model, lanes[i]) is { } lent
+            ? $"{Idioms.TypeName(lent.Name, convention)}.Borrow(arg{i})"
             : ManagedLane(model, lanes[i], group.Owner, convention) != BlittableLane(model, lanes[i].Type, convention)
                 ? $"({ManagedLane(model, lanes[i], group.Owner, convention)})arg{i}"
             : $"arg{i}"));
