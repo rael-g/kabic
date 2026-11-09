@@ -69,4 +69,17 @@ public class FactoriesTests
         Assert.Contains("return (handle, resources);", text);
         Assert.Contains("_handle = made.Handle; Resources = made.Resources;", text);
     }
+
+    [Fact]
+    public void The_contracts_of_a_struct_of_contracts_are_gathered_into_it_and_passed_once()
+    {
+        var runtime = new FactoryArgument("Runs it.", null, "runtime", "Probe.INativeRuntime", "context.Runtime = runtime.Native", false) { Bundle = ("context", "Probe.Native.ProbeContext") };
+        var device = new FactoryArgument("Draws it.", null, "device", "Probe.INativeDevice", "context.Device = device.Native", false) { Bundle = ("context", "Probe.Native.ProbeContext") };
+        var text = FactoriesExtension.Render(Standalone(runtime, device), ProbeConvention.Value);
+        Assert.Contains("Probe.Native.ProbeContext context = default;", text);
+        Assert.Contains("context.Runtime = runtime.Native;", text);
+        Assert.Contains("context.Device = device.Native;", text);
+        Assert.Contains("NativeMethods.probe_create(&context, &config, &handle)", text);
+    }
 }
+

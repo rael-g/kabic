@@ -288,6 +288,9 @@ public static class BindingsPlanner
             remaps.RemoveAll(r => r.StartsWith('?'));
             remaps.AddRange(foreignIds.Where(ownedIds.ContainsKey).Select(id => ownedIds[id]));
         }
+        foreach (var (job, remaps) in idiomatic)
+            foreach (var other in idiomatic.Where(o => o.Key != job && o.Key.Namespace == job.Namespace))
+                remaps.AddRange(other.Value.Where(r => !r.Contains("=global::") && job.Excludes.Contains(r.Split('=')[0].Split("::")[0]) && !remaps.Contains(r)));
         var renamed = idiomatic.Values.SelectMany(r => r).Select(r => r.Split('=', 2))
             .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).DistinctBy(r => r[0]).ToDictionary(r => r[0], r => r[1]);
         var contracts = jobs.Select(j => (Job: j, Spec: ContractSpec(j)))

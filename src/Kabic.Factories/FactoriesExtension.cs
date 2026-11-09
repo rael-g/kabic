@@ -38,6 +38,9 @@ public sealed record FactoryArgument(string? Doc, string? Field, string Name, st
     /// <summary>The C# literal the argument starts at when the caller leaves it out: its field's default, or null for zero.</summary>
     public string? Default { get; init; }
 
+    /// <summary>The local the argument is gathered into when the factory takes it as a field of a struct of contracts, with that struct's type; null otherwise.</summary>
+    public (string Local, string Type)? Bundle { get; init; }
+
     /// <summary>Whether the argument is a contract the factory requires.</summary>
     public bool IsRequiredProvider => ManagedType.Contains(".INative") && !ManagedType.EndsWith('?');
 
@@ -137,6 +140,8 @@ public sealed class FactoriesExtension : IKabicExtension
             }
             if (Dependency(context, param) is { } dependency)
                 arguments.Add(dependency);
+            else if (Bundle(context, param, model, job) is { } members)
+                arguments.AddRange(members);
             else if (param.Has("utf8") && CTypes.Unqualified(param.Type) == "char *")
                 arguments.Add(new FactoryArgument(param.Doc, null, Idioms.Ident(param.Name!), "string?", $"(sbyte*){Idioms.Ident(param.Name!)}Ptr", true));
             else if (model.Structs.FirstOrDefault(s => s.Name == Bare(param.Type)) is { } configStruct && param.Type.Contains('*'))
@@ -178,6 +183,25 @@ public sealed class FactoriesExtension : IKabicExtension
         return param.Has("optional") || param.Has("nullable")
             ? new FactoryArgument(param.Doc, null, name, iface + "?", $"({name} is null ? null : {name}.Native)", false)
             : new FactoryArgument(param.Doc, null, name, iface, $"{name}.Native", false);
+    }
+
+    private static IReadOnlyList<FactoryArgument>? Bundle(ExtensionContext context, ApiParam param, ApiModel model, BindingJob job)
+    {
+        var type = CTypes.Unqualified(param.Type);
+        if (!type.EndsWith('*')) return null;
+        var bundle = model.Structs.FirstOrDefault(s => s.Name == type.TrimEnd('*', ' ') && !s.IsVtable);
+        if (bundle is null || bundle.Fields.Count == 0) return null;
+        var members = bundle.Fields.Select(field => Dependency(context, new ApiParam(field.Name, field.Type, field.Tags, field.Doc))).ToList();
+        if (members.Any(m => m is null)) return null;
+        var local = Idioms.Ident(param.Name ?? "bundle");
+        var renamed = CSharpWriter.IsValue(bundle with { External = false });
+        var managed = $"{job.Namespace}.{(renamed ? Idioms.TypeName(bundle.Name, context.Convention) : bundle.Name)}";
+        return members.Zip(bundle.Fields, (m, field) => m! with
+        {
+            Field = null,
+            Assign = $"{local}.{(renamed ? Idioms.Pascal(field.Name) : field.Name)} = {m!.Assign}",
+            Bundle = (local, managed),
+        }).ToList();
     }
 
     private static FactoryArgument? Argument(ExtensionContext context, ApiField field, BindingJob job, ApiModel model)
@@ -224,7 +248,8 @@ public sealed class FactoriesExtension : IKabicExtension
             "float" when double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _) => v + "f",
             "double" when double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _) => v,
             "sbyte" or "byte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong" when long.TryParse(v, out _) => v,
-            var t when t.Contains('.') && !t.EndsWith('?') && !t.StartsWith("System.", StringComparison.Ordinal) =>
+            var t when t.Contains('.') && !t.EndsWith('?') && !t.StartsWith("System.", StringComparison.Ordinal)
+                && System.Text.RegularExpressions.Regex.IsMatch(v, "^-?[A-Za-z0-9_]+$") =>
                 long.TryParse(v, out _) ? $"({t}){v}" : $"{t}.{Idioms.EnumMember(v, CTypes.Unqualified(field.Type))}",
             _ => null,
         };
@@ -284,10 +309,15 @@ public sealed class FactoriesExtension : IKabicExtension
             foreach (var a in f.Arguments.Where(a => a.Field is not null))
                 o.Append($"{pad}config.{(CSharpWriter.IsValue(f.Config) ? Idioms.Pascal(a.Field!) : a.Field)} = {(a.IsString ? $"(sbyte*){a.Name}Ptr" : a.Assign)};\n");
         }
+        foreach (var group in f.Arguments.Where(a => a.Bundle is not null).GroupBy(a => a.Bundle!.Value))
+        {
+            o.Append($"{pad}{group.Key.Type} {group.Key.Local} = default;\n");
+            foreach (var a in group) o.Append($"{pad}{a.Assign};\n");
+        }
         o.Append($"{pad}{handle} handle;\n");
         foreach (var output in f.Outputs)
             o.Append($"{pad}{output.ManagedType} {Idioms.Ident(output.Property)} = default;\n");
-        var call = f.Arguments.Where(a => a.Field is null).Select(a => a.Assign).Concat(f.Config is null ? [] : ["&config"])
+        var call = f.Arguments.Where(a => a.Field is null).Select(a => a.Bundle is { } b ? $"&{b.Local}" : a.Assign).Distinct().Concat(f.Config is null ? [] : ["&config"])
             .Concat(f.Outputs.Select(output => $"&{Idioms.Ident(output.Property)}")).Append("&handle");
         o.Append($"{pad}{convention.ResultHelperClass}.ThrowIfFailed({f.Job.Namespace}.{f.Job.MethodsClass}.{convention.StripPrefix(f.Function.Name)}({string.Join(", ", call)}), \"{f.Function.Name}\");\n");
         o.Append(f.Outputs.Count == 0 ? $"{pad}return handle;\n" : $"{pad}return (handle, {string.Join(", ", f.Outputs.Select(output => Idioms.Ident(output.Property)))});\n");
