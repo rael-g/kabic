@@ -41,6 +41,9 @@ public sealed record FactoryArgument(string? Doc, string? Field, string Name, st
     /// <summary>The local the argument is gathered into when the factory takes it as a field of a struct of contracts, with that struct's type; null otherwise.</summary>
     public (string Local, string Type)? Bundle { get; init; }
 
+    /// <summary>Whether the caller must give the argument: a required contract, or a value with no default that null cannot stand for.</summary>
+    public bool IsRequired => IsRequiredProvider || (Default is null && !ManagedType.EndsWith('?') && !ManagedType.Contains(".INative"));
+
     /// <summary>Whether the argument is a contract the factory requires.</summary>
     public bool IsRequiredProvider => ManagedType.Contains(".INative") && !ManagedType.EndsWith('?');
 
@@ -327,14 +330,14 @@ public sealed class FactoriesExtension : IKabicExtension
     }
 
     /// <summary>
-    /// The constructor's parameter list. A scalar or a string starts at its field's default, or zero
-    /// without one, unless a required provider, which has no default, comes after it.
+    /// The constructor's parameter list. A value with a default starts at it, and a nullable one at
+    /// null, unless a required argument comes after it; a value with neither is required.
     /// </summary>
     public static string Parameters(Factory f, bool withDefaults = true)
     {
-        var lastProvider = f.Arguments.ToList().FindLastIndex(a => a.IsRequiredProvider);
+        var lastRequired = f.Arguments.ToList().FindLastIndex(a => a.IsRequired);
         return string.Join(", ", f.Arguments.Select((a, i) =>
-            $"{a.ManagedType} {a.Name}{(withDefaults && i > lastProvider ? $" = {a.Default ?? "default"}" : "")}"));
+            $"{a.ManagedType} {a.Name}{(withDefaults && i > lastRequired ? $" = {a.Default ?? "default"}" : "")}"));
     }
 
     /// <summary>The native handle type the factory fills.</summary>
