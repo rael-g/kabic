@@ -323,6 +323,12 @@ public static class CSharpWriter
 
     static string StripQualifiers(string cType) => CTypes.Unqualified(cType);
 
+    /// <summary>Whether <paramref name="f"/> is a fixed array of <c>char</c>, projected as a string under the field's own name.</summary>
+    public static bool IsText(ApiField f) => CTypes.FixedArray(f.Type) is { } a && StripQualifiers(a.Element).Trim() == "char";
+
+    /// <summary>The C# name of a value struct's field: a text field's raw bytes carry the suffix <c>Bytes</c>, leaving the plain name to its string.</summary>
+    public static string FieldName(ApiField f) => IsText(f) ? Idioms.Pascal(f.Name) + "Bytes" : Idioms.Pascal(f.Name);
+
     /// <summary>
     /// A C type mapped to C#. Typedef aliases resolve first; pointers recurse so
     /// `const`/`struct` qualifiers are dropped and the pointee receives the same
@@ -762,7 +768,7 @@ public static class CSharpWriter
     /// </summary>
     public static string? RenderText(ApiStruct s, string ns, IEnumerable<string> usings, Convention convention)
     {
-        var texts = s.Fields.Where(f => CTypes.FixedArray(f.Type) is { } a && StripQualifiers(a.Element).Trim() == "char").ToList();
+        var texts = s.Fields.Where(IsText).ToList();
         if (texts.Count == 0) return null;
         var typeName = Idioms.TypeName(s.Name, convention);
         var o = new List<string> { Header };
@@ -773,10 +779,10 @@ public static class CSharpWriter
         {
             var name = Idioms.Pascal(f.Name);
             var extent = CTypes.FixedArray(f.Type)!.Value.Extent;
-            var bytes = $"System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref self.{name}.e0, {extent}))";
+            var bytes = $"System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref self.{FieldName(f)}.e0, {extent}))";
             o.AddRange([
                 $"    /// <summary><c>{f.Name}</c> as text.</summary>",
-                $"    public string {name}Text",
+                $"    public string {name}",
                 "    {",
                 "        get",
                 "        {",

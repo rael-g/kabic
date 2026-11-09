@@ -223,8 +223,8 @@ internal static class GeneratorShapeCases
         {
             var s = new ApiStruct("ke_probe_label", null, [], [new ApiField("text", "char [16]", [], null)], []);
             var emitted = CSharpWriter.RenderText(s, "Probe", [], ProbeConvention.Value) ?? "";
-            foreach (var needle in new[] { "extension(ref ProbeLabel self)", "public string TextText",
-                         "CreateSpan(ref self.Text.e0, 16)", "bytes.IndexOf((byte)0)", "bytes.Length - 1" })
+            foreach (var needle in new[] { "extension(ref ProbeLabel self)", "public string Text",
+                         "CreateSpan(ref self.TextBytes.e0, 16)", "bytes.IndexOf((byte)0)", "bytes.Length - 1" })
                 if (!emitted.Contains(needle, StringComparison.Ordinal))
                     failures.Add($"fixed char text: expected to find \"{needle}\"");
         });

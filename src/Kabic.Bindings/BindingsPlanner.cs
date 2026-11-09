@@ -372,7 +372,7 @@ public static class BindingsPlanner
         foreach (var s in model.Structs.Where(CSharpWriter.IsValue).Where(s => convention.TypeMap.GetValueOrDefault(Languages.CSharp)?.ContainsKey(s.Name) != true))
         {
             yield return $"{s.Name}={Idioms.TypeName(s.Name, convention)}";
-            foreach (var f in s.Fields) yield return $"{s.Name}::{f.Name}={Idioms.Pascal(f.Name)}";
+            foreach (var f in s.Fields) yield return $"{s.Name}::{f.Name}={CSharpWriter.FieldName(f)}";
         }
     }
 }
