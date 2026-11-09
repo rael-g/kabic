@@ -698,6 +698,7 @@ public static class CSharpWriter
     {
         if (!CTypes.IsPointer(cType)) return null;
         if (Pointee(model, cType) is not { } target) return "nint";
+        if (Lendable(model, target)) return "I" + Idioms.TypeName(target.Name, convention);
         if (HasInterface(model, target)) return Idioms.NativeInterface(target.Name, convention);
         return ByValue(cType, target) ? Idioms.TypeName(target.Name, convention) : "nint";
     }
@@ -709,6 +710,14 @@ public static class CSharpWriter
     static ApiStruct? ByReference(ApiModel model, ApiParam p) =>
         p.Has("inout") && CTypes.IsPointer(p.Type) && !CType.Of(p.Type).Const
         && Pointee(model, p.Type) is { } target && IsPlain(target) ? target : null;
+
+    /// <summary>
+    /// A vtable this model only borrows, which another domain lends as a class: a slot takes it as
+    /// that class's contract, the one a caller already holds, and reaches the pointer through it.
+    /// </summary>
+    static bool Lendable(ApiModel model, ApiStruct target) =>
+        target.IsVtable && target.External && !target.Has("bag") && model.OwnerOf(target.Name) is null
+        && target.Has("lent");
 
     static bool HasInterface(ApiModel model, ApiStruct target) =>
         target.IsVtable && !target.Has("bag") && (target.External || model.OwnerOf(target.Name) is not null);
@@ -723,7 +732,8 @@ public static class CSharpWriter
         if (IsOptionalValue(model, p))
             return $"{name}.HasValue ? ({native})Unsafe.AsPointer(ref Unsafe.AsRef(in Nullable.GetValueRefOrDefaultRef(in {name}))) : null";
         return Pointee(model, p.Type) is { } target
-            ? HasInterface(model, target) ? $"{name}.Native"
+            ? Lendable(model, target) ? $"(({Idioms.NativeInterface(target.Name, convention)}){name}).Native"
+            : HasInterface(model, target) ? $"{name}.Native"
             : ByReference(model, p) is not null ? $"({native})Unsafe.AsPointer(ref {name})"
             : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
             : $"({native}){name}";
@@ -1162,6 +1172,19 @@ public static class CSharpWriter
         o.Add($"public partial struct {Idioms.TypeName(s.Name, convention)}");
         o.Add("{");
         o.AddRange(fields);
+        var bytes = s.Fields.Where(f => f.CountedBy is not null && StripQualifiers(CTypes.Deref(f.Type)).Trim() == "void").ToList();
+        if (bytes is [var blob])
+        {
+            var others = s.Fields.Where(f => f != blob && !counts.Contains(f.Name)).ToList();
+            string Spelled(ApiField f) => CTypes.IsPointer(f.Type) && f.Has("utf8") && f.CountedBy is null ? "string?" : ValueFieldType(model, s, f, convention);
+            var ps = others.Select(f => $"{Spelled(f)} {Idioms.Ident(f.Name)}").Append($"T {Idioms.Ident(blob.Name)}");
+            var sets = others.Select(f => $"{Idioms.Pascal(f.Name)} = {Idioms.Ident(f.Name)}")
+                .Append($"{Idioms.Pascal(blob.Name)} = System.Runtime.InteropServices.MemoryMarshal.AsBytes(new[] {{ {Idioms.Ident(blob.Name)} }}.AsSpan()).ToArray()");
+            o.Add("");
+            o.Add($"    /// <summary>The entry whose {blob.Name} is the bytes of <paramref name=\"{Idioms.Ident(blob.Name)}\"/>.</summary>");
+            o.Add($"    public static {Idioms.TypeName(s.Name, convention)} Of<T>({string.Join(", ", ps)}) where T : unmanaged =>");
+            o.Add($"        new() {{ {string.Join(", ", sets)} }};");
+        }
         o.Add("}");
         o.Add("");
         return string.Join('\n', o);

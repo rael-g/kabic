@@ -433,6 +433,15 @@ internal static class GeneratorShapeCases
             if (emitted.Contains("value.Count", StringComparison.Ordinal)) failures.Add("a zero the initializer leaves out is assigned");
         });
 
+        ExpectBorrowedStruct("a borrowed struct carrying bytes is built from a value through Of",
+            BorrowedStruct("ke_probe_given",
+                ("cid", "uint32_t", ""),
+                ("data", "const void *", "array_of:size"),
+                ("size", "size_t", "")),
+            contains: ["public static ProbeGiven Of<T>(uint cid, T data) where T : unmanaged =>",
+                       "new() { Cid = cid, Data = System.Runtime.InteropServices.MemoryMarshal.AsBytes(new[] { data }.AsSpan()).ToArray() };"],
+            absent: []);
+
         ExpectBorrowedStruct("a borrowed struct holds a utf8 field as a string",
             BorrowedStruct("ke_probe_named",
                 ("name", "const char *", "utf8"),
