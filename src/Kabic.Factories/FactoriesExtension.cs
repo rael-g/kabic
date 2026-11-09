@@ -20,7 +20,14 @@ public sealed record Factory(
     string? ContractClass,
     string ClassName,
     string HandleType,
-    IReadOnlyList<FactoryArgument> Arguments);
+    IReadOnlyList<FactoryArgument> Arguments)
+{
+    /// <summary>The values the factory writes through an <c>[out]</c> before its handle, each a read-only property of the class.</summary>
+    public IReadOnlyList<FactoryOutput> Outputs { get; init; } = [];
+}
+
+/// <summary>A value a factory writes through an <c>[out]</c> parameter besides its handle, as the property it becomes.</summary>
+public sealed record FactoryOutput(string? Doc, string Property, string ManagedType);
 
 /// <summary>
 /// A dependency or a [utf8] string of a factory, or a field of its config struct, as the constructor argument it
@@ -103,9 +110,26 @@ public sealed class FactoriesExtension : IKabicExtension
             return null;
         }
         var arguments = new List<FactoryArgument>();
+        var outputs = new List<FactoryOutput>();
         ApiStruct? config = null;
         foreach (var param in function.Params.Take(function.Params.Count - 1))
         {
+            if (param.Has("out"))
+            {
+                var pointee = CTypes.Unqualified(param.Type).TrimEnd('*', ' ');
+                if ((context.Convention.Project(Languages.CSharp, pointee) ?? ValueStruct(context, pointee)) is not { } projected)
+                {
+                    context.Report($"factories: {function.Name}'s {param.Name} ({param.Type}) has no projection; it is not projected");
+                    return null;
+                }
+                outputs.Add(new FactoryOutput(param.Doc, Idioms.Pascal(convention.StripPrefix(param.Name!).StartsWith("out_", StringComparison.Ordinal) ? param.Name![4..] : param.Name!), projected));
+                continue;
+            }
+            if (outputs.Count > 0)
+            {
+                context.Report($"factories: {function.Name} takes {param.Name} after an out; it is not projected");
+                return null;
+            }
             if (config is not null)
             {
                 context.Report($"factories: {function.Name} takes {param.Name} after its config; it is not projected");
@@ -139,7 +163,7 @@ public sealed class FactoriesExtension : IKabicExtension
         var managedNamespace = job.Namespace.EndsWith(".Native", StringComparison.Ordinal) ? job.Namespace[..^".Native".Length] : job.Namespace;
         return new Factory(job, projectDir, managedNamespace, function, config, contract,
             contract is null ? null : $"{contract.Spec.Namespace}.{contractClass}",
-            contract is null ? Idioms.TypeName(bareName, convention) : Idioms.Pascal(plugin) + contractClass, handleType, arguments);
+            contract is null ? Idioms.TypeName(bareName, convention) : Idioms.Pascal(plugin) + contractClass, handleType, arguments) { Outputs = outputs };
     }
 
     private static FactoryArgument? Dependency(ExtensionContext context, ApiParam param)
@@ -176,11 +200,19 @@ public sealed class FactoriesExtension : IKabicExtension
         var owner = context.Domains.FirstOrDefault(d => d.Model.Enums.Any(e => e.Name == type));
         return new FactoryArgument(field.Doc, field.Name, name,
             context.Convention.Project(Languages.CSharp, type) is { } projected ? projected
+            : ValueStruct(context, type) is { } value ? value
             : model.Enums.Any(e => e.Name == type && !e.External) ? $"{job.Namespace}.{Idioms.TypeName(type, context.Convention)}"
             : owner is null ? Idioms.CsPrimitive(type, context.Convention) : $"{owner.Spec.NativeNamespace[..^".Native".Length]}.{Idioms.TypeName(type, context.Convention)}", name, false);
     }
 
     private static string Bare(string cType) => CType.Of(cType).Name;
+
+    private static string? ValueStruct(ExtensionContext context, string cType)
+    {
+        var name = CTypes.Unqualified(cType);
+        var domain = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == name && !s.External && CSharpWriter.IsValue(s)));
+        return domain is null ? null : $"{domain.Spec.Namespace}.{Idioms.TypeName(name, context.Convention)}";
+    }
 
     private static string? DefaultLiteral(ApiField field, string managedType)
     {
@@ -212,19 +244,31 @@ public sealed class FactoriesExtension : IKabicExtension
         o.Append($"    /// <summary>{Xml(f.Function.Doc)}</summary>\n");
         foreach (var a in f.Arguments)
             o.Append($"    /// <param name=\"{a.Name}\">{Xml(a.Doc)}</param>\n");
-        var handle = f.Contract is null ? $"{f.Job.Namespace}.{f.HandleType}" : $"{f.Contract.Spec.NativeNamespace}.{f.HandleType}";
+        var handle = HandleTypeName(f);
+        var created = CreatedType(f);
         var holds = string.Concat(f.Arguments.Where(a => a.IsRequiredProvider || a.IsOptionalProvider)
             .Select(a => $"        Hold({a.Name}{(a.IsOptionalProvider ? "?" : "")}.Owner);\n"));
+        foreach (var output in f.Outputs)
+            o.Append($"    /// <summary>{Xml(output.Doc)}</summary>\n    public {output.ManagedType} {output.Property} {{ get; }}\n\n");
+        var keep = string.Concat(f.Outputs.Select(output => $" {output.Property} = made.{output.Property};"));
         if (f.Contract is null)
         {
             o.Append($"    public {f.ClassName}({Parameters(f)}) : this(Create({Names(f)}))\n    {{\n{holds}    }}\n\n");
-            o.Append($"    private {handle} _handle;\n\n    private readonly List<{convention.OwnerClass}> _held = new();\n\n    private {f.ClassName}({handle} handle) => _handle = handle;\n\n");
+            o.Append($"    private {handle} _handle;\n\n    private readonly List<{convention.OwnerClass}> _held = new();\n\n");
+            o.Append(f.Outputs.Count == 0
+                ? $"    private {f.ClassName}({handle} handle) => _handle = handle;\n\n"
+                : $"    private {f.ClassName}({created} made)\n    {{\n        _handle = made.Handle;{keep}\n    }}\n\n");
             o.Append($"    private void Hold({convention.OwnerClass}? owner)\n    {{\n        if (owner is null) return;\n        var added = false;\n        owner.DangerousAddRef(ref added);\n        _held.Add(owner);\n    }}\n\n");
             o.Append("    /// <summary>Releases the native object, then what it held.</summary>\n    public void Dispose()\n    {\n        if (_handle.@ref == null) return;\n        _handle.destroy(_handle.@ref);\n        _handle = default;\n        foreach (var held in _held) held.DangerousRelease();\n        _held.Clear();\n    }\n\n");
         }
-        else
+        else if (f.Outputs.Count == 0)
             o.Append($"    public {f.ClassName}({Parameters(f)}) : base(Create({Names(f)}))\n    {{\n{holds}    }}\n\n");
-        o.Append($"    private static {handle} Create({Parameters(f, withDefaults: false)})\n    {{\n");
+        else
+        {
+            o.Append($"    public {f.ClassName}({Parameters(f)}) : this(Create({Names(f)}))\n    {{\n{holds}    }}\n\n");
+            o.Append($"    private {f.ClassName}({created} made) : base(made.Handle)\n    {{\n       {keep}\n    }}\n\n");
+        }
+        o.Append($"    private static {created} Create({Parameters(f, withDefaults: false)})\n    {{\n");
         foreach (var a in f.Arguments.Where(a => a.IsRequiredProvider))
             o.Append($"        ArgumentNullException.ThrowIfNull({a.Name});\n");
         foreach (var a in f.Arguments.Where(a => a.IsString))
@@ -241,9 +285,12 @@ public sealed class FactoriesExtension : IKabicExtension
                 o.Append($"{pad}config.{(CSharpWriter.IsValue(f.Config) ? Idioms.Pascal(a.Field!) : a.Field)} = {(a.IsString ? $"(sbyte*){a.Name}Ptr" : a.Assign)};\n");
         }
         o.Append($"{pad}{handle} handle;\n");
-        var call = f.Arguments.Where(a => a.Field is null).Select(a => a.Assign).Concat(f.Config is null ? [] : ["&config"]).Append("&handle");
+        foreach (var output in f.Outputs)
+            o.Append($"{pad}{output.ManagedType} {Idioms.Ident(output.Property)} = default;\n");
+        var call = f.Arguments.Where(a => a.Field is null).Select(a => a.Assign).Concat(f.Config is null ? [] : ["&config"])
+            .Concat(f.Outputs.Select(output => $"&{Idioms.Ident(output.Property)}")).Append("&handle");
         o.Append($"{pad}{convention.ResultHelperClass}.ThrowIfFailed({f.Job.Namespace}.{f.Job.MethodsClass}.{convention.StripPrefix(f.Function.Name)}({string.Join(", ", call)}), \"{f.Function.Name}\");\n");
-        o.Append($"{pad}return handle;\n");
+        o.Append(f.Outputs.Count == 0 ? $"{pad}return handle;\n" : $"{pad}return (handle, {string.Join(", ", f.Outputs.Select(output => Idioms.Ident(output.Property)))});\n");
         if (strings) o.Append("        }\n");
         o.Append("    }\n}\n");
         return o.ToString();
@@ -259,6 +306,17 @@ public sealed class FactoriesExtension : IKabicExtension
         return string.Join(", ", f.Arguments.Select((a, i) =>
             $"{a.ManagedType} {a.Name}{(withDefaults && i > lastProvider ? $" = {a.Default ?? "default"}" : "")}"));
     }
+
+    /// <summary>The native handle type the factory fills.</summary>
+    public static string HandleTypeName(Factory f) =>
+        f.Contract is null ? $"{f.Job.Namespace}.{f.HandleType}" : $"{f.Contract.Spec.NativeNamespace}.{f.HandleType}";
+
+    /// <summary>What <c>Create</c> returns: the handle, or a tuple of the handle and each output when the factory has any.</summary>
+    public static string CreatedType(Factory f) =>
+        f.Outputs.Count == 0 ? HandleTypeName(f) : $"({HandleTypeName(f)} Handle, {string.Join(", ", f.Outputs.Select(o => $"{o.ManagedType} {o.Property}"))})";
+
+    /// <summary>Whether the public constructor chains to the private one of the class rather than to its contract's class.</summary>
+    public static bool ChainsThroughThis(Factory f) => f.Contract is null || f.Outputs.Count > 0;
 
     /// <summary>The constructor's argument names, in order.</summary>
     public static string Names(Factory f) => string.Join(", ", f.Arguments.Select(a => a.Name));

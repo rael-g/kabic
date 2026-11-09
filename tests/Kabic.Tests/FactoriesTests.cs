@@ -58,4 +58,15 @@ public class FactoriesTests
         var f = Standalone(Depth, Pool, Name);
         Assert.Equal("uint depth, Probe.INativePool pool, string? name = default", FactoriesExtension.Parameters(f));
     }
+
+    [Fact]
+    public void An_out_before_the_handle_is_written_by_the_call_and_kept_as_a_property()
+    {
+        var f = Standalone(Pool) with { Outputs = [new FactoryOutput("The ids it writes.", "Resources", "Probe.ProbeResources")] };
+        var text = FactoriesExtension.Render(f, ProbeConvention.Value);
+        Assert.Contains("public Probe.ProbeResources Resources { get; }", text);
+        Assert.Contains("NativeMethods.probe_create(pool.Native, &config, &resources, &handle)", text);
+        Assert.Contains("return (handle, resources);", text);
+        Assert.Contains("_handle = made.Handle; Resources = made.Resources;", text);
+    }
 }
