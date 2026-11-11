@@ -154,6 +154,9 @@ public sealed class FactoriesExtension : IKabicExtension
                 arguments.AddRange(members);
             else if (param.Has("utf8") && CTypes.Unqualified(param.Type) == "char *")
                 arguments.Add(new FactoryArgument(param.Doc, null, Idioms.Ident(param.Name!), "string?", $"(sbyte*){Idioms.Ident(param.Name!)}Ptr", true));
+            else if (model.Structs.Any(s => s.Name == Bare(param.Type)) && param.Type.Contains('*') && LaterStruct(model, function, param)
+                     && (context.Convention.Project(Languages.CSharp, Bare(param.Type)) ?? ValueStruct(context, Bare(param.Type))) is { } valueType)
+                arguments.Add(new FactoryArgument(param.Doc, null, Idioms.Ident(param.Name!), valueType, $"&{Idioms.Ident(param.Name!)}", false));
             else if (model.Structs.FirstOrDefault(s => s.Name == Bare(param.Type)) is { } configStruct && param.Type.Contains('*'))
             {
                 config = configStruct;
@@ -350,6 +353,9 @@ public sealed class FactoriesExtension : IKabicExtension
     /// <summary>The native handle type the factory fills.</summary>
     public static string HandleTypeName(Factory f) =>
         f.Contract is null ? $"{f.Job.Namespace}.{f.HandleType}" : $"{f.HandleNamespace ?? f.Contract.Spec.NativeNamespace}.{f.HandleType}";
+
+    private static bool LaterStruct(ApiModel model, ApiFunction function, ApiParam param) =>
+        function.Params.SkipWhile(p => p != param).Skip(1).Any(p => !p.Has("out") && p.Type.Contains('*') && model.Structs.Any(s => s.Name == Bare(p.Type)));
 
     private static string? ConfigHome(IEnumerable<BindingJob> jobs, Factory f)
     {
