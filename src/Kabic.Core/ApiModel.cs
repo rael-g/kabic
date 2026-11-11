@@ -327,16 +327,6 @@ public class ApiModel
             : owners.FirstOrDefault();
     }
 
-    /// <summary>The function that makes the owner of <paramref name="vtable"/>, or null. Fails when two do.</summary>
-    public ApiFunction? FactoryOf(string vtable)
-    {
-        if (OwnerOf(vtable) is not { } owner) return null;
-        var factories = Functions.Where(f => Makes(f) == owner.Name).ToList();
-        return factories.Count > 1
-            ? throw new InvalidOperationException($"{owner.Name} has two factories: {string.Join(", ", factories.Select(f => f.Name))}")
-            : factories.FirstOrDefault();
-    }
-
     /// <summary>The <c>[owner]</c> struct <paramref name="function"/> returns or writes through a last <c>[out]</c>, or null.</summary>
     public string? Makes(ApiFunction function)
     {

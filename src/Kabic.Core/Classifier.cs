@@ -76,15 +76,13 @@ public record ClassifiedSlot(ApiSlot Slot, SlotShape Shape, bool Fallible, ApiPa
 }
 
 /// <summary>
-/// How a provider is constructed: from a factory function, from a handle struct, or not at all.
+/// How a provider is constructed: from the owner handle a factory wrote, or not at all; a factory
+/// itself is an implementation of the provider, projected beside it.
 /// </summary>
-public enum ConstructorKind { FromFactory, FromHandle, None }
+public enum ConstructorKind { FromHandle, None }
 
-/// <summary>
-/// The construction plan of one provider: the factory or handle struct it uses, and whether the
-/// factory needs a wrapper.
-/// </summary>
-public record ConstructorPlan(ConstructorKind Kind, ApiFunction? Factory, string? HandleTypeName, bool NeedsWrapper);
+/// <summary>The construction plan of one provider: the owner handle struct it wraps, if any.</summary>
+public record ConstructorPlan(ConstructorKind Kind, string? HandleTypeName);
 
 /// <summary>
 /// The roles <see cref="Classifier"/> assigns to the declarations of one model, each keyed by name.
@@ -180,18 +178,10 @@ public static class Classifier
 
         foreach (var v in result.Providers)
         {
-            var factory = model.FactoryOf(v.Name);
-            if (factory is not null)
-            {
-                var fparams = convention.FactoryInputs(model, factory);
-                result.Constructors[v.Name] = new ConstructorPlan(ConstructorKind.FromFactory, factory, null,
-                    NeedsWrapper: fparams.Any(p => CTypes.IsPointer(p.Type)));
-                continue;
-            }
             var handleType = model.OwnerOf(v.Name)?.Name;
             result.Constructors[v.Name] = handleType is not null
-                ? new ConstructorPlan(ConstructorKind.FromHandle, null, handleType, NeedsWrapper: false)
-                : new ConstructorPlan(ConstructorKind.None, null, null, NeedsWrapper: false);
+                ? new ConstructorPlan(ConstructorKind.FromHandle, handleType)
+                : new ConstructorPlan(ConstructorKind.None, null);
         }
 
         foreach (var fn in model.Functions.Where(f => model.Makes(f) is null))

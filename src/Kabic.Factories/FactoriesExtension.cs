@@ -22,6 +22,15 @@ public sealed record Factory(
     string HandleType,
     IReadOnlyList<FactoryArgument> Arguments)
 {
+    /// <summary>
+    /// The managed mirror of a config the factory's own header declares, which no domain projects, as
+    /// the source the class's project gets beside it; null when a domain projects the config.
+    /// </summary>
+    public string? ConfigMirror { get; init; }
+
+    /// <summary>Whether <c>Create</c> rebuilds the native config field by field rather than passing the mirror's bytes.</summary>
+    public bool RebuildsConfig => Config is not null && (ConfigMirror is not null || CSharpWriter.IsBorrowed(Config));
+
     /// <summary>The values the factory writes through an <c>[out]</c> before its handle, each a read-only property of the class.</summary>
     public IReadOnlyList<FactoryOutput> Outputs { get; init; } = [];
 
@@ -52,6 +61,9 @@ public sealed record FactoryArgument(string? Doc, string? Field, string Name, st
 
     /// <summary>Whether the argument is a contract the factory requires.</summary>
     public bool IsRequiredProvider => ManagedType.Contains(".INative") && !ManagedType.EndsWith('?');
+
+    /// <summary>Whether the argument is the factory's config struct, passed as its managed mirror.</summary>
+    public bool IsConfig { get; init; }
 
     /// <summary>Whether the argument is a contract the factory takes when there is one.</summary>
     public bool IsOptionalProvider => ManagedType.Contains(".INative") && ManagedType.EndsWith('?');
@@ -93,7 +105,12 @@ public sealed class FactoriesExtension : IKabicExtension
     public void Run(ExtensionContext context)
     {
         foreach (var f in Read(context))
-            context.Emit(Path.Combine(Path.GetRelativePath(context.Root, f.ProjectDir), "Generated", $"{f.ClassName}.g.cs").Replace('\\', '/'), Render(f, context.Convention));
+        {
+            var generated = Path.Combine(Path.GetRelativePath(context.Root, f.ProjectDir), "Generated");
+            context.Emit(Path.Combine(generated, $"{f.ClassName}.g.cs").Replace('\\', '/'), Render(f, context.Convention));
+            if (f.ConfigMirror is not null)
+                context.Emit(Path.Combine(generated, $"{Idioms.TypeName(f.Config!.Name, context.Convention)}.g.cs").Replace('\\', '/'), f.ConfigMirror);
+        }
     }
 
     private static IEnumerable<Factory> Of(ExtensionContext context, BindingJob job)
@@ -125,6 +142,8 @@ public sealed class FactoriesExtension : IKabicExtension
         var arguments = new List<FactoryArgument>();
         var outputs = new List<FactoryOutput>();
         ApiStruct? config = null;
+        string? configMirror = null;
+        var managedNamespace = job.Namespace.EndsWith(".Native", StringComparison.Ordinal) ? job.Namespace[..^".Native".Length] : job.Namespace;
         foreach (var param in function.Params.Take(function.Params.Count - 1))
         {
             if (param.Has("out"))
@@ -160,11 +179,20 @@ public sealed class FactoriesExtension : IKabicExtension
             else if (model.Structs.FirstOrDefault(s => s.Name == Bare(param.Type)) is { } configStruct && param.Type.Contains('*'))
             {
                 config = configStruct;
-                foreach (var field in configStruct.Fields)
+                var mirror = context.Convention.Project(Languages.CSharp, configStruct.Name) ?? ValueStruct(context, configStruct.Name);
+                if (mirror is null && CSharpWriter.IsValue(configStruct) && GeneratedNamespace(context, Idioms.TypeName(configStruct.Name, context.Convention)) is { } valueNamespace)
+                    mirror = $"{valueNamespace}.{Idioms.TypeName(configStruct.Name, context.Convention)}";
+                if (mirror is null && !configStruct.External)
                 {
-                    if (Argument(context, field, job, model) is { } argument) arguments.Add(argument with { Default = DefaultLiteral(field, argument.ManagedType) });
-                    else context.Report($"factories: {configStruct.Name}.{field.Name} ({field.Type}) has no projection");
+                    configMirror = CSharpWriter.RenderBorrowed(model, configStruct, managedNamespace, [job.Namespace], context.Convention);
+                    mirror = $"{managedNamespace}.{Idioms.TypeName(configStruct.Name, context.Convention)}";
                 }
+                if (mirror is null)
+                {
+                    context.Report($"factories: {function.Name}'s config {configStruct.Name} is neither a value nor a [borrowed] struct; it is not projected");
+                    return null;
+                }
+                arguments.Add(new FactoryArgument(param.Doc, null, Idioms.Ident(param.Name!), mirror, "&nativeConfig", false) { IsConfig = true });
             }
             else
             {
@@ -178,10 +206,9 @@ public sealed class FactoriesExtension : IKabicExtension
         var contractStem = convention.StripPrefix(contractName ?? bareName);
         var plugin = stem == contractStem ? "default" : stem.StartsWith(contractStem + "_", StringComparison.Ordinal) ? stem[(contractStem.Length + 1)..] : stem;
         var projectDir = Path.GetDirectoryName(job.NativeDir.TrimEnd('/', '\\'))!;
-        var managedNamespace = job.Namespace.EndsWith(".Native", StringComparison.Ordinal) ? job.Namespace[..^".Native".Length] : job.Namespace;
         return new Factory(job, projectDir, managedNamespace, function, config, contract,
             contract is null ? null : $"{contract.Spec.Namespace}.{contractClass}",
-            contract is null ? Idioms.TypeName(bareName, convention) : Idioms.Pascal(plugin) + contractClass, handleType, arguments) { Outputs = outputs };
+            contract is null ? Idioms.TypeName(bareName, convention) : Idioms.Pascal(plugin) + contractClass, handleType, arguments) { Outputs = outputs, ConfigMirror = configMirror };
     }
 
     private static FactoryArgument? Dependency(ExtensionContext context, ApiParam param)
@@ -247,8 +274,22 @@ public sealed class FactoriesExtension : IKabicExtension
     private static string? ValueStruct(ExtensionContext context, string cType)
     {
         var name = CTypes.Unqualified(cType);
-        var domain = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == name && !s.External && CSharpWriter.IsValue(s)));
-        return domain is null ? null : $"{domain.Spec.Namespace}.{Idioms.TypeName(name, context.Convention)}";
+        var domain = context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == name && !s.External && (CSharpWriter.IsValue(s) || CSharpWriter.IsBorrowed(s))));
+        if (domain is null) return null;
+        var typeName = Idioms.TypeName(name, context.Convention);
+        return GeneratedNamespace(context, typeName) is { } ns ? $"{ns}.{typeName}" : $"{domain.Spec.Namespace}.{typeName}";
+    }
+
+    private static string? GeneratedNamespace(ExtensionContext context, string typeName)
+    {
+        var projects = global::Kabic.Bindings.BindingsPlanner.Plan(context.Root, context.ManifestPath)
+            .Select(j => Path.GetDirectoryName(j.NativeDir.TrimEnd('/', '\\'))!).Distinct();
+        var file = projects.Where(Directory.Exists)
+            .SelectMany(p => Directory.EnumerateFiles(p, typeName + ".cs", SearchOption.AllDirectories))
+            .FirstOrDefault();
+        if (file is null) return null;
+        var line = File.ReadLines(file).FirstOrDefault(l => l.StartsWith("namespace ", StringComparison.Ordinal));
+        return line?["namespace ".Length..].TrimEnd(';', ' ');
     }
 
     private static string? DefaultLiteral(ApiField field, string managedType)
@@ -309,18 +350,30 @@ public sealed class FactoriesExtension : IKabicExtension
         o.Append($"    private static {created} Create({Parameters(f, withDefaults: false)})\n    {{\n");
         foreach (var a in f.Arguments.Where(a => a.IsRequiredProvider))
             o.Append($"        ArgumentNullException.ThrowIfNull({a.Name});\n");
-        foreach (var a in f.Arguments.Where(a => a.IsString))
-            o.Append($"        var {a.Name}Bytes = {a.Name} is null ? null : System.Text.Encoding.UTF8.GetBytes({a.Name} + \"\\0\");\n");
-        foreach (var a in f.Arguments.Where(a => a.IsString))
-            o.Append($"        fixed (byte* {a.Name}Ptr = {a.Name}Bytes)\n");
-        var strings = f.Arguments.Any(a => a.IsString);
+        var configArgument = f.Arguments.FirstOrDefault(a => a.IsConfig);
+        var configStrings = configArgument is not null && f.RebuildsConfig && f.Config is { } rebuilt
+            ? rebuilt.Fields.Where(x => x.Has("utf8") && CTypes.IsPointer(x.Type)).Select(x => (Field: x, Local: Idioms.Ident(x.Name) + "Config", Value: $"{configArgument.Name}.{Idioms.Pascal(x.Name)}")).ToList()
+            : [];
+        var pinned = f.Arguments.Where(a => a.IsString).Select(a => (Local: a.Name, Value: a.Name)).Concat(configStrings.Select(x => (x.Local, x.Value))).ToList();
+        foreach (var (local, value) in pinned)
+            o.Append($"        var {local}Bytes = {value} is null ? null : System.Text.Encoding.UTF8.GetBytes({value} + \"\\0\");\n");
+        foreach (var (local, _) in pinned)
+            o.Append($"        fixed (byte* {local}Ptr = {local}Bytes)\n");
+        var strings = pinned.Count > 0;
         var pad = strings ? "            " : "        ";
         if (strings) o.Append("        {\n");
-        if (f.Config is not null)
+        if (configArgument is not null && f.Config is not null)
         {
-            o.Append($"{pad}{f.ConfigNamespace ?? f.Job.Namespace}.{(CSharpWriter.IsValue(f.Config) ? Idioms.TypeName(f.Config.Name, convention) : f.Config.Name)} config = default;\n");
-            foreach (var a in f.Arguments.Where(a => a.Field is not null))
-                o.Append($"{pad}config.{(CSharpWriter.IsValue(f.Config) ? Idioms.Pascal(a.Field!) : a.Field)} = {(a.IsString ? $"(sbyte*){a.Name}Ptr" : a.Assign)};\n");
+            if (f.RebuildsConfig)
+            {
+                o.Append($"{pad}{f.ConfigNamespace ?? f.Job.Namespace}.{f.Config.Name} nativeConfig = default;\n");
+                foreach (var field in f.Config.Fields)
+                    o.Append(configStrings.FirstOrDefault(x => x.Field == field) is { Local: { } local }
+                        ? $"{pad}nativeConfig.{field.Name} = (sbyte*){local}Ptr;\n"
+                        : $"{pad}nativeConfig.{field.Name} = {configArgument.Name}.{Idioms.Pascal(field.Name)};\n");
+            }
+            else
+                o.Append($"{pad}var nativeConfig = {configArgument.Name};\n");
         }
         foreach (var group in f.Arguments.Where(a => a.Bundle is not null).GroupBy(a => a.Bundle!.Value))
         {
@@ -330,7 +383,7 @@ public sealed class FactoriesExtension : IKabicExtension
         o.Append($"{pad}{handle} handle;\n");
         foreach (var output in f.Outputs)
             o.Append($"{pad}{output.ManagedType} {Idioms.Ident(output.Property)} = default;\n");
-        var call = f.Arguments.Where(a => a.Field is null).Select(a => a.Bundle is { } b ? $"&{b.Local}" : a.Assign).Distinct().Concat(f.Config is null ? [] : ["&config"])
+        var call = f.Arguments.Select(a => a.Bundle is { } b ? $"&{b.Local}" : a.Assign).Distinct()
             .Concat(f.Outputs.Select(output => $"&{Idioms.Ident(output.Property)}")).Append("&handle");
         o.Append($"{pad}{convention.ResultHelperClass}.ThrowIfFailed({f.Job.Namespace}.{f.Job.MethodsClass}.{convention.StripPrefix(f.Function.Name)}({string.Join(", ", call)}), \"{f.Function.Name}\");\n");
         o.Append(f.Outputs.Count == 0 ? $"{pad}return handle;\n" : $"{pad}return (handle, {string.Join(", ", f.Outputs.Select(output => Idioms.Ident(output.Property)))});\n");
@@ -347,7 +400,7 @@ public sealed class FactoriesExtension : IKabicExtension
     {
         var lastRequired = f.Arguments.ToList().FindLastIndex(a => a.IsRequired);
         return string.Join(", ", f.Arguments.Select((a, i) =>
-            $"{a.ManagedType} {a.Name}{(withDefaults && i > lastRequired ? $" = {a.Default ?? "default"}" : "")}"));
+            $"{(a.IsConfig ? "in " : "")}{a.ManagedType} {a.Name}{(withDefaults && i > lastRequired ? $" = {a.Default ?? "default"}" : "")}"));
     }
 
     /// <summary>The native handle type the factory fills.</summary>

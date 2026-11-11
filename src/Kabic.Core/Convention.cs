@@ -27,15 +27,6 @@ public sealed class Convention
     /// <summary>The expression that means success.</summary>
     public string ResultOkValue => char.IsDigit(ResultOk[0]) ? ResultOk : $"{ResultManagedType}.{ResultOk}";
 
-    /// <summary>
-    /// The parameters a caller of <paramref name="factory"/> supplies: all of them, but the owner
-    /// written back when the factory returns <see cref="ResultType"/>.
-    /// </summary>
-    public IReadOnlyList<ApiParam> FactoryInputs(ApiModel model, ApiFunction factory) =>
-        ReturnsResult(factory.Returns) && model.Makes(factory) is not null
-            ? factory.Params.Take(factory.Params.Count - 1).ToList()
-            : factory.Params.ToList();
-
     /// <summary>The C type a fallible call returns its outcome as (<c>ke_result</c>).</summary>
     public string ResultType { get; init; } = "";
 

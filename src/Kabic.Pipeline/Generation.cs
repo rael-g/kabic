@@ -75,7 +75,8 @@ public static class Generation
             var home = CSharpWriter.BorrowedNeedsNative(model, borrowed, convention) ? outDir : contractDir;
             Directory.CreateDirectory(home);
             File.WriteAllText(Path.Combine(home, $"{Idioms.TypeName(borrowed.Name, convention)}.g.cs"),
-                CSharpWriter.RenderBorrowed(model, borrowed, ns, [.. usings, nativeNs], convention));
+                CSharpWriter.RenderBorrowed(model, borrowed, ns,
+                    home == outDir ? [.. usings, nativeNs] : usings.Where(u => !u.EndsWith(".Native", StringComparison.Ordinal)).ToList(), convention));
         }
 
         foreach (var view in model.Structs.Where(CSharpWriter.IsView))

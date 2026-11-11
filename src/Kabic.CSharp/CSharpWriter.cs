@@ -1443,33 +1443,9 @@ public static class CSharpWriter
                 : throw new InvalidOperationException(
                     $"{vtable.Name}.{initSlot}: a startup lifecycle hook returns {convention.ResultType}, and this one returns {initSlotReturns}");
 
-        if (plan.Kind == ConstructorKind.FromFactory)
+        if (plan.Kind == ConstructorKind.FromHandle)
         {
-            var factory = plan.Factory!;
-            var fparams = convention.FactoryInputs(model, factory);
-            var sig = string.Join(", ", fparams.Select(p => $"{Idioms.CsForeignType(p.Type, convention)} {Idioms.Ident(p.Name!)}"));
-            var call = string.Join(", ", fparams.Select(p => Idioms.Ident(p.Name!)));
-            o.Add(XmlDoc("    ", factory.Doc, convention, fparams.Select(p => (Idioms.Ident(p.Name!), p.Doc)),
-                throwsOnFail: true).TrimEnd());
-            o.Add($"    {(plan.NeedsWrapper ? "internal" : "public")} {typeName}({sig})");
-            o.Add("    {");
-            var madeHandle = (convention.ReturnsResult(factory.Returns) ? model.Makes(factory) : null)
-                ?? throw new InvalidOperationException(
-                    $"{factory.Name}: a factory returns {convention.ResultType} and writes its handle through its last parameter");
-            o.Add($"        {madeHandle} handle;");
-            o.Add($"        {convention.ResultHelperClass}.ThrowIfFailed(global::{nativeNs}.NativeMethods.{convention.StripPrefix(factory.Name)}({(call.Length > 0 ? call + ", " : "")}&handle), \"{factory.Name}\");");
-            o.Add("        _native = handle.@ref;");
-            o.Add("        _owned = handle.@ref;");
-            o.Add("        _destroy = handle.destroy;");
-            o.Add($"        _owner = new {convention.OwnerClass}(Teardown);");
-            if (initCall is not null) o.Add(initCall);
-            o.Add("    }");
-            o.Add("");
-        }
-        if (plan.Kind == ConstructorKind.FromHandle
-            || (plan.Kind == ConstructorKind.FromFactory && model.OwnerOf(vtable.Name) is not null))
-        {
-            var handleType = plan.HandleTypeName ?? model.OwnerOf(vtable.Name)!.Name;
+            var handleType = plan.HandleTypeName!;
             o.Add($"    /// <summary>Wraps an owner <c>{handleType}</c> and runs {typeName.ToLowerInvariant()}'s startup lifecycle hook.</summary>");
             if (initCall is not null) o.Add($"    /// <exception cref=\"Exception\">The native call failed.</exception>");
             o.Add($"    public {typeName}({handleType} handle)");

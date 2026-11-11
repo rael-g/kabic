@@ -46,13 +46,12 @@ internal static class GeneratorShapeCases
                        "return resultOut;", "<returns>How many there are.</returns>"],
             absent: ["&err", "out uint count"]);
 
-        Expect("a factory returning the result code writes the handle through its last parameter",
+        Expect("a contract's class is built from the handle its factory wrote, never from the factory's raw arguments",
             Vtable("ke_probe", "provider", Slot("flush", "ke_result")),
             functions: [Function("ke_probe_create", "ke_result", Param("size", "uint32_t"),
                 Param("out_probe", "ke_probe_handle *", "out"))],
-            contains: ["(uint size)", "ke_probe_handle handle;",
-                       "KernelEngine.NativeResults.ThrowIfFailed(global::Probe.Native.NativeMethods.probe_create(size, &handle), \"ke_probe_create\");"],
-            absent: ["&err", "outProbe"]);
+            contains: ["public Probe(ke_probe_handle handle)"],
+            absent: ["probe_create(", "internal Probe(", "Probe(uint size)"]);
 
         Expect("a shutdown slot with no failure lane is called with its handle alone",
             Vtable("ke_probe", Slot("on_shutdown", "void", "lifecycle:shutdown")),
