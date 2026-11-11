@@ -27,6 +27,9 @@ public sealed record Factory(
 
     /// <summary>The bindings namespace that declares the handle, the one whose job traverses the contract's header.</summary>
     public string? HandleNamespace { get; init; }
+
+    /// <summary>The bindings namespace that declares the config struct: the contract's when its headers declare it, the factory's own otherwise.</summary>
+    public string? ConfigNamespace { get; init; }
 }
 
 /// <summary>A value a factory writes through an <c>[out]</c> parameter besides its handle, as the property it becomes.</summary>
@@ -81,7 +84,7 @@ public sealed class FactoriesExtension : IKabicExtension
                 context.Report($"factories: no bindings entry is called '{name}'");
                 continue;
             }
-            factories.AddRange(Of(context, job).Select(f => f with { HandleNamespace = HandleHome(context, jobs.Values, f) }));
+            factories.AddRange(Of(context, job).Select(f => f with { HandleNamespace = HandleHome(context, jobs.Values, f) }).Select(f => f with { ConfigNamespace = ConfigHome(jobs.Values, f) }));
         }
         return factories;
     }
@@ -312,7 +315,7 @@ public sealed class FactoriesExtension : IKabicExtension
         if (strings) o.Append("        {\n");
         if (f.Config is not null)
         {
-            o.Append($"{pad}{f.Job.Namespace}.{(CSharpWriter.IsValue(f.Config) ? Idioms.TypeName(f.Config.Name, convention) : f.Config.Name)} config = default;\n");
+            o.Append($"{pad}{f.ConfigNamespace ?? f.Job.Namespace}.{(CSharpWriter.IsValue(f.Config) ? Idioms.TypeName(f.Config.Name, convention) : f.Config.Name)} config = default;\n");
             foreach (var a in f.Arguments.Where(a => a.Field is not null))
                 o.Append($"{pad}config.{(CSharpWriter.IsValue(f.Config) ? Idioms.Pascal(a.Field!) : a.Field)} = {(a.IsString ? $"(sbyte*){a.Name}Ptr" : a.Assign)};\n");
         }
@@ -347,6 +350,14 @@ public sealed class FactoriesExtension : IKabicExtension
     /// <summary>The native handle type the factory fills.</summary>
     public static string HandleTypeName(Factory f) =>
         f.Contract is null ? $"{f.Job.Namespace}.{f.HandleType}" : $"{f.HandleNamespace ?? f.Contract.Spec.NativeNamespace}.{f.HandleType}";
+
+    private static string? ConfigHome(IEnumerable<BindingJob> jobs, Factory f)
+    {
+        if (f.Config is null) return null;
+        var file = f.Config.Name + ".cs";
+        return jobs.FirstOrDefault(j => Directory.Exists(Path.Combine(j.NativeDir, "Generated"))
+            && Directory.EnumerateFiles(Path.Combine(j.NativeDir, "Generated"), file, SearchOption.AllDirectories).Any())?.Namespace;
+    }
 
     private static string? HandleHome(ExtensionContext context, IEnumerable<BindingJob> jobs, Factory f)
     {
