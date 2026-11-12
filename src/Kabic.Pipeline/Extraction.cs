@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -28,11 +30,79 @@ public static class Extraction
     }
 
     /// <summary>
-    /// Extracts the API of the request and returns it as indented JSON. Throws
+    /// The directory extractions are kept in, keyed by everything they depend on, so a request whose
+    /// headers, include closure, zig and extractor are unchanged is answered without running zig.
+    /// Null keeps nothing.
+    /// </summary>
+    public static string? CacheDirectory { get; set; }
+
+    /// <summary>
+    /// Extracts the API of the request and returns it as indented JSON, from
+    /// <see cref="CacheDirectory"/> when an equal extraction is kept there. Throws
     /// <c>InvalidOperationException</c> when zig produces no AST, a header fails to parse, or
     /// the extractor reports errors.
     /// </summary>
     public static string Run(Request request)
+    {
+        if (CacheDirectory is not { } cache) return Extract(request);
+        var path = Path.Combine(cache, KeyOf(request) + ".json");
+        if (File.Exists(path)) return File.ReadAllText(path);
+        var json = Extract(request);
+        Directory.CreateDirectory(cache);
+        var partial = path + "." + Guid.NewGuid().ToString("N");
+        File.WriteAllText(partial, json);
+        File.Move(partial, path, overwrite: true);
+        return json;
+    }
+
+    static readonly System.Text.RegularExpressions.Regex IncludeLine =
+        new(@"^\s*#\s*include\s*[<""]([^>""]+)[>""]", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+    /// <summary>
+    /// The hash of what an extraction depends on: the extractor's build, the zig executable, the
+    /// request, the annotation file, and the bytes of every header the request's headers reach
+    /// through the include directories.
+    /// </summary>
+    static string KeyOf(Request request)
+    {
+        var zig = ResolveZig(request.Zig);
+        var key = new StringBuilder();
+        key.AppendLine(typeof(Extraction).Assembly.ManifestModule.ModuleVersionId.ToString());
+        key.AppendLine(typeof(Extractor).Assembly.ManifestModule.ModuleVersionId.ToString());
+        var zigInfo = new FileInfo(zig);
+        key.AppendLine($"{zigInfo.FullName}|{zigInfo.Length}|{zigInfo.LastWriteTimeUtc.Ticks}");
+        key.AppendLine($"{request.Convention.SymbolPrefix}|{request.Convention.IncludeDirectoryName}");
+        var includeDirs = request.IncludeDirs.Select(Path.GetFullPath).ToList();
+        foreach (var d in includeDirs) key.Append("-I").AppendLine(d);
+        foreach (var h in request.Headers) key.Append("H").AppendLine(Path.GetFullPath(h));
+        foreach (var h in request.AuxHeaders) key.Append("A").AppendLine(Path.GetFullPath(h));
+        if (request.Annotations is { } annotations) key.Append("N").AppendLine(annotations);
+
+        var seen = new SortedSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<string>(request.Headers.Concat(request.AuxHeaders).Select(Path.GetFullPath));
+        while (queue.TryDequeue(out var file))
+        {
+            if (!seen.Add(file) || !File.Exists(file)) continue;
+            foreach (System.Text.RegularExpressions.Match m in IncludeLine.Matches(File.ReadAllText(file)))
+            {
+                var name = m.Groups[1].Value;
+                var target = new[] { Path.GetDirectoryName(file)! }.Concat(includeDirs)
+                    .Select(d => Path.Combine(d, name)).FirstOrDefault(File.Exists);
+                if (target is not null) queue.Enqueue(Path.GetFullPath(target));
+            }
+        }
+        if (request.Annotations is { } annotationFile && File.Exists(annotationFile)) seen.Add(Path.GetFullPath(annotationFile));
+        var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(Encoding.UTF8.GetBytes(key.ToString()));
+        foreach (var file in seen.Where(File.Exists))
+        {
+            hash.AppendData(Encoding.UTF8.GetBytes(file + "\n"));
+            hash.AppendData(File.ReadAllBytes(file));
+        }
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    static string Extract(Request request)
     {
         var zig = ResolveZig(request.Zig);
         var headerPaths = request.Headers.Select(Path.GetFullPath).ToList();

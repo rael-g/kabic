@@ -11,11 +11,17 @@ public static class KabicCli
 {
     /// <summary>
     /// Runs the command <paramref name="args"/> names, with <paramref name="extensions"/> run by
-    /// <c>generate</c> and compared by <c>check drift</c>. Returns 0, 1 on a failure, 2 when the
-    /// command could not run or is unknown.
+    /// <c>generate</c> and compared by <c>check drift</c>; a leading <c>--cache-dir &lt;dir&gt;</c>
+    /// keeps every extraction there. Returns 0, 1 on a failure, 2 when the command could not run or
+    /// is unknown.
     /// </summary>
     public static int Run(string[] args, IReadOnlyList<IKabicExtension> extensions)
     {
+        if (args is ["--cache-dir", var cacheDir, .. var rest])
+        {
+            Extraction.CacheDirectory = Path.GetFullPath(cacheDir);
+            args = rest;
+        }
         var checks = new Dictionary<string, Func<Options, int>>
         {
             ["drift"] = o => DriftCommand.Run(o, extensions),
@@ -43,7 +49,8 @@ public static class KabicCli
         if (args is ["check", var name, .. var checkArgs] && checks.TryGetValue(name, out var check))
             return check(Options.Parse(checkArgs));
 
-        Console.Error.WriteLine("usage: kabic generate [--root <dir>] [--manifest <file>] [--zig <path>] [--domain <name>]... [--into <dir>]");
+        Console.Error.WriteLine("usage: kabic [--cache-dir <dir>] <command>");
+        Console.Error.WriteLine("       kabic generate [--root <dir>] [--manifest <file>] [--zig <path>] [--domain <name>]... [--into <dir>]");
         Console.Error.WriteLine("       kabic read | write csharp | write zig (see each command for its options)");
         Console.Error.WriteLine("       kabic bindings [--domain <name>]... [--print-config]");
         Console.Error.WriteLine($"       kabic check <{string.Join('|', checks.Keys)}> [--root <dir>] [--manifest <file>] [--zig <path>]");
