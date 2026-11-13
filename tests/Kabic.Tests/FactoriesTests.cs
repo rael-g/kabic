@@ -82,6 +82,15 @@ public class FactoriesTests
     }
 
     [Fact]
+    public void An_out_interface_pointer_is_kept_as_an_address_written_through_its_native_type()
+    {
+        var f = Standalone(Pool) with { Outputs = [new FactoryOutput("Completes when it is ready.", "Ready", "nint") { NativeCast = "(Probe.Native.ke_signal**)" }] };
+        var text = FactoriesExtension.Render(f, ProbeConvention.Value);
+        Assert.Contains("public nint Ready { get; }", text);
+        Assert.Contains("NativeMethods.probe_create(pool.Native, (Probe.Native.ke_signal**)&ready, &handle)", text);
+    }
+
+    [Fact]
     public void The_contracts_of_a_struct_of_contracts_are_gathered_into_it_and_passed_once()
     {
         var runtime = new FactoryArgument("Runs it.", null, "runtime", "Probe.INativeRuntime", "context.Runtime = runtime.Native", false) { Bundle = ("context", "Probe.Native.ProbeContext") };

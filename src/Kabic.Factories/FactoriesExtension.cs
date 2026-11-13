@@ -42,7 +42,11 @@ public sealed record Factory(
 }
 
 /// <summary>A value a factory writes through an <c>[out]</c> parameter besides its handle, as the property it becomes.</summary>
-public sealed record FactoryOutput(string? Doc, string Property, string ManagedType);
+public sealed record FactoryOutput(string? Doc, string Property, string ManagedType)
+{
+    /// <summary>The cast the address of the local is passed through, when the managed type is not the native one.</summary>
+    public string? NativeCast { get; init; }
+}
 
 /// <summary>
 /// A dependency or a [utf8] string of a factory, or a field of its config struct, as the constructor argument it
@@ -149,13 +153,20 @@ public sealed class FactoriesExtension : IKabicExtension
             if (param.Has("out"))
             {
                 var pointee = CTypes.Unqualified(param.Type).TrimEnd('*', ' ');
-                if ((context.Convention.Project(Languages.CSharp, pointee) ?? ValueStruct(context, pointee)) is not { } projected)
+                var property = Idioms.Pascal(convention.StripPrefix(param.Name!).StartsWith("out_", StringComparison.Ordinal) ? param.Name![4..] : param.Name!);
+                if ((context.Convention.Project(Languages.CSharp, pointee) ?? ValueStruct(context, pointee)) is { } projected)
                 {
-                    context.Report($"factories: {function.Name}'s {param.Name} ({param.Type}) has no projection; it is not projected");
-                    return null;
+                    outputs.Add(new FactoryOutput(param.Doc, property, projected));
+                    continue;
                 }
-                outputs.Add(new FactoryOutput(param.Doc, Idioms.Pascal(convention.StripPrefix(param.Name!).StartsWith("out_", StringComparison.Ordinal) ? param.Name![4..] : param.Name!), projected));
-                continue;
+                if (CTypes.Unqualified(param.Type).EndsWith("**", StringComparison.Ordinal)
+                    && context.Domains.FirstOrDefault(d => d.Model.Structs.Any(s => s.Name == pointee && !s.External && s.IsVtable)) is { } owner)
+                {
+                    outputs.Add(new FactoryOutput(param.Doc, property, "nint") { NativeCast = $"({owner.Spec.NativeNamespace}.{pointee}**)" });
+                    continue;
+                }
+                context.Report($"factories: {function.Name}'s {param.Name} ({param.Type}) has no projection; it is not projected");
+                return null;
             }
             if (outputs.Count > 0)
             {
@@ -384,7 +395,7 @@ public sealed class FactoriesExtension : IKabicExtension
         foreach (var output in f.Outputs)
             o.Append($"{pad}{output.ManagedType} {Idioms.Ident(output.Property)} = default;\n");
         var call = f.Arguments.Select(a => a.Bundle is { } b ? $"&{b.Local}" : a.Assign).Distinct()
-            .Concat(f.Outputs.Select(output => $"&{Idioms.Ident(output.Property)}")).Append("&handle");
+            .Concat(f.Outputs.Select(output => $"{output.NativeCast}&{Idioms.Ident(output.Property)}")).Append("&handle");
         o.Append($"{pad}{convention.ResultHelperClass}.ThrowIfFailed({f.Job.Namespace}.{f.Job.MethodsClass}.{convention.StripPrefix(f.Function.Name)}({string.Join(", ", call)}), \"{f.Function.Name}\");\n");
         o.Append(f.Outputs.Count == 0 ? $"{pad}return handle;\n" : $"{pad}return (handle, {string.Join(", ", f.Outputs.Select(output => Idioms.Ident(output.Property)))});\n");
         if (strings) o.Append("        }\n");
