@@ -87,6 +87,7 @@ public class FactoriesTests
         var f = Standalone(Pool) with { Outputs = [new FactoryOutput("Completes when it is ready.", "Ready", "nint") { NativeCast = "(Probe.Native.ke_signal**)" }] };
         var text = FactoriesExtension.Render(f, ProbeConvention.Value);
         Assert.Contains("public nint Ready { get; }", text);
+        Assert.Contains("public nint Ready { get; }\n\n    /// <summary>Creates a probe.</summary>", text);
         Assert.Contains("NativeMethods.probe_create(pool.Native, (Probe.Native.ke_signal**)&ready, &handle)", text);
     }
 

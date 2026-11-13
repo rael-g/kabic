@@ -331,15 +331,15 @@ public sealed class FactoriesExtension : IKabicExtension
         o.Append($"namespace {f.ManagedNamespace};\n\n");
         o.Append($"/// <summary>{Xml(f.Function.Doc)}</summary>\n");
         o.Append($"public sealed unsafe partial class {f.ClassName}{(f.Contract is null ? " : IDisposable" : $" : {f.ContractClass}")}\n{{\n");
-        o.Append($"    /// <summary>{Xml(f.Function.Doc)}</summary>\n");
-        foreach (var a in f.Arguments)
-            o.Append($"    /// <param name=\"{a.Name}\">{Xml(a.Doc)}</param>\n");
         var handle = HandleTypeName(f);
         var created = CreatedType(f);
         var holds = string.Concat(f.Arguments.Where(a => a.IsRequiredProvider || a.IsOptionalProvider)
             .Select(a => $"        Hold({a.Name}{(a.IsOptionalProvider ? "?" : "")}.Owner);\n"));
         foreach (var output in f.Outputs)
             o.Append($"    /// <summary>{Xml(output.Doc)}</summary>\n    public {output.ManagedType} {output.Property} {{ get; }}\n\n");
+        o.Append($"    /// <summary>{Xml(f.Function.Doc)}</summary>\n");
+        foreach (var a in f.Arguments)
+            o.Append($"    /// <param name=\"{a.Name}\">{Xml(a.Doc)}</param>\n");
         var keep = string.Concat(f.Outputs.Select(output => $" {output.Property} = made.{output.Property};"));
         if (f.Contract is null)
         {
