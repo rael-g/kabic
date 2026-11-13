@@ -51,11 +51,11 @@ public static class CSharpWriter
                 {
                     var count = b.Fields.First(x => x.Name == f.CountedBy);
                     lines.Add($"{indent}using var {n}{Idioms.Pascal(f.Name)}Pin = {mirror}.Pin();");
-                    lines.Add($"{indent}{n}Native.{f.Name} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}Pin.Pointer;");
+                    lines.Add($"{indent}{n}Native.{Idioms.Field(f.Name)} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}Pin.Pointer;");
                     lines.Add($"{indent}{n}Native.{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;");
                 }
                 else if (!b.Fields.Any(x => x.CountedBy == f.Name))
-                    lines.Add($"{indent}{n}Native.{f.Name} = {mirror};");
+                    lines.Add($"{indent}{n}Native.{Idioms.Field(f.Name)} = {mirror};");
             }
         }
         foreach (var p in ps.Where(x => x.Has("utf8") && x.CountedBy is null))
@@ -197,7 +197,7 @@ public static class CSharpWriter
         yield return "{";
         foreach (var f in b.Fields)
         {
-            var native = $"{n}Native[{at}].{f.Name}";
+            var native = $"{n}Native[{at}].{Idioms.Field(f.Name)}";
             var mirror = $"{n}[{at}].{Idioms.Pascal(f.Name)}";
             if (texts.Contains(f))
             {
@@ -539,12 +539,12 @@ public static class CSharpWriter
     {
         if (f.CountedBy is null || CTypes.FixedArray(f.Type) is not { } array)
         {
-            yield return $"{bag}.{f.Name} = {value};";
+            yield return $"{bag}.{Idioms.Field(f.Name)} = {value};";
             yield break;
         }
         var n = Idioms.Ident(f.Name);
         yield return $"if ({n}.Length > {array.Extent}) throw new ArgumentOutOfRangeException(nameof({n}));";
-        yield return $"for (var {n}At = 0; {n}At < {n}.Length; {n}At++) {bag}.{f.Name}[{n}At] = ({value})[{n}At];";
+        yield return $"for (var {n}At = 0; {n}At < {n}.Length; {n}At++) {bag}.{Idioms.Field(f.Name)}[{n}At] = ({value})[{n}At];";
     }
 
     static string BlobTypeParam(ApiParam p) => "T" + Idioms.Pascal(p.Name!);

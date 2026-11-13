@@ -2,6 +2,10 @@ using Kabic.Pipeline;
 
 namespace Kabic.Tests;
 
+[CollectionDefinition(nameof(ExtractionCacheTests), DisableParallelization = true)]
+public sealed class ExtractionCacheCollection;
+
+[Collection(nameof(ExtractionCacheTests))]
 public sealed class ExtractionCacheTests
 {
     [Fact]
