@@ -211,7 +211,7 @@ public static class BindingsPlanner
                 grew = false;
                 var declaredHere = declaredIn.Where(kv => traversed.Contains(kv.Value)).Select(kv => kv.Key)
                                              .ToHashSet(StringComparer.Ordinal);
-                var referenced = traversed.SelectMany(h => typeName.Matches(File.ReadAllText(h)).Select(m => m.Value))
+                var referenced = traversed.SelectMany(h => typeName.Matches(Regex.Replace(File.ReadAllText(h), @"/\*.*?\*/|//[^\n]*", "", RegexOptions.Singleline)).Select(m => m.Value))
                                           .ToHashSet(StringComparer.Ordinal);
                 var pending = new Queue<string>(referenced.Where(functionPointerParameters.ContainsKey));
                 while (pending.TryDequeue(out var pointer))
@@ -295,7 +295,11 @@ public static class BindingsPlanner
             .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).DistinctBy(r => r[0]).ToDictionary(r => r[0], r => r[1]);
         var contracts = jobs.Select(j => (Job: j, Spec: ContractSpec(j)))
             .Where(x => x.Spec is not null).Select(x => (x.Job, Spec: x.Spec!, Types: AbstractTypes(x.Job, convention))).Where(x => x.Types.Count > 0).ToList();
-        var contractOf = contracts.SelectMany(c => c.Types.Select(t => (t, c.Spec.Namespace))).DistinctBy(x => x.t).ToDictionary(x => x.t, x => x.Item2);
+        bool DeclaresIt(DomainSpec spec, string type) => declaredIn.TryGetValue(type, out var header)
+            && spec.Headers.Any(h => Path.GetFullPath(Path.Combine(rootDir, h)) == Path.GetFullPath(header));
+        var contractOf = contracts.SelectMany(c => c.Types.Select(t => (t, c.Spec)))
+            .GroupBy(x => x.t)
+            .ToDictionary(g => g.Key, g => (g.FirstOrDefault(x => DeclaresIt(x.Spec, g.Key)).Spec ?? g.First().Spec).Namespace);
         string Located(string remap)
         {
             var source = remap.Split('=', 2)[0].TrimEnd();
