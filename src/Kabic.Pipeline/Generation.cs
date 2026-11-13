@@ -115,7 +115,10 @@ public static class Generation
                 CSharpWriter.RenderCallbackInterface(callback, ns, nativeNs, convention));
 
         if (model.Opaques.Count > 0 || model.TypeAliases.Keys.Any(a => model.HandleOf(a) is not null))
-            File.WriteAllText(Path.Combine(outDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
+        {
+            Directory.CreateDirectory(contractDir);
+            File.WriteAllText(Path.Combine(contractDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
+        }
 
         if (model.IdTypes.Count > 0)
         {
