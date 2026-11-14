@@ -319,7 +319,8 @@ public static class BindingsPlanner
             result.Add(new BindingJob(job.Name + "Contract", dir, "Types/", spec.Namespace, null,
                 job.IncludeDirectories.Select(Moved).ToList(), job.UmbrellaBody is null ? Moved(job.File) : job.File, job.UmbrellaBody,
                 job.Traverse.Select(Moved).ToList(), job.Additional,
-                [.. result.First(r => r.Name == job.Name).Remaps.Where(r => !types.Contains(r.Split('=')[0].TrimEnd()) && !r.Contains("::")),
+                [.. result.First(r => r.Name == job.Name).Remaps.Where(r => !types.Contains(r.Split('=')[0].TrimEnd())
+                    && (!r.Contains("::") || !r.Split('=')[0].Contains("::") && FieldTypes(job, convention, types).Contains(r.Split('=')[0].TrimEnd()))),
                     .. idiomatic[job].Where(r => r.Contains("=global::") || types.Contains(r.Split("::")[0].Split('=')[0].TrimEnd()))], [],
                 [.. job.Config.Where(c => c != "generate-helper-types")],
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass) { Includes = types });
@@ -344,6 +345,16 @@ public static class BindingsPlanner
             || known.Contains(held.Name) || mapped.ContainsKey(held.Name);
         while (records.RemoveAll(r => !r.Fields.All(f => Holds(f.Type))) > 0) known = records.Select(r => r.Name).ToHashSet();
         return [.. model.Enums.Where(e => !e.External && !mapped.ContainsKey(e.Name)).Select(e => e.Name), .. known];
+    }
+
+    /// <summary>The types the fields of a contract's own records are spelled with.</summary>
+    static HashSet<string> FieldTypes(BindingJob job, Convention convention, List<string> types)
+    {
+        string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
+        var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
+            job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
+        return model.Structs.Where(s => types.Contains(s.Name))
+            .SelectMany(s => s.Fields).Select(f => CType.Of(CTypes.FixedArray(f.Type)?.Element ?? f.Type).Name).ToHashSet();
     }
 
     static string Renamed(string remap, IReadOnlyDictionary<string, string> renamed)
