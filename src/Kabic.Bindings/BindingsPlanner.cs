@@ -279,7 +279,11 @@ public static class BindingsPlanner
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass));
         }
 
-        var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention, domains).ToList());
+        bool Declares(DomainSpec spec, string type) => declaredIn.TryGetValue(type, out var header)
+            ? spec.Headers.Any(h => Path.GetFullPath(Path.Combine(rootDir, h)) == Path.GetFullPath(header))
+            : spec.Headers.Select(h => Path.GetFullPath(Path.Combine(rootDir, h))).Any(h => sourceTexts.TryGetValue(h, out var text)
+                && Regex.IsMatch(text, $@"typedef[^;{{}}]*\b{Regex.Escape(type)}\s*;"));
+        var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention, domains, Declares).ToList());
         var ownedIds = idiomatic.Values.SelectMany(r => r).Where(r => r.Contains("=global::")).Distinct()
             .ToDictionary(r => r.Split('=')[0], r => r);
         foreach (var remaps in idiomatic.Values)
@@ -363,7 +367,7 @@ public static class BindingsPlanner
         return renamed.TryGetValue(source, out var name) ? $"{source}={target[..(target.LastIndexOf('.') + 1)]}{name}" : remap;
     }
 
-    static IEnumerable<string> Idiomatic(BindingJob job, Convention convention, IReadOnlyList<DomainSpec> domains)
+    static IEnumerable<string> Idiomatic(BindingJob job, Convention convention, IReadOnlyList<DomainSpec> domains, Func<DomainSpec, string, bool> declares)
     {
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
@@ -374,8 +378,10 @@ public static class BindingsPlanner
             Regex.IsMatch(text, $@"[(=][ \t]*{value}\b") && model.Enums.Any(o => o != owner
                 && o.Values.Any(v => Idioms.EnumMember(v.Name, o.Name) == Idioms.EnumMember(value, owner.Name)));
         foreach (var id in model.IdTypes)
-            if (domains.FirstOrDefault(d => d.NativeNamespace == job.Namespace) is { } home)
+            if (domains.FirstOrDefault(d => d.NativeNamespace == job.Namespace) is { } home
+                && (declares(home, id) || !domains.Any(d => declares(d, id))))
                 yield return $"{id}=global::{home.Namespace}.{Idioms.TypeName(id, convention)}";
+            else yield return $"?{id}";
         foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
             yield return $"{cType}={target}";
         foreach (var e in model.Enums.Where(e => !e.External))
