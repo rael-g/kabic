@@ -103,7 +103,7 @@ public static class Generation
             if (source.Contract is not null)
             {
                 Directory.CreateDirectory(contractDir);
-                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), contractDir != outDir ? System.Text.RegularExpressions.Regex.Replace(source.Contract, @"^using ([\w.]+);\n", m =>
+                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), model.SafeViews ? System.Text.RegularExpressions.Regex.Replace(source.Contract, @"^using ([\w.]+);\n", m =>
                         m.Groups[1].Value.EndsWith(".Native", StringComparison.Ordinal)
                         || (r.Usings.Contains(m.Groups[1].Value + ".Native") && !r.ContractNamespaces.Contains(m.Groups[1].Value)) ? "" : m.Value,
                         System.Text.RegularExpressions.RegexOptions.Multiline) : source.Contract);
