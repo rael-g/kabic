@@ -577,8 +577,16 @@ public static class CSharpWriter
     static string OutElement(ApiModel model, ApiParam p, Convention convention) =>
         p.Has("rooted") ? "object?"
         : model.OwnedVtableOf(CTypes.Deref(p.Type)) is { } owned ? "I" + Idioms.TypeName(owned, convention)
+        : LentOut(model, p) is { } lent ? "I" + Idioms.TypeName(lent.Name, convention)
         : model.HandleOf(p.Type, 1) is { } handle ? Idioms.TypeName(handle, convention)
         : OutLocal(model, p, convention);
+
+    /// <summary>
+    /// The <c>[lent]</c> vtable an <c>out</c> parameter hands back for the caller to use while its
+    /// owner lives: read back as that vtable's class, borrowed, as a lent return is.
+    /// </summary>
+    static ApiStruct? LentOut(ApiModel model, ApiParam p) =>
+        LentReturn(model, CTypes.Deref(p.Type)) is { } v && v.Has("lent") ? v : null;
 
     /// <summary>
     /// The local the call writes through, spelled as the ABI declares it. This is the type
@@ -597,6 +605,7 @@ public static class CSharpWriter
     /// </summary>
     static string OutRead(ApiModel model, ApiParam p, string local, Convention convention) =>
         model.OwnedVtableOf(CTypes.Deref(p.Type)) is { } owned ? $"new {Idioms.TypeName(owned, convention)}({local})"
+        : LentOut(model, p) is { } lent ? $"{Idioms.TypeName(lent.Name, convention)}.Borrow(({lent.Name}*){local})"
         : model.HandleOf(p.Type, 1) is { } handle ? $"new {Idioms.TypeName(handle, convention)}({local})"
         : p.Has("rooted")
             ? $"{local} == 0 ? null : System.Runtime.InteropServices.GCHandle.FromIntPtr({local}).Target"

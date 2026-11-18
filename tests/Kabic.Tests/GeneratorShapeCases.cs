@@ -411,6 +411,16 @@ internal static class GeneratorShapeCases
                 ["slots"] = new JsonArray(),
             }]);
 
+        var lentView = Vtable("ke_probe_view", "lent", Slot("count", "uint32_t"));
+        lentView["external"] = true;
+        Expect("an [out] pointer to a lent vtable of another domain hands back its class, borrowed",
+            Vtable("ke_probe", Slot("view", "ke_result",
+                Param("name", "const char *", "utf8"),
+                Param("out_view", "ke_probe_view **", "out"))),
+            contains: ["public IProbeView View(string name)", "ProbeView.Borrow((ke_probe_view*)resultOut)"],
+            absent: ["public nint View("],
+            vtables: [lentView]);
+
         Expect("a [typed] return is a reference to the type the caller names",
             Vtable("ke_probe", Slot("get", "void *", Returning("typed"), Param("cid", "uint32_t"))),
             contains: ["public ref T Get<T>(uint cid) where T : unmanaged", "return ref *(T*)at;"],
