@@ -205,6 +205,8 @@ public sealed class FactoriesExtension : IKabicExtension
                 }
                 arguments.Add(new FactoryArgument(param.Doc, null, Idioms.Ident(param.Name!), mirror, "&nativeConfig", false) { IsConfig = true });
             }
+            else if (Value(context, param, model, job) is { } value)
+                arguments.Add(value);
             else
             {
                 context.Report($"factories: {function.Name}'s {param.Name} ({param.Type}) is neither a contract nor a config; it is not projected");
@@ -241,6 +243,27 @@ public sealed class FactoriesExtension : IKabicExtension
         return param.Has("optional") || param.Has("nullable")
             ? new FactoryArgument(param.Doc, null, name, iface + "?", $"({name} is null ? null : {name}.Native)", false)
             : new FactoryArgument(param.Doc, null, name, iface, $"{name}.Native", false);
+    }
+
+    /// <summary>
+    /// A positional value of a factory that is no pointer: an enum, as the managed enum its domain projects, or a
+    /// number, as its C# primitive. The native call takes either as it is.
+    /// </summary>
+    private static FactoryArgument? Value(ExtensionContext context, ApiParam param, ApiModel model, BindingJob job)
+    {
+        var type = CTypes.Unqualified(param.Type);
+        if (type.Contains('*') || param.Name is null) return null;
+        var name = Idioms.Ident(param.Name);
+        var owner = context.Domains.FirstOrDefault(d => d.Model.Enums.Any(e => e.Name == type && !e.External));
+        if (owner is not null)
+        {
+            var typeName = Idioms.TypeName(type, context.Convention);
+            var ns = GeneratedNamespace(context, typeName) ?? owner.Spec.Namespace;
+            return new FactoryArgument(param.Doc, null, name, $"global::{ns}.{typeName}", name, false);
+        }
+        if (model.Enums.Any(e => e.Name == type)) return null;
+        var primitive = Idioms.CsPrimitive(type, context.Convention);
+        return primitive == type ? null : new FactoryArgument(param.Doc, null, name, primitive, name, false);
     }
 
     private static IReadOnlyList<FactoryArgument>? Bundle(ExtensionContext context, ApiParam param, ApiModel model, BindingJob job)
