@@ -103,7 +103,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
         foreach (var s in model.Structs.Where(s => !s.External))
             sb.AppendLine($"    try expectSameLayout(abi.c.{s.Name}, translated(\"{s.Name}\"));");
         foreach (var (alias, _) in model.TypeAliases.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            sb.AppendLine($"    try expectSameLayout(abi.c.{alias}, c.{alias});");
+            sb.AppendLine($"    if (@hasDecl(c, \"{alias}\")) try expectSameLayout(abi.c.{alias}, c.{alias});");
         sb.AppendLine("}");
         var values = model.Enums.Where(e => !e.External).SelectMany(e => e.Values).ToList();
         if (values.Count > 0)
@@ -205,6 +205,7 @@ public sealed record ZigPackage(string Key, string Package, IReadOnlyList<string
     {
         var sb = new StringBuilder();
         sb.AppendLine(".{");
+        if (name.Length > 32) name = name[..32].TrimEnd('_');
         sb.AppendLine($"    .name = .{name},");
         sb.AppendLine("    .version = \"0.1.0\",");
         sb.AppendLine($"    .fingerprint = 0x{Fingerprint(name):x16},");

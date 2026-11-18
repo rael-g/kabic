@@ -76,15 +76,13 @@ public record ClassifiedSlot(ApiSlot Slot, SlotShape Shape, bool Fallible, ApiPa
 }
 
 /// <summary>
-/// How a provider is constructed: from a factory function, from a handle struct, or not at all.
+/// How a provider is constructed: from the owner handle a factory wrote, or not at all; a factory
+/// itself is an implementation of the provider, projected beside it.
 /// </summary>
-public enum ConstructorKind { FromFactory, FromHandle, None }
+public enum ConstructorKind { FromHandle, None }
 
-/// <summary>
-/// The construction plan of one provider: the factory or handle struct it uses, and whether the
-/// factory needs a wrapper.
-/// </summary>
-public record ConstructorPlan(ConstructorKind Kind, ApiFunction? Factory, string? HandleTypeName, bool NeedsWrapper);
+/// <summary>The construction plan of one provider: the owner handle struct it wraps, if any.</summary>
+public record ConstructorPlan(ConstructorKind Kind, string? HandleTypeName);
 
 /// <summary>
 /// The roles <see cref="Classifier"/> assigns to the declarations of one model, each keyed by name.
@@ -180,18 +178,10 @@ public static class Classifier
 
         foreach (var v in result.Providers)
         {
-            var factory = model.FactoryOf(v.Name);
-            if (factory is not null)
-            {
-                var fparams = convention.FactoryInputs(model, factory);
-                result.Constructors[v.Name] = new ConstructorPlan(ConstructorKind.FromFactory, factory, null,
-                    NeedsWrapper: fparams.Any(p => CTypes.IsPointer(p.Type)));
-                continue;
-            }
             var handleType = model.OwnerOf(v.Name)?.Name;
             result.Constructors[v.Name] = handleType is not null
-                ? new ConstructorPlan(ConstructorKind.FromHandle, null, handleType, NeedsWrapper: false)
-                : new ConstructorPlan(ConstructorKind.None, null, null, NeedsWrapper: false);
+                ? new ConstructorPlan(ConstructorKind.FromHandle, handleType)
+                : new ConstructorPlan(ConstructorKind.None, null);
         }
 
         foreach (var fn in model.Functions.Where(f => model.Makes(f) is null))
@@ -223,6 +213,13 @@ public static class Classifier
         return (expanded, bag);
     }
 
+    /// <summary>
+    /// The type a bag field takes as a parameter. A fixed array bounded by <c>[array_of:]</c>
+    /// reads as the sequence a caller passes, which the expansion copies into the array.
+    /// </summary>
+    static string BoundedArrayAsPointer(ApiField field) =>
+        field.CountedBy is not null && CTypes.FixedArray(field.Type) is { } array ? $"const {array.Element} *" : field.Type;
+
     static ApiSlot AsSlot(ApiFunction fn) =>
         new(fn.Name, fn.Returns, [], fn.Doc, fn.ReturnDoc, fn.Params.ToList()) { ReturnTags = fn.ReturnTags, Symbol = fn.Name };
 
@@ -234,19 +231,15 @@ public static class Classifier
         var (expanded, bag) = ExpandedBag(model, slot);
         if (expanded is not null)
             ps = ps.SelectMany(p => p == expanded
-                ? bag!.Fields.Select(f => new ApiParam(f.Name, f.Type, f.Tags, f.Doc))
+                ? bag!.Fields.Select(f => new ApiParam(f.Name, BoundedArrayAsPointer(f), f.Tags, f.Doc))
                 : (IEnumerable<ApiParam>)[p]).ToList();
 
         var isTry = convention.BooleanReturnTypes.Contains(slot.Returns.Trim()) && ps.Any(p => p.Has("out"));
 
         var sequences = new List<SequencePair>();
-        foreach (var seq in ps.Where(p => p.Has("array_of")))
+        foreach (var seq in ps.Where(p => p.CountedBy is not null))
         {
-            var countName = seq.TagValue("array_of");
-            var count = ps.FirstOrDefault(p => p.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{seq.Name}: [array_of:{countName}] names a length parameter "
-                    + "the slot does not declare");
+            var count = ps.First(p => p.Name == seq.CountedBy);
             sequences.Add(new SequencePair(seq, count));
         }
         ps = ps.Where(p => sequences.All(s => s.Count != p || CTypes.IsPointer(p.Type))).ToList();
@@ -273,7 +266,7 @@ public static class Classifier
         ps = ps.Where(p => blobs.All(b => b.Size != p)).ToList();
 
         ApiParam? returnCount = null;
-        if (slot.ReturnTagValue("array_of") is { } returnCountName)
+        if (slot.ReturnCountedBy is { } returnCountName)
         {
             if (!CTypes.IsPointer(slot.Returns))
                 throw new InvalidOperationException(
@@ -286,7 +279,7 @@ public static class Classifier
             ps = ps.Where(p => p != returnCount).ToList();
         }
 
-        var allOut = ps.Where(p => p.Has("out") && !p.Has("array_of")).ToList();
+        var allOut = ps.Where(p => p.Has("out") && p.CountedBy is null).ToList();
 
         foreach (var rooted in allOut.Where(p => p.Has("rooted")))
             if (rooted.Type.Replace(" ", "") is not "void**")

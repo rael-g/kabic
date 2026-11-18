@@ -27,6 +27,7 @@ public static class Extractor
     {
         var api = new ApiModel();
         var errors = new List<string>();
+        var defaults = new List<ApiData>();
         string? currentFile = null;
         auxHeaderNames ??= [];
 
@@ -59,7 +60,7 @@ public static class Extractor
 
             if (auxOnly && kind != "TypedefDecl") continue;
 
-            if (compose && kind is not ("TypedefDecl" or "RecordDecl" or "EnumDecl")) continue;
+            if (compose && kind is not ("TypedefDecl" or "RecordDecl" or "EnumDecl" or "VarDecl")) continue;
 
             switch (kind)
             {
@@ -80,14 +81,15 @@ public static class Extractor
                     else api.Functions.Add(ExtractFunction(node, name, errors, api));
                     break;
 
-                case "VarDecl" when name is not null && node["storageClass"]?.GetValue<string>() == "extern" && HasSymbol(node):
+                case "VarDecl" when name is not null && !compose && node["storageClass"]?.GetValue<string>() == "extern" && HasSymbol(node):
                     api.Variables.Add(new ApiVariable(name, node["type"]?.AsObject()["qualType"]?.GetValue<string>() ?? "",
                         DocParser.Parse(node).Summary is { Length: > 0 } doc ? doc : null));
                     break;
 
-                case "VarDecl" when name is not null && !compose
-                    && ExtractData(node, name, bytes) is { } data:
-                    api.Data.Add(data);
+                case "VarDecl" when name is not null && ExtractData(node, name, bytes) is { } data:
+                    var tagged = data with { Tags = DocParser.Parse(node).SummaryTags };
+                    if (!compose) api.Data.Add(tagged);
+                    if (tagged.Tags.Contains("defaults")) defaults.Add(tagged);
                     break;
 
                 case "TypedefDecl" when name is not null:
@@ -103,8 +105,38 @@ public static class Extractor
         }
 
         api.Opaques.RemoveAll(o => defined.Contains(o));
+        foreach (var data in defaults) ApplyDefaults(api, data, errors);
         return (api, errors);
     }
+
+    /// <summary>
+    /// Gives each field of the struct a <c>[defaults]</c> value has the value written for it as its
+    /// <c>default:</c> tag, so every writer starts the field there; a field the value leaves unset
+    /// keeps zero.
+    /// </summary>
+    static void ApplyDefaults(ApiModel api, ApiData data, List<string> errors)
+    {
+        var at = api.Structs.FindIndex(s => s.Name == data.Type);
+        if (at < 0 || data.Value.Kind != ApiValueKind.List || data.Value.Items.Count != api.Structs[at].Fields.Count)
+        {
+            errors.Add($"{data.Name}: [defaults] needs a value of a struct the headers define, one item per field");
+            return;
+        }
+        var target = api.Structs[at];
+        var fields = target.Fields.Select((f, i) => DefaultSpelling(f, data.Value.Items[i]) is { } given && f.Default is null
+            ? f with { Tags = f.Tags.Append($"default:{given}").ToList() } : f).ToList();
+        api.Structs[at] = target with { Fields = fields };
+    }
+
+    static string? DefaultSpelling(ApiField field, ApiValue value) => value.Kind switch
+    {
+        ApiValueKind.Number when value.Text.Length == 0 => null,
+        ApiValueKind.Number when field.Type is "bool" or "_Bool" => value.Text == "0" ? "false" : "true",
+        ApiValueKind.String => value.Text.Length >= 2 && value.Text[0] == '"' && value.Text[^1] == '"' ? value.Text[1..^1] : value.Text,
+        ApiValueKind.Number or ApiValueKind.Name => value.Text,
+        ApiValueKind.List when value.Items.All(v => v.Kind == ApiValueKind.Number && v.Text.Length > 0) => string.Join(' ', value.Items.Select(v => v.Text)),
+        _ => null,
+    };
 
     static ApiEnum ExtractEnum(JsonObject node, string name, byte[] bytes)
     {
@@ -184,6 +216,12 @@ public static class Extractor
             var fieldName = f["name"]?.GetValue<string>() ?? $"unnamed_{unnamed++}";
             var (ret, paramTypes) = CTypes.FunctionPointer(qual);
             var (summaryTags, summary, pdocs, retTags, retDoc) = DocParser.Parse(f);
+            if (TrailingOnDeclLine(f, bytes) is { } declOffset)
+            {
+                var (leadingTags, leadingDoc) = DocParser.LeadingBlock(bytes, declOffset);
+                summaryTags = [.. leadingTags, .. summaryTags];
+                summary = string.Join(' ', new[] { leadingDoc, summary }.Where(x => x.Length > 0));
+            }
             order.Add(fieldName);
 
             if (ret is null)
@@ -198,7 +236,7 @@ public static class Extractor
                 continue;
             }
 
-            var pnames = DeclText.FnPtrParamNames(bytes, fieldName);
+            var pnames = DeclText.FnPtrParamNames(SliceRange(bytes, f) is { Length: > 0 } own ? System.Text.Encoding.UTF8.GetBytes(own) : bytes, fieldName);
             foreach (var tagged in pdocs.Keys)
             {
                 if (!pnames.Contains(tagged))
@@ -364,25 +402,45 @@ public static class Extractor
         var inner = node["inner"] as JsonArray;
         switch (kind)
         {
+            case "ImplicitValueInitExpr":
+                return new ApiValue(ApiValueKind.Number, "", []);
             case "InitListExpr":
-                return new ApiValue(ApiValueKind.List, "", (inner ?? []).Select(i => ExtractValue(i!.AsObject(), bytes)).ToList());
+                return new ApiValue(ApiValueKind.List, node["field"]?["name"]?.GetValue<string>() ?? "", (inner ?? []).Select(i => ExtractValue(i!.AsObject(), bytes)).ToList());
+            case "UnaryOperator" when node["opcode"]?.GetValue<string>() == "-" && inner is [JsonObject negated]
+                && ExtractValue(negated, bytes) is { Kind: ApiValueKind.Number, Text.Length: > 0 } magnitude:
+                return magnitude with { Text = magnitude.Text.StartsWith('-') ? magnitude.Text[1..] : "-" + magnitude.Text };
+            case "FloatingLiteral" when SliceRange(bytes, node).Trim().TrimEnd('f', 'F', 'l', 'L') is var written
+                && double.TryParse(written, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _):
+                return new ApiValue(ApiValueKind.Number, written, []);
             case "IntegerLiteral" or "FloatingLiteral":
                 return new ApiValue(ApiValueKind.Number, node["value"]!.ToString(), []);
             case "StringLiteral":
                 return new ApiValue(ApiValueKind.String, node["value"]!.GetValue<string>(), []);
+            case "GenericSelectionExpr" when (inner ?? []).OfType<JsonObject>().FirstOrDefault(a => a["selected"]?.GetValue<bool>() == true) is { } chosen:
+                return ExtractValue(((JsonArray)chosen["inner"]!).Last()!.AsObject(), bytes);
             case "DeclRefExpr":
                 return new ApiValue(ApiValueKind.Name, node["referencedDecl"]!["name"]!.GetValue<string>(), []);
             case "OffsetOfExpr":
                 var begin = node["range"]!["begin"]!;
                 var at = (begin["offset"] ?? begin["expansionLoc"]!["offset"])!.GetValue<int>();
                 var text = System.Text.Encoding.UTF8.GetString(bytes, at, bytes.Length - at);
-                return new ApiValue(ApiValueKind.OffsetOf, text[(text.IndexOf('(') + 1)..text.IndexOf(')')].Trim(), []);
+                var operands = text[(text.IndexOf('(') + 1)..text.IndexOf(')')].Split(',').Select(o => o.Trim()).ToList();
+                return new ApiValue(ApiValueKind.OffsetOf, $"{operands[0]}, {operands[1]}", []);
             case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof" && node["argType"] is JsonObject arg:
                 return new ApiValue(ApiValueKind.SizeOf, arg["qualType"]!.GetValue<string>(), []);
+            case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof"
+                && System.Text.RegularExpressions.Regex.Match(SliceRange(bytes, node), @"\(\s*(\w+)\s*\*\s*\)\s*0\s*\)\s*->\s*(\w+)") is { Success: true } member:
+                return new ApiValue(ApiValueKind.SizeOf, $"{member.Groups[1].Value}->{member.Groups[2].Value}", []);
+            case "UnaryExprOrTypeTraitExpr" when node["name"]?.GetValue<string>() == "sizeof"
+                && OperandType(inner) is { } operandType:
+                return new ApiValue(ApiValueKind.SizeOf, operandType, []);
         }
         if (inner is [JsonObject only]) return ExtractValue(only, bytes);
         throw new NotSupportedException($"an initializer holds a {kind}, which has no projection");
     }
+
+    static string? OperandType(JsonArray? inner) =>
+        inner is [JsonObject operand] && operand["type"] is JsonObject type ? type["qualType"]?.GetValue<string>() : null;
 
     static string SliceRange(byte[] bytes, JsonObject node)
     {
@@ -393,5 +451,22 @@ public static class Extractor
         if (b is null || e is null) return "";
         var end = Math.Min(e.Value + tokLen, bytes.Length);
         return System.Text.Encoding.UTF8.GetString(bytes, b.Value, end - b.Value);
+    }
+
+    /// <summary>
+    /// The offset of the line a field is declared on, when that line carries a trailing
+    /// <c>///&lt;</c> comment; null otherwise.
+    /// </summary>
+    static int? TrailingOnDeclLine(JsonObject field, byte[] bytes)
+    {
+        var range = field["range"]?["begin"]?["offset"] ?? field["loc"]?["offset"];
+        if (range is null) return null;
+        var at = Math.Min(range.GetValue<int>(), bytes.Length);
+        var start = at;
+        while (start > 0 && bytes[start - 1] != (byte)'\n') start--;
+        var end = at;
+        while (end < bytes.Length && bytes[end] != (byte)'\n') end++;
+        var line = System.Text.Encoding.UTF8.GetString(bytes, start, end - start);
+        return line.Contains("///<", StringComparison.Ordinal) ? start : null;
     }
 }

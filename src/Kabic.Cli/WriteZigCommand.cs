@@ -42,7 +42,7 @@ internal static class WriteZigCommand
         {
             if (Write(options, scratch) is var code and not 0) return code;
             var generated = Files(scratch, [""]);
-            var committed = Files(options.Root, [PackagesRoot]);
+            var committed = Files(options.Root, [PackagesRoot, .. Units(options).Where(u => u.Spec.PackageDir is not null).Select(u => u.Spec.PackageDir!)]);
             var drift = generated.Union(committed).Order(StringComparer.Ordinal)
                 .Where(rel => !generated.Contains(rel) || !committed.Contains(rel)
                     || !File.ReadAllBytes(Path.Combine(scratch, rel)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(options.Root, rel))))
@@ -68,7 +68,7 @@ internal static class WriteZigCommand
 
     static List<Unit> Units(Options options) =>
         DomainSpec.LoadForZig(options.Manifest).OrderBy(d => d.Name, StringComparer.Ordinal)
-            .Select(d => new Unit(d, Path.Combine(options.Root, PackagesRoot, d.Name))).ToList();
+            .Select(d => new Unit(d, Path.Combine(options.Root, d.PackageDir ?? Path.Combine(PackagesRoot, d.Name)))).ToList();
 
     static int Write(Options options, string into)
     {
@@ -104,13 +104,14 @@ internal static class WriteZigCommand
             foreach (var name in models[unit.Key].Enums.Where(e => !e.External).SelectMany(e => e.Values).Select(v => v.Name)
                          .Concat(models[unit.Key].Constants.Select(c => c.Name)))
                 owner.TryAdd(name, unit.Key);
+        var allStructs = models.Values.SelectMany(m => m.Structs).Where(s => !s.External).ToList();
         var texts = new Dictionary<string, string>();
         var abis = new Dictionary<string, string>();
         var imports = new Dictionary<string, List<string>>();
         foreach (var unit in units)
         {
             var foreign = owner.Where(kv => kv.Value != unit.Key).ToDictionary();
-            try { (texts[unit.Key], abis[unit.Key]) = ZigWriter.RenderFiles(models[unit.Key], foreign, convention, $"{unit.Key}_c.zig"); }
+            try { (texts[unit.Key], abis[unit.Key]) = ZigWriter.RenderFiles(models[unit.Key], foreign, convention, $"{unit.Key}_c.zig", allStructs); }
             catch (NotSupportedException e) { failures[unit.Key] = e.Message; continue; }
             imports[unit.Key] = foreign.Values.Distinct().Where(k => texts[unit.Key].Contains($"@import(\"{k}\")"))
                 .Concat(Included(root, unit, units)).Where(k => k != unit.Key)
@@ -125,7 +126,7 @@ internal static class WriteZigCommand
             var package = new ZigPackage(unit.Key, unit.Package,
                 unit.Spec.Headers.Select(h => IncludeName(unit.Spec, h)).ToList(),
                 imports[unit.Key].Select(k => new ZigImport(k, byKey[k].Package, Slashed(Path.GetRelativePath(unit.PackageDir, byKey[k].PackageDir)))).ToList(),
-                Reached(unit.Key, imports).SelectMany(k => byKey[k].Spec.IncludeDirs).Distinct()
+                Reached(unit.Key, imports).SelectMany(k => ReachedDirs(root, byKey[k], units)).Distinct()
                     .Select(d => Slashed(Path.GetRelativePath(unit.PackageDir, Path.Combine(root, d)))).ToList());
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, $"{unit.Key}.zig"), texts[unit.Key]);
@@ -136,7 +137,7 @@ internal static class WriteZigCommand
             File.WriteAllText(Path.Combine(dir, "layout_values.c"), package.LayoutValues(models[unit.Key]));
         }
         var all = Path.Combine(root, PackagesRoot);
-        var gathered = units.Select(u => new ZigImport(u.Key, u.Package, Slashed(Path.GetRelativePath(all, u.PackageDir)))).ToList();
+        var gathered = units.Where(u => u.Spec.PackageDir is null).Select(u => new ZigImport(u.Key, u.Package, Slashed(Path.GetRelativePath(all, u.PackageDir)))).ToList();
         Directory.CreateDirectory(Path.Combine(into, PackagesRoot));
         File.WriteAllText(Path.Combine(into, PackagesRoot, "build.zig"), ZigPackage.AllBuildZig(gathered));
         File.WriteAllText(Path.Combine(into, PackagesRoot, "build.zig.zon"), ZigPackage.AllBuildZon(gathered));
@@ -155,6 +156,26 @@ internal static class WriteZigCommand
         return [.. seen];
     }
 
+    /// <summary>
+    /// The include directories of <paramref name="unit"/> its headers reach: those holding its own
+    /// headers, and those holding a header they include that no unit declares. A header another unit
+    /// declares brings that unit's directories through its import instead.
+    /// </summary>
+    static IEnumerable<string> ReachedDirs(string root, Unit unit, IReadOnlyList<Unit> units)
+    {
+        var dirs = unit.Spec.IncludeDirs;
+        var own = dirs.Where(d => unit.Spec.Headers.Any(h => Slashed(h).StartsWith(Slashed(d) + "/", StringComparison.Ordinal)));
+        var declared = units.SelectMany(u => u.Spec.Headers.Select(h => IncludeName(u.Spec, h))).ToHashSet(StringComparer.Ordinal);
+        var foreign = IncludedNames(root, unit).Where(n => !declared.Contains(n))
+            .SelectMany(n => dirs.Where(d => File.Exists(Path.Combine(root, d, n))).Take(1));
+        return own.Concat(foreign).Distinct();
+    }
+
+    static IEnumerable<string> IncludedNames(string root, Unit unit) =>
+        unit.Spec.Headers.SelectMany(h => File.ReadLines(Path.Combine(root, h)))
+            .Select(l => Regex.Match(l, @"^\s*#\s*include\s*[<""]([^>""]+)[>""]"))
+            .Where(m => m.Success).Select(m => m.Groups[1].Value);
+
     /// <summary>A header as an <c>#include</c> reaches it through its domain's include directories.</summary>
     static string IncludeName(DomainSpec spec, string header) =>
         spec.IncludeDirs.Select(d => Slashed(Path.GetRelativePath(d, header)))
@@ -162,10 +183,8 @@ internal static class WriteZigCommand
 
     /// <summary>The units declaring a header the headers of <paramref name="unit"/> include.</summary>
     static IEnumerable<string> Included(string root, Unit unit, IReadOnlyList<Unit> units) =>
-        unit.Spec.Headers.SelectMany(h => File.ReadLines(Path.Combine(root, h)))
-            .Select(l => Regex.Match(l, @"^\s*#\s*include\s*[<""]([^>""]+)[>""]"))
-            .Where(m => m.Success)
-            .SelectMany(m => units.Where(u => u.Spec.Headers.Any(h => IncludeName(u.Spec, h) == m.Groups[1].Value)).Select(u => u.Key).Take(1));
+        IncludedNames(root, unit)
+            .SelectMany(n => units.Where(u => u.Spec.Headers.Any(h => IncludeName(u.Spec, h) == n)).Select(u => u.Key).Take(1));
 
     static bool Report(IReadOnlyDictionary<string, string> failures)
     {

@@ -7,7 +7,7 @@ using Kabic;
 
 /// <summary>
 /// Renders the C# source kabic generates from one parsed ABI model: vtable projections,
-/// structs, enums, node types, borrow wrappers and free-function classes.
+/// structs, enums and free-function classes.
 /// </summary>
 public static class CSharpWriter
 {
@@ -40,22 +40,25 @@ public static class CSharpWriter
         {
             var b = SingleBorrowed(model, p)!;
             var n = Idioms.Ident(p.Name!);
+            if (BorrowedAllocates(b))
+                throw new InvalidOperationException(
+                    $"{p.Name}: a single [borrowed] {b.Name} holding text is not projected yet; pass it as a sequence or leave the slot unprojected");
             lines.Add($"{indent}var {n}Native = new {CsType(model, CTypes.Deref(p.Type), convention).TrimStart()}();");
             foreach (var f in b.Fields)
             {
                 var mirror = $"{n}.{Idioms.Pascal(f.Name)}";
-                if (f.Has("array_of"))
+                if (f.CountedBy is not null)
                 {
-                    var count = b.Fields.First(x => x.Name == f.TagValue("array_of"));
+                    var count = b.Fields.First(x => x.Name == f.CountedBy);
                     lines.Add($"{indent}using var {n}{Idioms.Pascal(f.Name)}Pin = {mirror}.Pin();");
-                    lines.Add($"{indent}{n}Native.{f.Name} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}Pin.Pointer;");
+                    lines.Add($"{indent}{n}Native.{Idioms.Field(f.Name)} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}Pin.Pointer;");
                     lines.Add($"{indent}{n}Native.{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;");
                 }
-                else if (!b.Fields.Any(x => x.TagValue("array_of") == f.Name))
-                    lines.Add($"{indent}{n}Native.{f.Name} = {mirror};");
+                else if (!b.Fields.Any(x => x.CountedBy == f.Name))
+                    lines.Add($"{indent}{n}Native.{Idioms.Field(f.Name)} = {mirror};");
             }
         }
-        foreach (var p in ps.Where(x => x.Has("utf8") && !x.Has("array_of")))
+        foreach (var p in ps.Where(x => x.Has("utf8") && x.CountedBy is null))
         {
             var n = Idioms.Ident(p.Name!);
             lines.Add($"{indent}var {n}Text = {n} ?? \"\";");
@@ -102,6 +105,8 @@ public static class CSharpWriter
             {
                 var native = CsType(model, CTypes.Deref(s.Seq.Type), convention);
                 lines.Add($"{at}var {n}Pins = new System.Buffers.MemoryHandle[{n}.Length];");
+                if (BorrowedAllocates(borrowed))
+                    lines.Add($"{at}var {n}Texts = new List<nint>();");
                 lines.Add($"{at}var {n}Native = new {native}[{n}.Length];");
                 lines.Add($"{at}try");
                 lines.Add($"{at}{{");
@@ -139,13 +144,15 @@ public static class CSharpWriter
                 closers.Add(["}"]);
                 continue;
             }
-            if (BorrowedOf(model, s.Seq) is null) { closers.Add(["}"]); continue; }
+            if (BorrowedOf(model, s.Seq) is not { } borrowed) { closers.Add(["}"]); continue; }
 
             var n = Idioms.Ident(s.Seq.Name!);
-            closers.Add([
-                "}", "finally", "{",
-                $"    for (var {n}At = 0; {n}At < {n}Pins.Length; {n}At++) {n}Pins[{n}At].Dispose();",
-                "}"]);
+            var release = new List<string> { "}", "finally", "{",
+                $"    for (var {n}At = 0; {n}At < {n}Pins.Length; {n}At++) {n}Pins[{n}At].Dispose();" };
+            if (BorrowedAllocates(borrowed))
+                release.Add($"    foreach (var {n}Text in {n}Texts) Marshal.FreeCoTaskMem({n}Text);");
+            release.Add("}");
+            closers.Add([.. release]);
             closers.Add(["}"]);
         }
         return closers;
@@ -169,7 +176,7 @@ public static class CSharpWriter
     /// </summary>
     /// <summary>The <c>[borrowed]</c> struct one parameter points at, not as a sequence.</summary>
     static ApiStruct? SingleBorrowed(ApiModel model, ApiParam p) =>
-        !p.Has("array_of") && !p.Has("out") && !p.Has("optional") && Pointee(model, p.Type) is { } target && IsBorrowed(target) ? target : null;
+        p.CountedBy is null && !p.Has("out") && !p.Has("optional") && Pointee(model, p.Type) is { } target && IsBorrowed(target) ? target : null;
 
     static ApiStruct? BorrowedOf(ApiModel model, ApiParam seq)
     {
@@ -185,24 +192,61 @@ public static class CSharpWriter
     static IEnumerable<string> BorrowedFill(ApiModel model, ApiStruct b, string n, Convention convention)
     {
         var at = $"{n}At";
+        var texts = BorrowedTexts(b);
         yield return $"for (var {at} = 0; {at} < {n}.Length; {at}++)";
         yield return "{";
         foreach (var f in b.Fields)
         {
-            var native = $"{n}Native[{at}].{f.Name}";
+            var native = $"{n}Native[{at}].{Idioms.Field(f.Name)}";
             var mirror = $"{n}[{at}].{Idioms.Pascal(f.Name)}";
-            if (f.Has("array_of"))
+            if (texts.Contains(f))
             {
-                var count = b.Fields.First(x => x.Name == f.TagValue("array_of"));
+                yield return $"    {n}Texts.Add(Marshal.StringToCoTaskMemUTF8({mirror}));";
+                yield return $"    {native} = ({CsType(model, f.Type, convention)}){n}Texts[^1];";
+            }
+            else if (f.CountedBy is not null && f.Has("utf8"))
+            {
+                var count = b.Fields.First(x => x.Name == f.CountedBy);
+                yield return $"    var {n}{Idioms.Pascal(f.Name)}At = {mirror}.Length == 0 ? 0 : Marshal.AllocCoTaskMem({mirror}.Length * nint.Size);";
+                yield return $"    if ({n}{Idioms.Pascal(f.Name)}At != 0) {n}Texts.Add({n}{Idioms.Pascal(f.Name)}At);";
+                yield return $"    for (var {n}Each = 0; {n}Each < {mirror}.Length; {n}Each++)";
+                yield return "    {";
+                yield return $"        {n}Texts.Add(Marshal.StringToCoTaskMemUTF8({mirror}.Span[{n}Each]));";
+                yield return $"        Marshal.WriteIntPtr({n}{Idioms.Pascal(f.Name)}At, {n}Each * nint.Size, {n}Texts[^1]);";
+                yield return "    }";
+                yield return $"    {native} = ({CsType(model, f.Type, convention)}){n}{Idioms.Pascal(f.Name)}At;";
+                yield return $"    {n}Native[{at}].{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;";
+            }
+            else if (f.CountedBy is not null)
+            {
+                var count = b.Fields.First(x => x.Name == f.CountedBy);
                 yield return $"    {n}Pins[{at}] = {mirror}.Pin();";
                 yield return $"    {native} = ({CsType(model, f.Type, convention)}){n}Pins[{at}].Pointer;";
                 yield return $"    {n}Native[{at}].{count.Name} = ({CsType(model, count.Type, convention)}){mirror}.Length;";
             }
-            else if (!b.Fields.Any(x => x.TagValue("array_of") == f.Name))
+            else if (!b.Fields.Any(x => x.CountedBy == f.Name))
                 yield return $"    {native} = {mirror};";
         }
         yield return "}";
     }
+
+    /// <summary>
+    /// The <c>[utf8]</c> fields of a <c>[borrowed]</c> struct, in declaration order: each is a
+    /// string the call encodes for its own length and frees when it returns.
+    /// </summary>
+    static List<ApiField> BorrowedTexts(ApiStruct b) =>
+        b.Fields.Where(f => CTypes.IsPointer(f.Type) && f.CountedBy is null && f.Has("utf8")).ToList();
+
+    /// <summary>Whether a call encodes any text of a <c>[borrowed]</c> struct, which it frees when it returns.</summary>
+    static bool BorrowedAllocates(ApiStruct b) => b.Fields.Any(f => CTypes.IsPointer(f.Type) && f.Has("utf8"));
+
+    /// <summary>
+    /// Whether a <c>[borrowed]</c> struct holds a value the bindings declare and no managed
+    /// projection mirrors, so it lives beside the bindings rather than in the contract project.
+    /// </summary>
+    public static bool BorrowedNeedsNative(ApiModel model, ApiStruct b, Convention convention) =>
+        b.Fields.Any(f => !CTypes.IsPointer(f.Type) && model.Structs.Any(v => v.Name == f.Type.Trim())
+            && convention.Project(Languages.CSharp, f.Type.Trim()) is null);
 
     /// <summary>
     /// The element type a sequence parameter is spelled with. A <c>[value]</c> element
@@ -239,7 +283,7 @@ public static class CSharpWriter
     /// </summary>
     static string DefaultLiteral(ApiModel model, ClassifiedSlot cs, ApiParam p, ApiSlot slot, Convention convention)
     {
-        var v = p.TagValue("default")!.Trim();
+        var v = p.Default!.Trim();
         if (p.Has("closure"))
             return v is "none"
                 ? "null"
@@ -266,6 +310,10 @@ public static class CSharpWriter
                 : throw new InvalidOperationException(
                     $"{slot.Name}.{p.Name}: [default:{v}] is not a value of {e.Name}.");
 
+        if (v is "none" && p.Has("utf8")) return "\"\"";
+        if (v is "none") return "default";
+        if (p.Type.Trim() is "float" && double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out _)) return v + "f";
+
         return long.TryParse(v, out _)
             ? v
             : throw new InvalidOperationException(
@@ -274,6 +322,12 @@ public static class CSharpWriter
     }
 
     static string StripQualifiers(string cType) => CTypes.Unqualified(cType);
+
+    /// <summary>Whether <paramref name="f"/> is a fixed array of <c>char</c>, projected as a string under the field's own name.</summary>
+    public static bool IsText(ApiField f) => CTypes.FixedArray(f.Type) is { } a && StripQualifiers(a.Element).Trim() == "char";
+
+    /// <summary>The C# name of a value struct's field: a text field's raw bytes carry the suffix <c>Bytes</c>, leaving the plain name to its string.</summary>
+    public static string FieldName(ApiField f) => IsText(f) ? Idioms.Pascal(f.Name) + "Bytes" : Idioms.Pascal(f.Name);
 
     /// <summary>
     /// A C type mapped to C#. Typedef aliases resolve first; pointers recurse so
@@ -322,7 +376,10 @@ public static class CSharpWriter
     /// reads the bytes through the projection it already holds.
     /// </summary>
     static string ReturnElement(ApiModel model, ApiSlot slot, Convention convention) =>
-        ValueTypeName(model, StripQualifiers(CTypes.Deref(slot.Returns)), convention);
+        model.Structs.FirstOrDefault(v => v.Name == StripQualifiers(CTypes.Deref(slot.Returns)).Trim() && IsBorrowed(v)) is { } borrowed
+            ? throw new InvalidOperationException(
+                $"{slot.Name}: answers native memory laid out as the [borrowed] {borrowed.Name}, whose managed mirror is not that memory; the slot is not projected yet")
+            : ValueTypeName(model, StripQualifiers(CTypes.Deref(slot.Returns)), convention);
 
     /// <summary>
     /// What a slot answers with, as its caller reads it. A declared enum names its own
@@ -337,8 +394,18 @@ public static class CSharpWriter
         : model.Enums.Any(e => e.Name == cType.Trim())
             ? Idioms.TypeName(cType.Trim(), convention)
             : Pointee(model, cType) is { } s && ByValue(cType, s) ? Idioms.TypeName(s.Name, convention)
+            : LentReturn(model, cType) is { } lent ? "I" + Idioms.TypeName(lent.Name, convention)
             : CTypes.IsPointer(cType) ? "nint"
             : CsType(model, cType, convention);
+
+    /// <summary>
+    /// The vtable a slot hands back for the caller to use while its owner lives: the answer is
+    /// that vtable's class, borrowed, never the pointer it arrived as.
+    /// </summary>
+    static ApiStruct? LentReturn(ApiModel model, string cType) =>
+        CTypes.IsPointer(cType) && !CTypes.IsPointer(CTypes.Deref(cType))
+        && Pointee(model, cType) is { IsVtable: true } v && !v.Has("bag") && !v.Has("owner")
+        && (v.External || model.OwnerOf(v.Name) is not null) ? v : null;
 
     /// <summary>
     /// The cast carrying the ABI's answer into what <see cref="ReturnType"/> spells, or
@@ -348,6 +415,7 @@ public static class CSharpWriter
         model.Enums.Any(e => e.Name == cType.Trim())
             ? $"({Idioms.TypeName(cType.Trim(), convention)})"
             : Pointee(model, cType) is { } s && ByValue(cType, s) ? $"*({Idioms.TypeName(s.Name, convention)}*)"
+            : LentReturn(model, cType) is { } lent ? $"{Idioms.TypeName(lent.Name, convention)}.Borrow"
             : CTypes.IsPointer(cType) ? "(nint)"
             : "";
 
@@ -402,17 +470,9 @@ public static class CSharpWriter
 
     static OwnedProjection OwnedBy(ApiModel model, ApiSlot release, Convention convention)
     {
-        var typeName = release.TagValue("releases")
-            ?? throw new InvalidOperationException(
-                $"{release.Name}: [releases] must name the projection that owns what this slot takes"
-                + " back, as [releases:<name>]");
+        var typeName = release.TagValue("releases")!;
 
         var released = release.Params.Where(p => !model.Structs.Any(s => s.IsVtable && s.Name == StripQualifiers(CTypes.Deref(p.Type)).Trim())).ToList();
-        if (released.Count != 1)
-            throw new InvalidOperationException(
-                $"{release.Name}: [releases:{typeName}] releases the one pointer this slot takes back,"
-                + $" and it takes {released.Count} parameter(s) besides the provider itself");
-
         var view = PointerToView(model, released[0].Type, convention)
             ?? throw new InvalidOperationException(
                 $"{release.Name}: [releases:{typeName}] hands back {released[0].Type.Trim()}, and a"
@@ -471,6 +531,22 @@ public static class CSharpWriter
     /// carries, so a slot taking two payloads spells which is which instead of leaving the
     /// caller to count positions.
     /// </summary>
+    /// <summary>
+    /// The statements filling one field of an expanded bag from its argument. A fixed array
+    /// bounded by <c>[array_of:]</c> takes a copy of the sequence, which must fit.
+    /// </summary>
+    static IEnumerable<string> BagField(string bag, ApiField f, string value)
+    {
+        if (f.CountedBy is null || CTypes.FixedArray(f.Type) is not { } array)
+        {
+            yield return $"{bag}.{Idioms.Field(f.Name)} = {value};";
+            yield break;
+        }
+        var n = Idioms.Ident(f.Name);
+        yield return $"if ({n}.Length > {array.Extent}) throw new ArgumentOutOfRangeException(nameof({n}));";
+        yield return $"for (var {n}At = 0; {n}At < {n}.Length; {n}At++) {bag}.{Idioms.Field(f.Name)}[{n}At] = ({value})[{n}At];";
+    }
+
     static string BlobTypeParam(ApiParam p) => "T" + Idioms.Pascal(p.Name!);
 
     /// <summary>
@@ -500,6 +576,7 @@ public static class CSharpWriter
     /// </summary>
     static string OutElement(ApiModel model, ApiParam p, Convention convention) =>
         p.Has("rooted") ? "object?"
+        : model.OwnedVtableOf(CTypes.Deref(p.Type)) is { } owned ? "I" + Idioms.TypeName(owned, convention)
         : model.HandleOf(p.Type, 1) is { } handle ? Idioms.TypeName(handle, convention)
         : OutLocal(model, p, convention);
 
@@ -519,7 +596,8 @@ public static class CSharpWriter
     /// rather than a handle to reconstruct.
     /// </summary>
     static string OutRead(ApiModel model, ApiParam p, string local, Convention convention) =>
-        model.HandleOf(p.Type, 1) is { } handle ? $"new {Idioms.TypeName(handle, convention)}({local})"
+        model.OwnedVtableOf(CTypes.Deref(p.Type)) is { } owned ? $"new {Idioms.TypeName(owned, convention)}({local})"
+        : model.HandleOf(p.Type, 1) is { } handle ? $"new {Idioms.TypeName(handle, convention)}({local})"
         : p.Has("rooted")
             ? $"{local} == 0 ? null : System.Runtime.InteropServices.GCHandle.FromIntPtr({local}).Target"
             : local;
@@ -579,6 +657,7 @@ public static class CSharpWriter
         if (p.Has("rooted")) return "object";
         if (model.Enums.Any(e => e.Name == p.Type.Trim()))
             return Idioms.TypeName(p.Type.Trim(), convention);
+        if (ByReference(model, p) is { } lent) return "ref " + Idioms.TypeName(lent.Name, convention);
         var passed = Passed(model, p.Type, convention) ?? CsType(model, p.Type, convention);
         return IsOptionalValue(model, p) ? passed + "?" : passed;
     }
@@ -625,9 +704,26 @@ public static class CSharpWriter
     {
         if (!CTypes.IsPointer(cType)) return null;
         if (Pointee(model, cType) is not { } target) return "nint";
+        if (Lendable(model, target)) return "I" + Idioms.TypeName(target.Name, convention);
         if (HasInterface(model, target)) return Idioms.NativeInterface(target.Name, convention);
         return ByValue(cType, target) ? Idioms.TypeName(target.Name, convention) : "nint";
     }
+
+    /// <summary>
+    /// The plain struct an <c>[inout]</c> parameter lends: the caller passes its own value by
+    /// reference, so what the call reads it reads there and what it writes lands there.
+    /// </summary>
+    static ApiStruct? ByReference(ApiModel model, ApiParam p) =>
+        p.Has("inout") && CTypes.IsPointer(p.Type) && !CType.Of(p.Type).Const
+        && Pointee(model, p.Type) is { } target && IsPlain(target) ? target : null;
+
+    /// <summary>
+    /// A vtable this model only borrows, which another domain lends as a class: a slot takes it as
+    /// that class's contract, the one a caller already holds, and reaches the pointer through it.
+    /// </summary>
+    static bool Lendable(ApiModel model, ApiStruct target) =>
+        target.IsVtable && target.External && !target.Has("bag") && model.OwnerOf(target.Name) is null
+        && target.Has("lent");
 
     static bool HasInterface(ApiModel model, ApiStruct target) =>
         target.IsVtable && !target.Has("bag") && (target.External || model.OwnerOf(target.Name) is not null);
@@ -642,7 +738,10 @@ public static class CSharpWriter
         if (IsOptionalValue(model, p))
             return $"{name}.HasValue ? ({native})Unsafe.AsPointer(ref Unsafe.AsRef(in Nullable.GetValueRefOrDefaultRef(in {name}))) : null";
         return Pointee(model, p.Type) is { } target
-            ? HasInterface(model, target) ? $"{name}.Native" : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
+            ? Lendable(model, target) ? $"(({Idioms.NativeInterface(target.Name, convention)}){name}).Native"
+            : HasInterface(model, target) ? $"{name}.Native"
+            : ByReference(model, p) is not null ? $"({native})Unsafe.AsPointer(ref {name})"
+            : ByValue(p.Type, target) ? $"({native})&{name}" : $"({native}){name}"
             : $"({native}){name}";
     }
 
@@ -655,7 +754,7 @@ public static class CSharpWriter
         var o = new List<string> { Header, $"namespace {nativeNs};\n", $"public partial struct {typeName}", "{",
             $"    /// <summary>The value every <c>[default:]</c> field of <c>{s.Name}</c> declares.</summary>",
             $"    public static {typeName} Default => new()", "    {" };
-        foreach (var f in s.Fields.Where(f => f.TagValue("default") is not null))
+        foreach (var f in s.Fields.Where(f => f.Default is not null))
             o.Add($"        {ValueDefault(model, s, f, convention)}");
         o.Add("    };");
         o.Add("}");
@@ -663,11 +762,83 @@ public static class CSharpWriter
     }
 
     /// <summary>
+    /// The text accessors of a <c>[value]</c> struct's fixed <c>char</c> arrays: each reads the
+    /// bytes up to the first NUL as UTF-8 and writes a string truncated to leave room for one.
+    /// Null when the struct has no such field.
+    /// </summary>
+    public static string? RenderText(ApiStruct s, string ns, IEnumerable<string> usings, Convention convention)
+    {
+        var texts = s.Fields.Where(IsText).ToList();
+        if (texts.Count == 0) return null;
+        var typeName = Idioms.TypeName(s.Name, convention);
+        var o = new List<string> { Header };
+        o.AddRange(usings.Distinct().Order(StringComparer.Ordinal).Select(u => $"using {u};"));
+        o.AddRange([$"\nnamespace {ns};\n", $"/// <summary>The text of <c>{s.Name}</c>'s fixed character arrays.</summary>",
+            $"public static class {typeName}Text", "{", $"    extension(ref {typeName} self)", "    {"]);
+        foreach (var f in texts)
+        {
+            var name = Idioms.Pascal(f.Name);
+            var extent = CTypes.FixedArray(f.Type)!.Value.Extent;
+            var bytes = $"System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref self.{FieldName(f)}.e0, {extent}))";
+            o.AddRange([
+                $"    /// <summary><c>{f.Name}</c> as text.</summary>",
+                $"    public string {name}",
+                "    {",
+                "        get",
+                "        {",
+                $"            var bytes = {bytes};",
+                "            var end = bytes.IndexOf((byte)0);",
+                "            return System.Text.Encoding.UTF8.GetString(end < 0 ? bytes : bytes[..end]);",
+                "        }",
+                "        set",
+                "        {",
+                $"            var bytes = {bytes};",
+                "            bytes.Clear();",
+                "            var text = System.Text.Encoding.UTF8.GetBytes(value ?? \"\");",
+                "            text.AsSpan(0, Math.Min(text.Length, bytes.Length - 1)).CopyTo(bytes);",
+                "        }",
+                "    }",
+            ]);
+        }
+        o.AddRange(["    }", "}"]);
+        return string.Join('\n', o);
+    }
+
+    /// <summary>
+    /// The <c>[default:]</c> values of a struct another assembly may declare, as a static
+    /// extension in <paramref name="ns"/>, which a partial could not reach.
+    /// </summary>
+    public static string RenderDefaultExtension(ApiModel model, ApiStruct s, string ns, IEnumerable<string> usings, Convention convention)
+    {
+        var typeName = Idioms.TypeName(s.Name, convention);
+        var o = new List<string> { Header };
+        o.AddRange(usings.Distinct().Order(StringComparer.Ordinal).Select(u => $"using {u};"));
+        o.AddRange([$"\nnamespace {ns};\n", $"/// <summary>The <c>[default:]</c> values of <c>{s.Name}</c>.</summary>", $"public static class {typeName}Defaults", "{",
+            $"    extension({typeName})", "    {",
+            $"        /// <summary>The value every <c>[default:]</c> field of <c>{s.Name}</c> declares.</summary>",
+            $"        public static {typeName} Default => new()", "        {"]);
+        foreach (var f in s.Fields.Where(f => f.Default is not null))
+            o.Add($"            {ExtensionDefault(model, s, f, typeName, convention)}");
+        o.AddRange(["        };", "    }", "}"]);
+        return string.Join('\n', o);
+    }
+
+    /// <summary>A default written from outside the struct, where an array field is ClangSharp's nested fixed buffer.</summary>
+    static string ExtensionDefault(ApiModel model, ApiStruct s, ApiField f, string typeName, Convention convention)
+    {
+        if (ValueArray(model, s, f, convention) is not { } array) return ValueDefault(model, s, f, convention);
+        var name = Idioms.Pascal(f.Name);
+        var values = f.Default!.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var vector = $"System.Numerics.Vector{array.Arity}";
+        return $"{name} = System.Runtime.CompilerServices.Unsafe.BitCast<{vector}, {typeName}._{name}_e__FixedBuffer>(new {vector}({string.Join(", ", values.Select(v => v + "f"))})),";
+    }
+
+    /// <summary>
     /// The counted pointers of <paramref name="s"/> a span can read: one whose elements are a
     /// C# pointer type has no span, so it stays raw.
     /// </summary>
     public static IEnumerable<ApiField> SpannedFields(ApiModel model, ApiStruct s, Convention convention) =>
-        s.Fields.Where(f => f.Has("array_of")
+        s.Fields.Where(f => f.CountedBy is not null
             && !(CTypes.IsPointer(f.Type) && ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention).EndsWith('*')));
 
     /// <summary>
@@ -694,16 +865,7 @@ public static class CSharpWriter
             if (!first) o.Add("");
             first = false;
 
-            if (!CTypes.IsPointer(f.Type))
-                throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of] bounds the elements a pointer reaches, and "
-                    + $"{f.Type.Trim()} is not one");
-
-            var countName = f.TagValue("array_of");
-            var count = s.Fields.FirstOrDefault(x => x.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of:{countName}] names a length field the struct "
-                    + "does not declare");
+            var count = s.Fields.First(x => x.Name == f.CountedBy);
 
             var element = ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
             o.Add(!string.IsNullOrEmpty(f.Doc)
@@ -751,8 +913,8 @@ public static class CSharpWriter
     public static string RenderView(ApiModel model, ApiStruct s, string ns,
         IEnumerable<string> extraUsings, Convention convention)
     {
-        var counts = s.Fields.Where(f => f.Has("array_of"))
-            .Select(f => f.TagValue("array_of")).ToHashSet();
+        var counts = s.Fields.Where(f => f.CountedBy is not null)
+            .Select(f => f.CountedBy).ToHashSet();
         if (model.SafeViews) return RenderSafeView(model, s, ns, extraUsings, counts, convention);
 
         var o = new List<string> { Header };
@@ -809,7 +971,7 @@ public static class CSharpWriter
 
     static string SafeViewType(ApiModel model, ApiField f, Convention convention)
     {
-        if (f.Has("array_of"))
+        if (f.CountedBy is not null)
         {
             var cType = StripQualifiers(CTypes.Deref(f.Type)).Trim();
             if (model.Structs.Any(v => v.Name == cType && v.Has("view")))
@@ -842,10 +1004,10 @@ public static class CSharpWriter
     /// <summary>The expression that reads the native <paramref name="pointer"/> as its safe view.</summary>
     static string SafeViewFrom(ApiModel model, ApiStruct s, string pointer, Convention convention)
     {
-        var counts = s.Fields.Where(f => f.Has("array_of")).Select(f => f.TagValue("array_of")).ToHashSet();
+        var counts = s.Fields.Where(f => f.CountedBy is not null).Select(f => f.CountedBy).ToHashSet();
         var args = s.Fields.Where(f => !counts.Contains(f.Name)).Select(f =>
         {
-            if (f.TagValue("array_of") is { } count)
+            if (f.CountedBy is { } count)
             {
                 var element = ViewElement(model, StripQualifiers(CTypes.Deref(f.Type)).Trim(), convention);
                 return $"new ReadOnlySpan<{element}>(({element}*){pointer}->{f.Name}, (int){pointer}->{count})";
@@ -876,7 +1038,7 @@ public static class CSharpWriter
         if (!CTypes.IsPointer(f.Type))
             return $"private readonly {ValueTypeName(model, f.Type, convention)} {f.Name};";
 
-        if (!f.Has("array_of"))
+        if (f.CountedBy is null)
             throw new InvalidOperationException(
                 $"{s.Name}.{f.Name}: a [view] reads a pointer as the sequence it bounds, so the"
                 + " field has to name the count bounding it with [array_of:<field>]. A pointer"
@@ -896,13 +1058,9 @@ public static class CSharpWriter
     {
         var name = Idioms.Pascal(f.Name);
 
-        if (f.Has("array_of"))
+        if (f.CountedBy is not null)
         {
-            var countName = f.TagValue("array_of");
-            var count = s.Fields.FirstOrDefault(x => x.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of:{countName}] names a length field the struct"
-                    + " does not declare");
+            var count = s.Fields.First(x => x.Name == f.CountedBy);
             var element = ViewElement(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
             return [$"public readonly ReadOnlySpan<{element}> {name} => {f.Name} == null"
                 + $" ? default : new ReadOnlySpan<{element}>({f.Name}, (int){count.Name});"];
@@ -947,9 +1105,6 @@ public static class CSharpWriter
 
     /// <summary>
     /// Whether a struct is projected as a managed mirror occupying the same bytes.
-    /// <c>[node:]</c> answers this as much as <c>[value]</c> does: the node's backing state
-    /// is one of these structs, and a node whose state were the raw binding type would be
-    /// asserting a layout instead of naming one.
     /// </summary>
     public static bool IsValue(ApiStruct s) =>
         !s.External && IsPlain(s);
@@ -962,7 +1117,7 @@ public static class CSharpWriter
     /// it reaches someone else's question; here the lifetime is stated -- the call -- so the
     /// pointer is projected as memory the caller keeps alive for it.
     /// </summary>
-    public static bool IsBorrowed(ApiStruct s) => !s.External && !s.IsVtable && s.Has("borrowed");
+    public static bool IsBorrowed(ApiStruct s) => !s.IsVtable && s.Has("borrowed");
 
     /// <summary>
     /// Emits the managed side of a <c>[borrowed]</c> struct: each counted pointer is memory
@@ -977,17 +1132,18 @@ public static class CSharpWriter
         foreach (var f in s.Fields)
         {
             if (!CTypes.IsPointer(f.Type)) continue;
+            if (f.CountedBy is null && f.Has("utf8"))
+            {
+                if (!string.IsNullOrEmpty(f.Doc)) fields.Add($"    /// <summary>{Escape(f.Doc)}</summary>");
+                fields.Add($"    public string? {Idioms.Pascal(f.Name)};");
+                continue;
+            }
 
-            var countName = f.TagValue("array_of")
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: a pointer in a [borrowed] struct is memory the call reads, and"
-                    + " one that names no count has no extent to read -- tag it [array_of:<count field>].");
-            var count = s.Fields.FirstOrDefault(x => x.Name == countName)
-                ?? throw new InvalidOperationException(
-                    $"{s.Name}.{f.Name}: [array_of:{countName}] names a length field the struct does not declare");
+            var countName = f.CountedBy!;
+            var count = s.Fields.First(x => x.Name == countName);
             counts.Add(count.Name);
 
-            var element = ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
+            var element = f.Has("utf8") ? "string" : ValueTypeName(model, StripQualifiers(CTypes.Deref(f.Type)), convention);
             if (!string.IsNullOrEmpty(f.Doc)) fields.Add($"    /// <summary>{Escape(f.Doc)}</summary>");
             fields.Add($"    public ReadOnlyMemory<{element}> {Idioms.Pascal(f.Name)};");
         }
@@ -1008,7 +1164,8 @@ public static class CSharpWriter
             var named = StripQualifiers(CTypes.IsPointer(f.Type) ? CTypes.Deref(f.Type) : f.Type).Trim();
             if (convention.Project(Languages.CSharp, named) is not null) return false;
             return model.Enums.Any(e => e.Name == named && e.External)
-                || model.Structs.Any(v => v.Name == named && v.External);
+                || model.Structs.Any(v => v.Name == named && v.External)
+                || model.ForeignIdTypes.Contains(named);
         });
 
         var o = new List<string> { Header, "using System;" };
@@ -1021,6 +1178,19 @@ public static class CSharpWriter
         o.Add($"public partial struct {Idioms.TypeName(s.Name, convention)}");
         o.Add("{");
         o.AddRange(fields);
+        var bytes = s.Fields.Where(f => f.CountedBy is not null && StripQualifiers(CTypes.Deref(f.Type)).Trim() == "void").ToList();
+        if (bytes is [var blob])
+        {
+            var others = s.Fields.Where(f => f != blob && !counts.Contains(f.Name)).ToList();
+            string Spelled(ApiField f) => CTypes.IsPointer(f.Type) && f.Has("utf8") && f.CountedBy is null ? "string?" : ValueFieldType(model, s, f, convention);
+            var ps = others.Select(f => $"{Spelled(f)} {Idioms.Ident(f.Name)}").Append($"T {Idioms.Ident(blob.Name)}");
+            var sets = others.Select(f => $"{Idioms.Pascal(f.Name)} = {Idioms.Ident(f.Name)}")
+                .Append($"{Idioms.Pascal(blob.Name)} = System.Runtime.InteropServices.MemoryMarshal.AsBytes(new[] {{ {Idioms.Ident(blob.Name)} }}.AsSpan()).ToArray()");
+            o.Add("");
+            o.Add($"    /// <summary>The entry whose {blob.Name} is the bytes of <paramref name=\"{Idioms.Ident(blob.Name)}\"/>.</summary>");
+            o.Add($"    public static {Idioms.TypeName(s.Name, convention)} Of<T>({string.Join(", ", ps)}) where T : unmanaged =>");
+            o.Add($"        new() {{ {string.Join(", ", sets)} }};");
+        }
         o.Add("}");
         o.Add("");
         return string.Join('\n', o);
@@ -1055,7 +1225,8 @@ public static class CSharpWriter
     /// type whose fields are the other.
     /// </summary>
     static string ValueTypeName(ApiModel model, string cType, Convention convention) =>
-        convention.Project(Languages.CSharp, cType) is { } mat ? mat
+        cType.Trim() == "void" ? "byte"
+        : convention.Project(Languages.CSharp, cType) is { } mat ? mat
         : convention.Project(Languages.CSharp, cType) is { } handle ? handle
         : model.Structs.Any(v => v.Name == cType.Trim() && (IsValue(v) || IsBorrowed(v) || v.Has("view")))
         || model.Enums.Any(e => e.Name == cType.Trim())
@@ -1087,13 +1258,12 @@ public static class CSharpWriter
 
     /// <summary>
     /// One field's seeding inside a <c>[value]</c> struct's <c>Default</c>. The header states
-    /// the neutral value per field, and it is the same statement a node's state field and the
-    /// scene loader read -- spelling it again beside a hand-written mirror is how the two come
-    /// to describe different neutral surfaces.
+    /// the neutral value per field; spelling it again beside a hand-written mirror is how the two
+    /// come to describe different neutral surfaces.
     /// </summary>
     static string ValueDefault(ApiModel model, ApiStruct s, ApiField f, Convention convention)
     {
-        var d = f.TagValue("default")!.Trim();
+        var d = f.Default!.Trim();
         var name = Idioms.Pascal(f.Name);
         var parts = d.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -1152,6 +1322,9 @@ public static class CSharpWriter
         o.Add($"public unsafe interface {nativeIface}");
         o.Add("{");
         o.Add($"    {vtable.Name}* Native {{ get; }}");
+        o.Add("");
+        o.Add("    /// <summary>Counts the references to the native object; null when it is owned elsewhere.</summary>");
+        o.Add($"    {convention.OwnerClass}? Owner {{ get; }}");
         o.Add("}");
         o.Add("");
 
@@ -1172,7 +1345,7 @@ public static class CSharpWriter
             contract.Add("");
         }
 
-        var closures = VtableClosures(model, slots, convention);
+        var closures = VtableClosures(model, slots.Where(s => !convention.Unprojected.Contains($"{vtable.Name}.{s.Slot.Name}")), convention);
         var closureGroups = VtableClosureGroups(model, slots, typeName, convention);
         foreach (var cb in closures.DistinctBy(c => c.Delegate))
             RenderClosureDelegate(model, contract ?? o, cb, typeName, convention, contract is null ? typeName : domainIface);
@@ -1186,8 +1359,10 @@ public static class CSharpWriter
             + (domainIface is null ? "" : $", {domainIface}"));
         o.Add("{");
         o.Add($"    private {vtable.Name}* _native;");
+        o.Add($"    private readonly {vtable.Name}* _owned;");
         o.Add($"    private readonly delegate* unmanaged[Cdecl]<{vtable.Name}*, void> _destroy;");
-        o.Add("    private readonly bool _borrowed;");
+        o.Add($"    private readonly {convention.OwnerClass}? _owner;");
+        o.Add($"    private readonly List<{convention.OwnerClass}> _held = new();");
 
         var rootedKey = vtable.Slots
             .SelectMany(s => s.Params.Where(p => p.Has("rooted")).Select(p => (Slot: s, Param: p)))
@@ -1199,7 +1374,7 @@ public static class CSharpWriter
             o.Add("");
             o.Add("    /// <summary>");
             o.Add("    /// Keeps alive every managed object handed to the native side as an opaque");
-            o.Add("    /// pointer. The engine stores the pointer and never dereferences it, so nothing");
+            o.Add("    /// pointer. The native side stores the pointer and never dereferences it, so nothing");
             o.Add("    /// over there stops the collector from moving or reclaiming the object; the");
             o.Add("    /// handle is what makes the pointer mean anything by the time it comes back.");
             o.Add("    /// </summary>");
@@ -1217,8 +1392,8 @@ public static class CSharpWriter
                     ? "    /// Keeps the registered handlers reachable, all of them through the one"
                         + " context they share."
                     : "    /// Keeps the registered handler reachable.");
-            o.Add("    /// The engine holds only an opaque pointer to it, which stops nothing on this");
-            o.Add("    /// side from collecting or moving the object before the engine calls back into it.");
+            o.Add("    /// The native side holds only an opaque pointer to it, which stops nothing on this");
+            o.Add("    /// side from collecting or moving the object before the native side calls back into it.");
             o.Add("    /// </summary>");
             o.Add(cg.Keyed
                 ? $"    private readonly Dictionary<{cg.KeyType ?? CsType(model, cg.RetainKey!.Type, convention)}, GCHandle>"
@@ -1231,10 +1406,10 @@ public static class CSharpWriter
             o.Add("");
             o.Add("    /// <summary>");
             o.Add("    /// Where a managed exception waits out the native frames. A handler runs");
-            o.Add("    /// underneath engine code that has no way to carry an exception, so throwing");
+            o.Add("    /// underneath native code that has no way to carry an exception, so throwing");
             o.Add("    /// through it would tear down the process; the trampoline parks it here and");
             o.Add("    /// the call rethrows once the native stack has unwound. Per-thread, because");
-            o.Add("    /// a handler runs on whichever thread the engine called it from.");
+            o.Add("    /// a handler runs on whichever thread the native side called it from.");
             o.Add("    /// </summary>");
             o.Add("    [ThreadStatic]");
             o.Add("    private static Exception? s_parkedCallbackException;");
@@ -1244,7 +1419,18 @@ public static class CSharpWriter
         o.Add($"    private {vtable.Name}* Handle => _native != null ? _native");
         o.Add($"        : throw new ObjectDisposedException(nameof({typeName}));");
         o.Add("");
-        o.Add($"    {vtable.Name}* {nativeIface}.Native => Handle;");
+        o.Add($"    {vtable.Name}* {nativeIface}.Native => _owner is {{ IsClosed: false }} ? _owned : Handle;");
+        o.Add("");
+        o.Add($"    {convention.OwnerClass}? {nativeIface}.Owner => _owner;");
+        o.Add("");
+        o.Add("    /// <summary>Keeps the object <paramref name=\"owner\"/> counts alive until this one is torn down.</summary>");
+        o.Add($"    public void Hold({convention.OwnerClass}? owner)");
+        o.Add("    {");
+        o.Add("        if (owner is null) return;");
+        o.Add("        var added = false;");
+        o.Add("        owner.DangerousAddRef(ref added);");
+        o.Add("        _held.Add(owner);");
+        o.Add("    }");
         o.Add("");
 
         classified.LifecycleInit.TryGetValue(vtable.Name, out var initSlot);
@@ -1257,28 +1443,7 @@ public static class CSharpWriter
                 : throw new InvalidOperationException(
                     $"{vtable.Name}.{initSlot}: a startup lifecycle hook returns {convention.ResultType}, and this one returns {initSlotReturns}");
 
-        if (plan.Kind == ConstructorKind.FromFactory)
-        {
-            var factory = plan.Factory!;
-            var fparams = convention.FactoryInputs(model, factory);
-            var sig = string.Join(", ", fparams.Select(p => $"{Idioms.CsForeignType(p.Type, convention)} {Idioms.Ident(p.Name!)}"));
-            var call = string.Join(", ", fparams.Select(p => Idioms.Ident(p.Name!)));
-            o.Add(XmlDoc("    ", factory.Doc, convention, fparams.Select(p => (Idioms.Ident(p.Name!), p.Doc)),
-                throwsOnFail: true).TrimEnd());
-            o.Add($"    {(plan.NeedsWrapper ? "internal" : "public")} {typeName}({sig})");
-            o.Add("    {");
-            var madeHandle = (convention.ReturnsResult(factory.Returns) ? model.Makes(factory) : null)
-                ?? throw new InvalidOperationException(
-                    $"{factory.Name}: a factory returns {convention.ResultType} and writes its handle through its last parameter");
-            o.Add($"        {madeHandle} handle;");
-            o.Add($"        {convention.ResultHelperClass}.ThrowIfFailed(global::{nativeNs}.NativeMethods.{convention.StripPrefix(factory.Name)}({(call.Length > 0 ? call + ", " : "")}&handle), \"{factory.Name}\");");
-            o.Add("        _native = handle.@ref;");
-            o.Add("        _destroy = handle.destroy;");
-            if (initCall is not null) o.Add(initCall);
-            o.Add("    }");
-            o.Add("");
-        }
-        else if (plan.Kind == ConstructorKind.FromHandle)
+        if (plan.Kind == ConstructorKind.FromHandle)
         {
             var handleType = plan.HandleTypeName!;
             o.Add($"    /// <summary>Wraps an owner <c>{handleType}</c> and runs {typeName.ToLowerInvariant()}'s startup lifecycle hook.</summary>");
@@ -1287,7 +1452,9 @@ public static class CSharpWriter
             o.Add("    {");
             o.Add("        if (handle.@ref == null) throw new ArgumentNullException(nameof(handle));");
             o.Add("        _native = handle.@ref;");
+            o.Add("        _owned = handle.@ref;");
             o.Add("        _destroy = handle.destroy;");
+            o.Add($"        _owner = new {convention.OwnerClass}(Teardown);");
             if (initCall is not null) o.Add(initCall);
             o.Add("    }");
             o.Add("");
@@ -1299,14 +1466,27 @@ public static class CSharpWriter
         o.Add($"    private {typeName}({vtable.Name}* native, bool borrowed)");
         o.Add("    {");
         o.Add("        _native = native;");
+        o.Add("        _owned = native;");
         o.Add("        _destroy = null;");
-        o.Add("        _borrowed = borrowed;");
+        o.Add("        _owner = null;");
         o.Add("    }");
         o.Add("");
+
+        RenderDataFields(model, o, decls, vtable, convention);
 
         foreach (var cs in slots)
         {
             if (!Projected(cs)) continue;
+            if (cs.Slot.ReturnTags.Contains("typed"))
+            {
+                RenderTypedSlot(model, o, decls, cs.Slot, convention);
+                continue;
+            }
+            if (convention.Unprojected.Contains($"{vtable.Name}.{cs.Slot.Name}"))
+            {
+                Console.Error.WriteLine($"{vtable.Name}.{cs.Slot.Name}: not projected yet");
+                continue;
+            }
             if (cs.PublicParams.Any(p => !p.Has("closure") && !p.Has("completion")
                     && classified.Callbacks.Any(c => c.Name == p.Type.Trim())))
             {
@@ -1330,45 +1510,57 @@ public static class CSharpWriter
         o.Add("    {");
         o.Add("        OnDispose();");
         o.Add("        if (_native == null) return;");
-        if (rootedKey is not null)
-        {
-            o.Add("        foreach (var rooted in _rooted.Values) rooted.Free();");
-            o.Add("        _rooted.Clear();");
-        }
+        o.Add("        _native = null;");
+        o.Add("        if (_owner is not null)");
+        o.Add("        {");
+        o.Add("            _owner.Dispose();");
+        o.Add("            return;");
+        o.Add("        }");
         var retainedGroups = closureGroups.Where(c => c.Lifetime == ClosureLifetime.Retained).ToList();
         var survivors = retainedGroups.Where(c => c.Pairs.Any(p => p.Teardown)).ToList();
 
-        void FreeRetained(IEnumerable<ClosureGroup> gs, string ind = "        ")
+        void FreeRetained(IEnumerable<ClosureGroup> gs)
         {
             foreach (var cg in gs)
             {
                 if (cg.Keyed)
                 {
-                    o.Add($"{ind}foreach (var retained in {cg.Retained}.Values) retained.Free();");
-                    o.Add($"{ind}{cg.Retained}.Clear();");
+                    o.Add($"        foreach (var retained in {cg.Retained}.Values) retained.Free();");
+                    o.Add($"        {cg.Retained}.Clear();");
                 }
                 else
-                    o.Add($"{ind}if ({cg.Retained}.IsAllocated) {cg.Retained}.Free();");
+                    o.Add($"        if ({cg.Retained}.IsAllocated) {cg.Retained}.Free();");
             }
         }
 
-        FreeRetained(retainedGroups.Except(survivors));
-        if (survivors.Count > 0)
+        void FreeRooted()
         {
-            o.Add("        if (_borrowed)");
-            o.Add("        {");
-            FreeRetained(survivors, "            ");
-            o.Add("            _native = null;");
-            o.Add("            return;");
-            o.Add("        }");
+            if (rootedKey is null) return;
+            o.Add("        foreach (var rooted in _rooted.Values) rooted.Free();");
+            o.Add("        _rooted.Clear();");
         }
-        else
-            o.Add("        if (_borrowed) { _native = null; return; }");
-        if (shutdownSlot is not null) o.Add($"        _native->{shutdownSlot}(_native);");
+
+        void ReleaseHeld()
+        {
+            o.Add("        foreach (var held in _held) held.DangerousRelease();");
+            o.Add("        _held.Clear();");
+        }
+
+        FreeRooted();
+        FreeRetained(retainedGroups);
+        ReleaseHeld();
+        o.Add("    }");
+        o.Add("");
+        o.Add($"    /// <summary>Destroys the native {typeName.ToLowerInvariant()} once its last reference is released, then releases what it held.</summary>");
+        o.Add("    private void Teardown()");
+        o.Add("    {");
+        FreeRooted();
+        FreeRetained(retainedGroups.Except(survivors));
+        if (shutdownSlot is not null) o.Add($"        _owned->{shutdownSlot}(_owned);");
         if (teardownParks) o.Add("        s_parkedCallbackException = null;");
-        o.Add("        _destroy(_native);");
-        o.Add("        _native = null;");
+        o.Add("        _destroy(_owned);");
         FreeRetained(survivors);
+        ReleaseHeld();
         if (teardownParks)
         {
             o.Add("        if (s_parkedCallbackException is { } parked)");
@@ -1383,6 +1575,8 @@ public static class CSharpWriter
         o.Add("}");
         o.Add("");
 
+        if (retainedGroups.Any(g => g.Pairs.Any(p => convention.ReturnsResult(p.Callback.Returns))))
+            RenderRaisedFailures(o, convention);
         if (contract is null) return new ProviderSource(string.Join('\n', o), null);
 
         contract.Add($"/// <summary>The {typeName.ToLowerInvariant()} contract game code depends on, so a caller"
@@ -1404,7 +1598,7 @@ public static class CSharpWriter
             .FirstOrDefault(n => Regex.IsMatch(code, $@"(?<![\w.]){Regex.Escape(n)}\b"));
         if (native is not null)
             throw new InvalidOperationException(
-                $"{vtable.Name}: {domainIface} names {native}, which is the ABI's own spelling rather"
+                $"{vtable.Name}: {domainIface} names {native} in `{code.Split('\n').First(l => Regex.IsMatch(l, $@"(?<![\w.]){Regex.Escape(native)}\b")).Trim()}`, which is the ABI's own spelling rather"
                 + " than a managed projection of it. A contract stands apart from the call that"
                 + " satisfies it, so every type it mentions has to be one a caller can reach without"
                 + " the native layer.");
@@ -1440,13 +1634,14 @@ public static class CSharpWriter
     /// named the concept, so two slots taking the same one share a delegate instead of
     /// each inventing a name from the slot it appears in.
     /// </summary>
-    static string DelegateName(ApiCallback callback, Convention convention)
+    static string DelegateName(ApiModel model, ApiCallback callback, Convention convention)
     {
         var n = callback.Name;
         if (n.StartsWith(convention.SymbolPrefix, StringComparison.Ordinal)) n = n[convention.SymbolPrefix.Length..];
         if (n.EndsWith("_func", StringComparison.Ordinal)) n = n[..^5];
         else if (n.EndsWith("_fn", StringComparison.Ordinal)) n = n[..^3];
-        return Idioms.Pascal(n);
+        var name = Idioms.Pascal(n);
+        return model.Structs.Any(s => Idioms.TypeName(s.Name, convention) == name) ? name + "Callback" : name;
     }
 
     /// <summary>
@@ -1489,8 +1684,20 @@ public static class CSharpWriter
         var basis = model.ResolveAlias(t.TrimEnd('*', ' '));
         if (stars == 0 && IsBoolType(basis, convention)) return "bool";
         if (convention.ReturnsResult(basis)) return convention.ResultManagedType + new string('*', stars);
+        if (model.IdTypes.Contains(basis) || model.ForeignIdTypes.Contains(basis)
+            || model.Structs.Any(s => s.Name == basis && IsPlain(s)))
+            return Idioms.TypeName(basis, convention) + new string('*', stars);
         return Idioms.CsForeignType(basis, convention) + new string('*', stars);
     }
+
+    /// <summary>
+    /// The vtable of this model a callback lane lends for the length of the call: the handler
+    /// receives the class that projects it, borrowed, never the pointer it arrived as.
+    /// </summary>
+    static ApiStruct? LentVtable(ApiModel model, ApiParam lane) =>
+        CTypes.IsPointer(lane.Type) && !CTypes.IsPointer(CTypes.Deref(lane.Type))
+        && Pointee(model, lane.Type) is { IsVtable: true, External: false } v && !v.Has("bag") && !v.Has("owner")
+        && model.Structs.Any(s => s.Slots.Count > 0 && s.Name == v.Name) ? v : null;
 
     /// <summary>How a lane is spelled in the delegate the caller implements.</summary>
     static bool IsOwnerLane(ApiParam lane, string owner, Convention convention) =>
@@ -1498,6 +1705,7 @@ public static class CSharpWriter
 
     static string ManagedLane(ApiModel model, ApiParam lane, string selfType, Convention convention) =>
         IsOwnerLane(lane, selfType, convention) ? selfType
+        : LentVtable(model, lane) is { } lent ? "I" + Idioms.TypeName(lent.Name, convention)
         : CTypes.IsPointer(lane.Type) && !lane.Has("utf8") ? "nint"
         : lane.Has("utf8") ? "string"
         : IsBoolType(lane.Type, convention) ? "bool"
@@ -1522,60 +1730,28 @@ public static class CSharpWriter
         var pairs = new List<CallbackPair>();
         foreach (var fn in scope.Where(p => p.Has("closure") && !p.Has("completion")))
         {
-            var ctxName = fn.TagValue("closure")
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure] must name the context parameter, as [closure:<name>]");
-            var ctx = scope.FirstOrDefault(p => p.Name == ctxName)
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure:{ctxName}] names no parameter of this slot");
+            var ctx = scope.First(p => p.Name == fn.ClosureContext);
 
-            var callback = model.CallbackOf(fn)
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure] needs a function-pointer typedef, but {fn.Type.Trim()} is not one");
-
-            var ctxLane = callback.Lanes.Select((l, i) => (l, i))
-                .Where(x => x.l.Has("context"))
-                .Select(x => (int?)x.i).FirstOrDefault()
-                ?? throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [closure:{ctxName}] hands the context to {callback.Name}, "
-                    + "which declares no lane to receive it — a lane's type says nothing about which one "
-                    + "carries the context, so the typedef has to mark it [context]");
-            if (callback.Lanes[ctxLane].Type.Replace(" ", "") != "void*")
-                throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: {callback.Name}'s [context] lane is "
-                    + $"{callback.Lanes[ctxLane].Type.Trim()}, and a context travels as void*");
+            var callback = model.CallbackOf(fn)!;
+            var ctxLane = callback.Lanes.Select((l, i) => (l, i)).First(x => x.l.Has("context")).i;
 
             var lifetime = fn.Has("retained") ? ClosureLifetime.Retained : ClosureLifetime.Scoped;
             ApiParam? retainKey = null;
             var retainByReturn = false;
             if (fn.TagValue("retained") is { } keyName)
             {
-                if (keyName == ReturnKey)
-                {
-                    if (slot.Returns.Trim() is "void")
-                        throw new InvalidOperationException(
-                            $"{slot.Name}.{fn.Name}: [retained:{ReturnKey}] keys the registration on what the "
-                            + "slot returns, and this one returns nothing");
-                    retainByReturn = true;
-                }
-                else
-                    retainKey = scope.FirstOrDefault(p => p.Name == keyName)
-                        ?? throw new InvalidOperationException(
-                            $"{slot.Name}.{fn.Name}: [retained:{keyName}] names no parameter of this slot");
+                if (keyName == ReturnKey) retainByReturn = true;
+                else retainKey = scope.First(p => p.Name == keyName);
             }
             var teardown = fn.Has("teardown");
-            if (teardown && lifetime != ClosureLifetime.Retained)
-                throw new InvalidOperationException(
-                    $"{slot.Name}.{fn.Name}: [teardown] says the engine calls this handler while the "
-                    + "provider is being destroyed, which only a [retained] closure survives to see");
             var reportsByResult = convention.ReturnsResult(callback.Returns);
             if (lifetime == ClosureLifetime.Retained && !reportsByResult && !teardown)
                 throw new InvalidOperationException(
                     $"{slot.Name}.{fn.Name}: a retained closure outlives the call that registered it, so a "
                     + $"handler that throws has nowhere to report; {callback.Name} needs to return {convention.ResultType}, "
-                    + "or [teardown] if the engine only calls it from the destroy this object drives");
+                    + "or [teardown] if the native side only calls it from the destroy this object drives");
 
-            pairs.Add(new CallbackPair(fn, ctx, lifetime, DelegateName(callback, convention),
+            pairs.Add(new CallbackPair(fn, ctx, lifetime, DelegateName(model, callback, convention),
                 TrampolineName(slot, fn),
                 callback, ctxLane, retainKey, retainByReturn, teardown)
             { ByResult = reportsByResult });
@@ -1626,24 +1802,10 @@ public static class CSharpWriter
         var fn = slot.Params.FirstOrDefault(p => p.Has("completion"));
         if (fn is null) return null;
 
-        var ctxName = fn.TagValue("completion")
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion] must name the context parameter it travels"
-                + " with, as [completion:<name>]");
-        var ctx = slot.Params.FirstOrDefault(p => p.Name == ctxName)
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion:{ctxName}] names no parameter of this slot");
-
-        var callback = model.CallbackOf(fn)
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion] needs a function-pointer typedef, but"
-                + $" {fn.Type.Trim()} is not one");
-
-        var ctxLane = callback.Lanes.Select((l, i) => (l, i)).Where(x => x.l.Has("context"))
-            .Select(x => (int?)x.i).FirstOrDefault()
-            ?? throw new InvalidOperationException(
-                $"{slot.Name}.{fn.Name}: [completion:{ctxName}] hands the context to {callback.Name},"
-                + " which declares no lane to receive it — the typedef has to mark it [context]");
+        var ctxName = fn.TagValue("completion")!;
+        var ctx = slot.Params.First(p => p.Name == ctxName);
+        var callback = model.CallbackOf(fn)!;
+        var ctxLane = callback.Lanes.Select((l, i) => (l, i)).First(x => x.l.Has("context")).i;
 
         var errorLane = callback.Lanes.Select((l, i) => (l, i))
             .Where(x => convention.ReturnsResult(x.l.Type))
@@ -1726,7 +1888,7 @@ public static class CSharpWriter
         public string Handle => $"{Idioms.Ident(Basis)}Handle";
 
         /// <summary>
-        /// The field keeping that root reachable for as long as the engine may call back.
+        /// The field keeping that root reachable for as long as the native side may call back.
         /// </summary>
         public string Retained => $"_retained{Idioms.Pascal(Basis)}";
 
@@ -1874,12 +2036,39 @@ public static class CSharpWriter
 
     /// <summary>
     /// The trampoline a <see cref="CallbackPair"/> needs: the unmanaged entry point the
-    /// engine calls, which unwraps the handle back into the delegate. A managed exception
+    /// native side calls, which unwraps the handle back into the delegate. A managed exception
     /// cannot cross the native frame. Where the callback declares an error channel it is
     /// translated into one and reported as a failure; where it does not, it is parked and
     /// rethrown by the call site once the native stack has unwound, which only holds
     /// because a closure without a channel is never allowed to outlive its call.
     /// </summary>
+    /// <summary>
+    /// Makes every checked native call of a class report what retained handlers threw: such a
+    /// handler outlives the call that registered it, so the failure waits for the next call
+    /// that observes a code.
+    /// </summary>
+    static void RenderRaisedFailures(List<string> o, Convention convention)
+    {
+        var check = System.Text.RegularExpressions.Regex.Escape(convention.ResultHelperClass + ".ThrowIfFailed(");
+        for (var i = 0; i < o.Count; i++)
+            o[i] = System.Text.RegularExpressions.Regex.Replace(o[i], "(" + check + @")(Handle->.*)(, ""[^""]*""\);)$", "$1DrainRaised($2)$3");
+        var end = o.FindLastIndex(l => l == "}");
+        o.InsertRange(end, [
+            "",
+            "    /// <summary>What retained handlers threw and no call has reported yet, from any thread the native side ran them on.</summary>",
+            "    private static readonly System.Collections.Concurrent.ConcurrentQueue<Exception> s_raisedCallbackFailures = new();",
+            "",
+            "    /// <summary>Throws what retained handlers raised, or returns <paramref name=\"code\"/> when they raised nothing.</summary>",
+            "    private static T DrainRaised<T>(T code)",
+            "    {",
+            "        var collected = new List<Exception>();",
+            "        while (s_raisedCallbackFailures.TryDequeue(out var failure)) collected.Add(failure);",
+            "        if (collected.Count == 0) return code;",
+            "        throw new InvalidOperationException(\"A handler registered with this provider threw\",",
+            "            collected.Count == 1 ? collected[0] : new AggregateException(collected));",
+            "    }"]);
+    }
+
     static void RenderTrampoline(ApiModel model, List<string> o, CallbackPair pair, ClosureGroup group, Convention convention)
     {
         var lanes = pair.Callback.Lanes;
@@ -1890,6 +2079,8 @@ public static class CSharpWriter
             ? "state.Owner"
             : lanes[i].Has("utf8")
             ? $"Marshal.PtrToStringUTF8((nint)arg{i}) ?? \"\""
+            : LentVtable(model, lanes[i]) is { } lent
+            ? $"{Idioms.TypeName(lent.Name, convention)}.Borrow(arg{i})"
             : ManagedLane(model, lanes[i], group.Owner, convention) != BlittableLane(model, lanes[i].Type, convention)
                 ? $"({ManagedLane(model, lanes[i], group.Owner, convention)})arg{i}"
             : $"arg{i}"));
@@ -1931,8 +2122,7 @@ public static class CSharpWriter
         o.Add("        {");
         if (byResult)
         {
-            if (pair.Lifetime != ClosureLifetime.Retained)
-                o.Add("            s_parkedCallbackException ??= ex;");
+            o.Add(pair.Lifetime != ClosureLifetime.Retained ? "            s_parkedCallbackException ??= ex;" : "            s_raisedCallbackFailures.Enqueue(ex);");
             o.Add($"            return {convention.ResultHelperClass}.ToCode(ex);");
         }
         else
@@ -2020,6 +2210,68 @@ public static class CSharpWriter
     /// from these, so a signature the class emits and the signature the interface promises are
     /// the same string rather than two renderings of the same intent.
     /// </summary>
+    /// <summary>
+    /// The fields of a vtable its implementation writes for the caller to read, beside the
+    /// slots: a scalar reads as a property, and a <c>[typed]</c> pointer as a reference to the
+    /// type the caller names, since only the caller knows what the memory holds.
+    /// </summary>
+    static void RenderDataFields(ApiModel model, List<string> o, List<MemberDecl>? decls, ApiStruct vtable, Convention convention)
+    {
+        foreach (var f in vtable.Fields.Where(f => f.Name != "handle"))
+        {
+            var doc = string.IsNullOrEmpty(f.Doc) ? "" : $"    /// <summary>{Escape(f.Doc)}</summary>";
+            var name = Idioms.Pascal(f.Name);
+            if (f.Has("typed"))
+            {
+                var readOnly = CType.Of(f.Type).Const ? "readonly " : "";
+                var decl = $"ref {readOnly}T {name}<T>() where T : unmanaged";
+                if (doc.Length > 0) o.Add(doc);
+                o.Add($"    /// <exception cref=\"InvalidOperationException\">The field holds no memory.</exception>");
+                o.Add($"    public {decl}");
+                o.Add("    {");
+                o.Add($"        var at = Handle->{Idioms.Member(f.Name)};");
+                o.Add($"        if (at == null) throw new InvalidOperationException(\"{f.Name} holds no memory\");");
+                o.Add("        return ref *(T*)at;");
+                o.Add("    }");
+                o.Add("");
+                decls?.Add(new MemberDecl(doc, decl, false));
+                continue;
+            }
+            if (CTypes.IsPointer(f.Type)) continue;
+            var type = CsType(model, f.Type, convention);
+            if (doc.Length > 0) o.Add(doc);
+            o.Add($"    public {type} {name} => Handle->{Idioms.Member(f.Name)};");
+            o.Add("");
+            decls?.Add(new MemberDecl(doc, $"{type} {name}", true));
+        }
+    }
+
+    /// <summary>
+    /// A slot whose <c>[typed]</c> return points at memory of a type only the caller knows:
+    /// it takes that type as a parameter and answers a reference into the memory, refusing
+    /// the null the slot answers when there is none.
+    /// </summary>
+    static void RenderTypedSlot(ApiModel model, List<string> o, List<MemberDecl>? decls, ApiSlot slot, Convention convention)
+    {
+        var ps = slot.Params.ToList();
+        var name = Idioms.Pascal(slot.Name);
+        var sig = string.Join(", ", ps.Select(p => $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"));
+        var args = string.Join("", ps.Select(p => ", " + (p.Has("utf8") ? $"(sbyte*){Idioms.Ident(p.Name!)}Ptr" : Idioms.Ident(p.Name!))));
+        var readOnly = CType.Of(slot.Returns).Const ? "readonly " : "";
+        var decl = $"ref {readOnly}T {name}<T>({sig}) where T : unmanaged";
+        var doc = XmlDoc("    ", slot.Doc, convention, ps.Select(p => (Idioms.Ident(p.Name!), p.Doc))).TrimEnd();
+        if (doc.Length > 0) o.Add(doc);
+        o.Add($"    /// <exception cref=\"InvalidOperationException\">The call answered no memory.</exception>");
+        o.Add($"    public {decl}");
+        o.Add("    {");
+        o.Add($"        var at = Handle->{slot.Name}(Handle{args});");
+        o.Add($"        if (at == null) throw new InvalidOperationException(\"{slot.Name} answered no memory\");");
+        o.Add("        return ref *(T*)at;");
+        o.Add("    }");
+        o.Add("");
+        decls?.Add(new MemberDecl(doc, decl, false));
+    }
+
     sealed record MemberDecl(string Doc, string Decl, bool Property)
     {
         /// <summary>
@@ -2051,7 +2303,7 @@ public static class CSharpWriter
         slot.TagValue("name") ?? Idioms.Pascal(slot.Name);
 
     static string Call(ApiSlot slot, string arguments) =>
-        slot.Symbol is { } symbol ? $"{symbol}({arguments.TrimStart(',', ' ')})" : $"Handle->{slot.Name}(Handle{arguments})";
+        slot.Symbol is { } symbol ? $"{symbol}({arguments.TrimStart(',', ' ')})" : $"Handle->{Idioms.Field(slot.Name)}(Handle{arguments})";
 
     static void RenderSlotMethod(ApiModel model, List<string> o, List<MemberDecl>? decls,
         ClassifiedSlot cs, Convention convention, string owner,
@@ -2096,15 +2348,15 @@ public static class CSharpWriter
                         : $"{CsParamType(model, p, convention)} {Idioms.Ident(p.Name!)}"))
                 .ToList();
 
-            var optionalFrom = parts.FindIndex(x => x.Param.Has("default"));
-            if (optionalFrom >= 0 && parts.Skip(optionalFrom).Any(x => !x.Param.Has("default")))
+            var optionalFrom = parts.FindIndex(x => x.Param.Default is not null);
+            if (optionalFrom >= 0 && parts.Skip(optionalFrom).Any(x => x.Param.Default is null))
                 throw new InvalidOperationException(
                     $"{slot.Name}: a parameter carrying [default] is one the caller may leave out, so"
                     + " every parameter after it must carry one too. Reorder the fields so the ones"
                     + $" with a default come last -- {string.Join(", ", parts.Skip(optionalFrom)
-                        .Where(x => !x.Param.Has("default")).Select(x => x.Param.Name))} has none.");
+                        .Where(x => x.Param.Default is null).Select(x => x.Param.Name))} has none.");
 
-            return parts.Select(x => x.Param.Has("default")
+            return parts.Select(x => x.Param.Default is not null
                 ? $"{x.Text} = {DefaultLiteral(model, cs, x.Param, slot, convention)}"
                 : x.Text);
         }
@@ -2127,19 +2379,35 @@ public static class CSharpWriter
                 + "(TaskCreationOptions.RunContinuationsAsynchronously);");
             o.Add($"        var completion = GCHandle.Alloc(new {completion.StateType} {{ {inits} }});");
             var (cPro, cDepth) = Utf8Prologue(model, ins, new string(' ', 8), convention);
+            var (cSeq, cSeqDepth) = SequencePrologue(model, cs.Sequences, new string(' ', 8 + cDepth * 4), convention);
             o.AddRange(cPro);
+            o.AddRange(cSeq);
+            var cSeqAt = cDepth;
+            cDepth += cSeqDepth;
+            var cClosers = SequenceClosers(model, cs.Sequences);
             var cInd = new string(' ', 8 + cDepth * 4);
+            var cBag = cs.ExpandedParam is null ? null : Idioms.Ident(cs.ExpandedParam.Name!);
+            if (cBag is not null)
+            {
+                o.Add($"{cInd}{cs.ExpandedStruct!.Name} {cBag} = default;");
+                foreach (var f in cs.ExpandedStruct.Fields)
+                {
+                    var arg = cs.PublicParams.FirstOrDefault(a => a.Name == f.Name)
+                        ?? cs.Sequences.Select(q => q.Count).First(c => c.Name == f.Name);
+                    foreach (var line in BagField(cBag, f, CallArg(arg))) o.Add(cInd + line);
+                }
+            }
             o.Add($"{cInd}try");
             o.Add($"{cInd}{{");
-            o.Add($"{cInd}    Handle->{slot.Name}(Handle"
-                + string.Concat(NativeParams().Select(p => ", " + CallArg(p))) + ");");
+            o.Add($"{cInd}    Handle->{Idioms.Field(slot.Name)}(Handle"
+                + string.Concat(NativeParams().Select(p => ", " + (p == cs.ExpandedParam ? $"&{cBag}" : CallArg(p)))) + ");");
             o.Add($"{cInd}}}");
             o.Add($"{cInd}catch");
             o.Add($"{cInd}{{");
             o.Add($"{cInd}    completion.Free();");
             o.Add($"{cInd}    throw;");
             o.Add($"{cInd}}}");
-            for (var d = cDepth; d > 0; d--) o.Add(new string(' ', 4 + d * 4) + "}");
+            CloseScopes(o, cDepth, cSeqAt, cClosers);
             o.Add("        return source.Task;");
             o.Add("    }");
             o.Add("");
@@ -2321,7 +2589,7 @@ public static class CSharpWriter
                         {
                             var arg = args.FirstOrDefault(a => a.Name == f.Name)
                                 ?? cs.Sequences.Select(s => s.Count).First(c => c.Name == f.Name);
-                            o.Add($"{fInd}{bagLocal}.{f.Name} = {CallArg(arg)};");
+                            foreach (var line in BagField(bagLocal, f, CallArg(arg))) o.Add(fInd + line);
                         }
                     }
 
@@ -2461,7 +2729,8 @@ public static class CSharpWriter
                 {
                     var args = cs.PublicParams;
                     var sig = Sig(args);
-                    var call = string.Concat(NativeParams().Select(p => ", " + CallArg(p)));
+                    var bag = cs.ExpandedParam is null ? null : Idioms.Ident(cs.ExpandedParam.Name!);
+                    var call = string.Concat(NativeParams().Select(p => ", " + (p == cs.ExpandedParam ? $"&{bag}" : CallArg(p))));
                     var spanElement = cs.ReturnCount is null ? null
                         : viewSequence is not null ? CsType(model, StripQualifiers(CTypes.Deref(slot.Returns)).Trim(), convention)
                         : ReturnElement(model, slot, convention);
@@ -2501,6 +2770,16 @@ public static class CSharpWriter
                         o.Add($"{pInd}{OutLocal(model, op, convention)} {Idioms.Ident(WrittenName(op, convention))}Local"
                             + (cs.Sequences.FirstOrDefault(s => s.Count == op) is { } capacity
                                 ? $" = ({OutLocal(model, op, convention)}){Idioms.Ident(capacity.Seq.Name!)}.Length;" : ";"));
+                    if (bag is not null)
+                    {
+                        o.Add($"{pInd}{cs.ExpandedStruct!.Name} {bag} = default;");
+                        foreach (var f in cs.ExpandedStruct.Fields)
+                        {
+                            var arg = args.FirstOrDefault(a => a.Name == f.Name)
+                                ?? cs.Sequences.Select(s => s.Count).First(c => c.Name == f.Name);
+                            foreach (var line in BagField(bag, f, CallArg(arg))) o.Add(pInd + line);
+                        }
+                    }
                     var pCall = Call(slot, call);
                     if (model.HandleOf(slot.Returns) is not null)
                     {
@@ -2539,9 +2818,9 @@ public static class CSharpWriter
                         }
                     }
                     else if (pHolds)
-                        o.Add($"{pInd}var result = {needsCast}{pCall};");
+                        o.Add($"{pInd}var result = {(needsCast.EndsWith(".Borrow") ? $"{needsCast}({pCall})" : needsCast + pCall)};");
                     else
-                        o.Add($"{pInd}return {needsCast}{pCall};");
+                        o.Add($"{pInd}return {(needsCast.EndsWith(".Borrow") ? $"{needsCast}({pCall})" : needsCast + pCall)};");
                     foreach (var op in cs.TrailingOuts)
                         o.Add($"{pInd}{Idioms.Ident(WrittenName(op, convention))} = "
                             + $"{OutRead(model, op, $"{Idioms.Ident(WrittenName(op, convention))}Local", convention)};");
@@ -2589,7 +2868,7 @@ public static class CSharpWriter
     /// <summary>
     /// The native spelling an untyped pointer parameter has to be cast back to at the
     /// call. The public surface takes <c>nint</c>, which is the idiomatic way for a
-    /// caller to hold a pointer the engine never dereferences, but the vtable slot is
+    /// caller to hold a pointer the native side never dereferences, but the vtable slot is
     /// still declared in the ABI's own terms — a return value already makes this trip
     /// in the other direction.
     /// </summary>
@@ -2631,7 +2910,7 @@ public static class CSharpWriter
         o.Add("        };");
         var regLane = FailureLane.Of(convention, slot.Returns, slot.Name);
         var extraCall = string.Concat(otherParams.Select(p => ", " + Idioms.Ident(p.Name!)));
-        o.Add($"        {regLane.ThrowIfFailed($"Handle->{slot.Name}(Handle, native{extraCall})")}");
+        o.Add($"        {regLane.ThrowIfFailed($"Handle->{Idioms.Field(slot.Name)}(Handle, native{extraCall})")}");
         o.Add("    }");
         o.Add("");
 
@@ -2641,7 +2920,7 @@ public static class CSharpWriter
             + XmlDoc("    ", null, convention, otherParams.Select(p => (Idioms.Ident(p.Name!), p.Doc)), throwsOnFail: true).TrimEnd(),
             $"void {Idioms.Pascal(slot.Name)}Raw({cbParamCsType} {Idioms.Ident(cbParam.Name!)}{otherArgs})");
         o.Add("    {");
-        o.Add($"        {regLane.ThrowIfFailed($"Handle->{slot.Name}(Handle, {Idioms.Ident(cbParam.Name!)}{extraCall})")}");
+        o.Add($"        {regLane.ThrowIfFailed($"Handle->{Idioms.Field(slot.Name)}(Handle, {Idioms.Ident(cbParam.Name!)}{extraCall})")}");
         o.Add("    }");
         o.Add("");
 

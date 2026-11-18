@@ -52,21 +52,41 @@ public static class DocParser
         var full = node?["inner"]?.AsArray().FirstOrDefault(c => c!["kind"]?.GetValue<string>() == "FullComment");
         if (full is not null) Walk(full.AsObject(), summary);
 
-        (List<string> Tags, string Doc) SplitTags(List<string> chunks)
-        {
-            var raw = string.Join(' ', chunks).Trim();
-            var tags = new List<string>();
-            while (TagBlock.Match(raw) is { Success: true } m)
-            {
-                tags.AddRange(m.Groups[1].Value.Split(',').Select(t => t.Trim()));
-                raw = TagBlock.Replace(raw, "", 1);
-            }
-            return (tags, string.Join(' ', raw.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
-        }
-
         var pmap = paramChunks.ToDictionary(kv => kv.Key, kv => SplitTags(kv.Value));
         var (summaryTags, summaryText) = SplitTags(summary);
         var (returnTags, returnText) = SplitTags(returnChunks);
         return (summaryTags, summaryText, pmap, returnTags, returnText);
+    }
+
+    /// <summary>
+    /// The tags and text of the <c>///</c> block written directly above the declaration that starts
+    /// at <paramref name="offset"/> in <paramref name="source"/>. Clang attaches only one comment to a
+    /// declaration, so a field documented both above and with a trailing <c>///&lt;</c> keeps the
+    /// block above through this.
+    /// </summary>
+    public static (List<string> Tags, string Doc) LeadingBlock(byte[] source, int offset)
+    {
+        var text = System.Text.Encoding.UTF8.GetString(source, 0, Math.Min(offset, source.Length));
+        var lines = text.Split('\n');
+        var block = new List<string>();
+        for (var i = lines.Length - 2; i >= 0; i--)
+        {
+            var t = lines[i].Trim();
+            if (!t.StartsWith("///", StringComparison.Ordinal) || t.StartsWith("///<", StringComparison.Ordinal)) break;
+            block.Insert(0, t[3..]);
+        }
+        return SplitTags(block);
+    }
+
+    static (List<string> Tags, string Doc) SplitTags(List<string> chunks)
+    {
+        var raw = string.Join(' ', chunks).Trim();
+        var tags = new List<string>();
+        while (TagBlock.Match(raw) is { Success: true } m)
+        {
+            tags.AddRange(m.Groups[1].Value.Split(',').Select(t => t.Trim()));
+            raw = TagBlock.Replace(raw, "", 1);
+        }
+        return (tags, string.Join(' ', raw.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
     }
 }

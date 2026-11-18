@@ -21,7 +21,7 @@ public static class ClangSharpRunner
     /// reported. The current directory is the job's native directory while the generator runs and
     /// is restored afterwards, also when it throws.
     /// </summary>
-    public static BindingRun Run(BindingJob job, string rootDir, string resourceDir, string outputDirectory)
+    public static BindingRun Run(BindingJob job, string rootDir, string resourceDir, string outputDirectory, ISourceFormatter formatter)
     {
         var umbrellaDir = Path.Combine(rootDir, "build", "kabic", "umbrellas");
         string file;
@@ -116,6 +116,7 @@ public static class ClangSharpRunner
         }
 
         UsingBlock.NormalizeDirectory(outputDirectory);
+        SourceFormat.Directory(formatter, outputDirectory);
         DropAssemblyAttributeFile(outputDirectory);
         return new BindingRun(errors == 0, log);
     }
@@ -125,7 +126,7 @@ public static class ClangSharpRunner
     /// <summary>
     /// Deletes the file declaring <c>[assembly: DisableRuntimeMarshalling]</c> that the
     /// <c>generate-disable-runtime-marshalling</c> option writes beside the bindings. The build applies
-    /// that attribute to every engine assembly, which a second declaration would make fail to compile;
+    /// that attribute to every consumer assembly, which a second declaration would make fail to compile;
     /// the option stays because it is also what makes ClangSharp spell a C <c>bool</c> as <c>bool</c>.
     /// </summary>
     static void DropAssemblyAttributeFile(string outputDirectory)

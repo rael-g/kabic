@@ -18,6 +18,15 @@ public record ApiParam(string? Name, string Type, IReadOnlyList<string> Tags, st
     /// The text after the colon of the first tag named <paramref name="tag"/>, or null.
     /// </summary>
     public string? TagValue(string tag) => Tags.FirstOrDefault(t => t.StartsWith(tag + ":"))?[(tag.Length + 1)..];
+
+    /// <summary>The sibling that holds how many elements this pointer reaches (<c>[array_of:]</c>), or null.</summary>
+    public string? CountedBy => TagValue("array_of");
+
+    /// <summary>The value a caller may leave this at (<c>[default:]</c>), or null.</summary>
+    public string? Default => TagValue("default");
+
+    /// <summary>The parameter carrying this callback's state (<c>[closure:]</c>), or null.</summary>
+    public string? ClosureContext => TagValue("closure");
 }
 
 /// <summary>
@@ -58,6 +67,9 @@ public record ApiSlot(string Name, string Returns, IReadOnlyList<string> Tags, s
     /// <summary>The value of <paramref name="tag"/> on the slot's return, or null.</summary>
     public string? ReturnTagValue(string tag) =>
         ReturnTags.FirstOrDefault(t => t.StartsWith(tag + ":"))?[(tag.Length + 1)..];
+
+    /// <summary>The parameter holding how many elements the returned pointer reaches, or null.</summary>
+    public string? ReturnCountedBy => ReturnTagValue("array_of");
 }
 
 /// <summary>
@@ -106,6 +118,12 @@ public record ApiField(string Name, string Type, IReadOnlyList<string> Tags, str
     /// The text after the colon of the first tag named <paramref name="tag"/>, or null.
     /// </summary>
     public string? TagValue(string tag) => Tags.FirstOrDefault(t => t.StartsWith(tag + ":"))?[(tag.Length + 1)..];
+
+    /// <summary>The sibling field that holds how many elements this field reaches (<c>[array_of:]</c>), or null.</summary>
+    public string? CountedBy => TagValue("array_of");
+
+    /// <summary>The value the field starts at (<c>[default:]</c>), or null.</summary>
+    public string? Default => TagValue("default");
 }
 
 /// <summary>
@@ -123,8 +141,8 @@ public record ApiStruct(string Name, string? Doc, IReadOnlyList<string> Tags, IR
 
     /// <summary>
     /// Whether this struct came from a header this domain composes against rather than
-    /// describes (<c>--compose</c>). It is present so a node in this domain can reference
-    /// a bundle another domain owns and have its component set resolved; the domain still
+    /// describes (<c>--compose</c>). It is present so a declaration in this domain can name
+    /// a type another domain owns; the domain still
     /// emits nothing for it, because the owning domain already does.
     /// </summary>
     public bool External { get; init; }
@@ -176,7 +194,11 @@ public record ApiValue(ApiValueKind Kind, string Text, IReadOnlyList<ApiValue> I
 /// A variable the headers define with an initializer: its name, its C type without const, whether
 /// it is const, and its value.
 /// </summary>
-public record ApiData(string Name, string Type, bool ReadOnly, ApiValue Value);
+public record ApiData(string Name, string Type, bool ReadOnly, ApiValue Value)
+{
+    /// <summary>The tags of the variable's own documentation; <c>[defaults]</c> makes its value the default of each field of its struct type.</summary>
+    public IReadOnlyList<string> Tags { get; init; } = [];
+}
 
 /// <summary>A function the header declares, with its return type and its parameters.</summary>
 public record ApiFunction(string Name, string Returns, string? Doc, string? ReturnDoc, IReadOnlyList<ApiParam> Params)
@@ -285,6 +307,17 @@ public class ApiModel
         return parsed.Pointers == outer && TypeAliases.TryGetValue(parsed.Name, out var target) && target.EndsWith('*') && !target.Contains('(') ? parsed.Name : null;
     }
 
+    /// <summary>
+    /// The vtable an <c>[owner]</c> struct named <paramref name="type"/> owns, when that vtable
+    /// has slots a projection can wrap; null for any other type.
+    /// </summary>
+    public string? OwnedVtableOf(string type)
+    {
+        var owner = Structs.FirstOrDefault(s => s.Name == Bare(type) && s.Has("owner"));
+        var held = owner?.Fields.FirstOrDefault(f => f.Name == "ref") is { } r ? Bare(r.Type) : null;
+        return held is not null && Structs.Any(s => s.Name == held && s.IsVtable) ? held : null;
+    }
+
     /// <summary>The <c>[owner]</c> struct that holds <paramref name="vtable"/>, or null. Fails when two do.</summary>
     public ApiStruct? OwnerOf(string vtable)
     {
@@ -292,16 +325,6 @@ public class ApiModel
         return owners.Count > 1
             ? throw new InvalidOperationException($"{vtable} has two owners: {string.Join(", ", owners.Select(o => o.Name))}")
             : owners.FirstOrDefault();
-    }
-
-    /// <summary>The function that makes the owner of <paramref name="vtable"/>, or null. Fails when two do.</summary>
-    public ApiFunction? FactoryOf(string vtable)
-    {
-        if (OwnerOf(vtable) is not { } owner) return null;
-        var factories = Functions.Where(f => Makes(f) == owner.Name).ToList();
-        return factories.Count > 1
-            ? throw new InvalidOperationException($"{owner.Name} has two factories: {string.Join(", ", factories.Select(f => f.Name))}")
-            : factories.FirstOrDefault();
     }
 
     /// <summary>The <c>[owner]</c> struct <paramref name="function"/> returns or writes through a last <c>[out]</c>, or null.</summary>
@@ -437,6 +460,7 @@ public static class ApiReader
             m.Variables.Add(new ApiVariable(Str(o, "name")!, Str(o, "type")!, Str(o, "doc")));
         }
 
+        ApiModelChecks.Validate(m);
         return m;
     }
 

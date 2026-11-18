@@ -100,7 +100,7 @@ public static class ExtensionRunner
 {
     /// <summary>
     /// Runs <paramref name="extensions"/> over <paramref name="domains"/> and returns every file
-    /// they emitted, keyed by its path relative to <paramref name="root"/>. Throws
+    /// they emitted, formatted, keyed by its path relative to <paramref name="root"/>. Throws
     /// <c>InvalidOperationException</c> with every report when any extension reported a failure.
     /// </summary>
     public static IReadOnlyDictionary<string, string> Run(IReadOnlyList<IKabicExtension> extensions,
@@ -119,7 +119,10 @@ public static class ExtensionRunner
         }
         if (reports.Count > 0)
             throw new InvalidOperationException(string.Join('\n', reports));
-        return emitted;
+        var formatter = Kabic.CSharp.CSharpFormatter.For(convention);
+        return emitted.ToDictionary(e => e.Key,
+            e => e.Key.EndsWith(formatter.Extension, StringComparison.Ordinal) ? formatter.Format(e.Value) : e.Value,
+            StringComparer.Ordinal);
     }
 
     /// <summary>The domains of <paramref name="specs"/> read from their API descriptions.</summary>

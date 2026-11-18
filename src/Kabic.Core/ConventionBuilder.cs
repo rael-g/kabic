@@ -9,7 +9,7 @@ public sealed class ConventionBuilder
     string symbolPrefix = "";
     readonly Dictionary<string, List<(System.Text.RegularExpressions.Regex, string)>> nameRules = [];
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
-    string commonManagedNamespace = "";
+    string commonManagedNamespace = "", ownerClass = "";
     string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "";
     readonly Dictionary<string, Dictionary<string, string>> typeMap = [];
 
@@ -38,10 +38,13 @@ public sealed class ConventionBuilder
         return this;
     }
 
-    /// <summary>The managed namespace the projections import for the shared types.</summary>
-    public ConventionBuilder Managed(string commonNamespace)
+    /// <summary>
+    /// The managed namespace the projections import for the shared types, and the fully qualified
+    /// class that counts the references to a native object.
+    /// </summary>
+    public ConventionBuilder Managed(string commonNamespace, string owner)
     {
-        commonManagedNamespace = commonNamespace;
+        (commonManagedNamespace, ownerClass) = (commonNamespace, owner);
         return this;
     }
 
@@ -78,6 +81,7 @@ public sealed class ConventionBuilder
         CommonBindingsNamespace = commonBindingsNamespace,
         BindingsMethodsClass = bindingsMethodsClass,
         CommonManagedNamespace = commonManagedNamespace,
+        OwnerClass = ownerClass,
         ResultType = resultType,
         ResultOk = resultOk,
         ResultManagedType = resultManagedType,

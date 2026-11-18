@@ -27,15 +27,6 @@ public sealed class Convention
     /// <summary>The expression that means success.</summary>
     public string ResultOkValue => char.IsDigit(ResultOk[0]) ? ResultOk : $"{ResultManagedType}.{ResultOk}";
 
-    /// <summary>
-    /// The parameters a caller of <paramref name="factory"/> supplies: all of them, but the owner
-    /// written back when the factory returns <see cref="ResultType"/>.
-    /// </summary>
-    public IReadOnlyList<ApiParam> FactoryInputs(ApiModel model, ApiFunction factory) =>
-        ReturnsResult(factory.Returns) && model.Makes(factory) is not null
-            ? factory.Params.Take(factory.Params.Count - 1).ToList()
-            : factory.Params.ToList();
-
     /// <summary>The C type a fallible call returns its outcome as (<c>ke_result</c>).</summary>
     public string ResultType { get; init; } = "";
 
@@ -50,6 +41,13 @@ public sealed class Convention
     /// (<c>ThrowIfFailed</c>, <c>FromCode</c>).
     /// </summary>
     public string ResultHelperClass { get; init; } = "";
+
+    /// <summary>
+    /// The fully qualified <see cref="System.Runtime.InteropServices.SafeHandle"/> subclass that
+    /// counts the references to a native object an owner wrapper created, constructed over the
+    /// action that destroys it.
+    /// </summary>
+    public string OwnerClass { get; init; } = "";
 
 
 
@@ -74,6 +72,12 @@ public sealed class Convention
     /// <summary>The <c>vtable.slot</c> names the wrapper projects but a managed contract does not hold yet.</summary>
     public IReadOnlySet<string> Deferred { get; set; } = new HashSet<string>();
 
+    /// <summary>The slots, as <c>vtable.slot</c>, that are projected nowhere yet.</summary>
+    public IReadOnlySet<string> Unprojected { get; set; } = new HashSet<string>();
+
+    /// <summary>Per language, the text of the configuration its formatter uses instead of the default.</summary>
+    public IReadOnlyDictionary<string, string> FormatConfigs { get; set; } = new Dictionary<string, string>();
+
     /// <summary><paramref name="name"/> rewritten by the first rule of <paramref name="language"/> that matches.</summary>
     public string Spell(string language, string name)
     {
@@ -84,9 +88,9 @@ public sealed class Convention
 
     /// <summary>
     /// Name of the directory under which a public header lives
-    /// (<c>kernel_engine/audio/audio.h</c>), so a header is addressed without its install prefix.
+    /// (<c>mylib/audio/audio.h</c>), so a header is addressed without its install prefix.
     /// </summary>
-    public string IncludeDirectoryName { get; init; } = "kernel_engine";
+    public string IncludeDirectoryName { get; init; } = "";
 
     /// <summary>
     /// Namespace of the raw bindings every other binding assembly takes its shared types from.
@@ -128,9 +132,9 @@ public sealed class Convention
 
         var builder = new ConventionBuilder()
             .Symbols(Text(json, "symbolPrefix"))
-            .Bindings(Or(json, "includeDirectoryName", "kernel_engine"), Or(json, "commonBindingsNamespace", ""),
+            .Bindings(Or(json, "includeDirectoryName", ""), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
-            .Managed(Text(json, "commonManagedNamespace"));
+            .Managed(Text(json, "commonManagedNamespace"), Text(json, "ownerClass"));
         if (json["resultType"] is not null)
             builder.Result(Text(json, "resultType"), Text(json, "resultOk"), Text(json, "resultManagedType"),
                 Text(json, "resultHelperClass"));
@@ -143,6 +147,7 @@ public sealed class Convention
                 builder.AddType(language, cType, target!.GetValue<string>());
         var convention = builder.Build();
         convention.Deferred = (json["deferred"]?.AsArray().Select(n => n!.GetValue<string>()) ?? []).ToHashSet();
+        convention.Unprojected = (json["unprojected"]?.AsArray().Select(n => n!.GetValue<string>()) ?? []).ToHashSet();
         return convention;
     }
 }

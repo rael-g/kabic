@@ -49,13 +49,56 @@
           "name": "weight",
           "type": "float",
           "tags": [
-            "default:1"
+            "default:-1.5"
           ],
           "doc": null
         },
         {
           "name": "kind",
           "type": "ke_probe_kind",
+          "tags": [],
+          "doc": null
+        }
+      ]
+    },
+    {
+      "name": "ke_probe_options",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "name",
+          "type": "const char *",
+          "tags": [
+            "utf8",
+            "default:probe"
+          ],
+          "doc": null
+        },
+        {
+          "name": "loud",
+          "type": "_Bool",
+          "tags": [
+            "default:true"
+          ],
+          "doc": null
+        }
+      ]
+    },
+    {
+      "name": "ke_probe_place",
+      "doc": null,
+      "tags": [],
+      "fields": [
+        {
+          "name": "offset",
+          "type": "uint32_t",
+          "tags": [],
+          "doc": null
+        },
+        {
+          "name": "extra",
+          "type": "uint32_t",
           "tags": [],
           "doc": null
         }
@@ -454,5 +497,100 @@
     "ke_probe_visit_fn": "void (*)(void *, uint32_t)",
     "ke_probe_id": "uint32_t",
     "ke_probe_done_fn": "void (*)(void *, ke_result, uint32_t)"
-  }
+  },
+  "data": [
+    {
+      "name": "ke_probe_item_defaults",
+      "type": "ke_probe_item",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "Number",
+            "text": ""
+          },
+          {
+            "kind": "Number",
+            "text": "-1.5"
+          },
+          {
+            "kind": "Number",
+            "text": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "ke_probe_item_start",
+      "type": "ke_probe_item",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "Number",
+            "text": "7"
+          },
+          {
+            "kind": "Number",
+            "text": "1.0"
+          },
+          {
+            "kind": "Name",
+            "text": "KE_PROBE_KIND_FAR"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ke_probe_options_defaults",
+      "type": "ke_probe_options",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "String",
+            "text": "\u0022probe\u0022"
+          },
+          {
+            "kind": "Number",
+            "text": "1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ke_probe_kind_place",
+      "type": "ke_probe_place",
+      "readonly": true,
+      "value": {
+        "kind": "List",
+        "text": "",
+        "items": [
+          {
+            "kind": "OffsetOf",
+            "text": "ke_probe_item, kind"
+          },
+          {
+            "kind": "Number",
+            "text": "3"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ke_probe_weight_size",
+      "type": "uint32_t",
+      "readonly": true,
+      "value": {
+        "kind": "SizeOf",
+        "text": "float"
+      }
+    }
+  ]
 }

@@ -52,19 +52,31 @@ public static class Generation
 
         Directory.CreateDirectory(outDir);
 
-        foreach (var value in model.Structs.Where(CSharpWriter.IsValue).Where(s => s.Fields.Any(f => f.Has("default"))))
+        foreach (var value in model.Structs.Where(CSharpWriter.IsValue).Where(s => s.Fields.Any(f => f.Default is not null)))
         {
             var moved = r.ContractDir != r.OutDir && value.Fields.All(f => !CTypes.IsPointer(f.Type) && f.Inline is null);
             Directory.CreateDirectory(moved ? contractDir : outDir);
             File.WriteAllText(Path.Combine(moved ? contractDir : outDir, $"{Idioms.TypeName(value.Name, convention)}.Default.g.cs"),
-                CSharpWriter.RenderDefault(model, value, moved ? ns : nativeNs, convention));
+                moved ? CSharpWriter.RenderDefault(model, value, ns, convention)
+                    : CSharpWriter.RenderDefaultExtension(model, value, ns, [nativeNs, .. usings], convention));
         }
 
-        foreach (var borrowed in model.Structs.Where(CSharpWriter.IsBorrowed))
+        foreach (var value in model.Structs.Where(CSharpWriter.IsValue))
         {
-            Directory.CreateDirectory(contractDir);
-            File.WriteAllText(Path.Combine(contractDir, $"{Idioms.TypeName(borrowed.Name, convention)}.g.cs"),
-                CSharpWriter.RenderBorrowed(model, borrowed, ns, [.. usings, nativeNs], convention));
+            if (CSharpWriter.RenderText(value, ns, [nativeNs, .. usings], convention) is not { } text) continue;
+            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(value.Name, convention)}.Text.g.cs"), text);
+        }
+
+        if (DataWriter.Render(model, Idioms.TypeName(r.Domain ?? "data", convention), ns, [nativeNs, convention.CommonManagedNamespace, .. usings], convention) is { } constants)
+            File.WriteAllText(Path.Combine(outDir, $"{Idioms.TypeName(r.Domain ?? "data", convention)}.Data.g.cs"), constants);
+
+        foreach (var borrowed in model.Structs.Where(b => CSharpWriter.IsBorrowed(b) && !b.External))
+        {
+            var home = CSharpWriter.BorrowedNeedsNative(model, borrowed, convention) ? outDir : contractDir;
+            Directory.CreateDirectory(home);
+            File.WriteAllText(Path.Combine(home, $"{Idioms.TypeName(borrowed.Name, convention)}.g.cs"),
+                CSharpWriter.RenderBorrowed(model, borrowed, ns,
+                    home == outDir ? [.. usings, nativeNs] : usings.Where(u => !u.EndsWith(".Native", StringComparison.Ordinal)).ToList(), convention));
         }
 
         foreach (var view in model.Structs.Where(CSharpWriter.IsView))
@@ -78,6 +90,7 @@ public static class Generation
             && !s.Has("bag")
             && !CSharpWriter.IsView(s)
             && !CSharpWriter.IsBorrowed(s)
+            && !CSharpWriter.IsValue(s)
             && CSharpWriter.SpannedFields(model, s, convention).Any()))
             File.WriteAllText(Path.Combine(outDir, $"{counted.Name}.Spans.g.cs"),
                 CSharpWriter.RenderStructSpans(model, counted, nativeNs, convention));
@@ -90,7 +103,7 @@ public static class Generation
             if (source.Contract is not null)
             {
                 Directory.CreateDirectory(contractDir);
-                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), contractDir != outDir ? System.Text.RegularExpressions.Regex.Replace(source.Contract, @"^using ([\w.]+);\n", m =>
+                File.WriteAllText(Path.Combine(contractDir, $"I{typeName}.g.cs"), model.SafeViews ? System.Text.RegularExpressions.Regex.Replace(source.Contract, @"^using ([\w.]+);\n", m =>
                         m.Groups[1].Value.EndsWith(".Native", StringComparison.Ordinal)
                         || (r.Usings.Contains(m.Groups[1].Value + ".Native") && !r.ContractNamespaces.Contains(m.Groups[1].Value)) ? "" : m.Value,
                         System.Text.RegularExpressions.RegexOptions.Multiline) : source.Contract);
@@ -102,7 +115,10 @@ public static class Generation
                 CSharpWriter.RenderCallbackInterface(callback, ns, nativeNs, convention));
 
         if (model.Opaques.Count > 0 || model.TypeAliases.Keys.Any(a => model.HandleOf(a) is not null))
-            File.WriteAllText(Path.Combine(outDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
+        {
+            Directory.CreateDirectory(contractDir);
+            File.WriteAllText(Path.Combine(contractDir, "Handles.g.cs"), CSharpWriter.RenderHandles(model, ns, convention));
+        }
 
         if (model.IdTypes.Count > 0)
         {

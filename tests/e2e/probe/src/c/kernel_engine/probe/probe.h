@@ -1,6 +1,7 @@
 #ifndef KERNEL_ENGINE_PROBE_PROBE_H_
 #define KERNEL_ENGINE_PROBE_PROBE_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -31,9 +32,49 @@ typedef uint32_t ke_probe_id;
 typedef struct ke_probe_item
 {
     ke_probe_id id;
-    float weight; ///< [default:1]
+    float weight;
     ke_probe_kind kind;
 } ke_probe_item;
+
+/** [defaults] */
+static const ke_probe_item ke_probe_item_defaults = {
+    .weight = -1.5f,
+};
+
+/** The item a probe starts from. */
+static const ke_probe_item ke_probe_item_start = {
+    .id = _Generic((ke_probe_id)0, uint32_t: 7u, default: 0u),
+    .weight = 1.0f,
+    .kind = KE_PROBE_KIND_FAR,
+};
+
+#define KE_PROBE_SIZE_OF(T, m) (uint32_t)sizeof(((T *)0)->m)
+
+#define KE_PROBE_PLACE(T, m, extra) { (uint32_t)__builtin_offsetof(T, m), (extra) }
+
+typedef struct ke_probe_options
+{
+    const char *name; ///< [utf8]
+    bool loud;
+} ke_probe_options;
+
+/** [defaults] */
+static const ke_probe_options ke_probe_options_defaults = {
+    .name = "probe",
+    .loud = true,
+};
+
+typedef struct ke_probe_place
+{
+    uint32_t offset;
+    uint32_t extra;
+} ke_probe_place;
+
+/** Where an item's kind lives, measured through a macro taking more than the member. */
+static const ke_probe_place ke_probe_kind_place = KE_PROBE_PLACE(ke_probe_item, kind, 3);
+
+/** The width of an item's weight, measured through a macro. */
+static const uint32_t ke_probe_weight_size = KE_PROBE_SIZE_OF(ke_probe_item, weight);
 
 /// [view] Items a call hands out.
 typedef struct ke_probe_batch

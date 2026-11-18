@@ -46,18 +46,17 @@ internal static class GeneratorShapeCases
                        "return resultOut;", "<returns>How many there are.</returns>"],
             absent: ["&err", "out uint count"]);
 
-        Expect("a factory returning the result code writes the handle through its last parameter",
+        Expect("a contract's class is built from the handle its factory wrote, never from the factory's raw arguments",
             Vtable("ke_probe", "provider", Slot("flush", "ke_result")),
             functions: [Function("ke_probe_create", "ke_result", Param("size", "uint32_t"),
                 Param("out_probe", "ke_probe_handle *", "out"))],
-            contains: ["(uint size)", "ke_probe_handle handle;",
-                       "KernelEngine.NativeResults.ThrowIfFailed(global::Probe.Native.NativeMethods.probe_create(size, &handle), \"ke_probe_create\");"],
-            absent: ["&err", "outProbe"]);
+            contains: ["public Probe(ke_probe_handle handle)"],
+            absent: ["probe_create(", "internal Probe(", "Probe(uint size)"]);
 
         Expect("a shutdown slot with no failure lane is called with its handle alone",
             Vtable("ke_probe", Slot("on_shutdown", "void", "lifecycle:shutdown")),
-            contains: ["_native->on_shutdown(_native);"],
-            absent: ["_native->on_shutdown(_native, null);"]);
+            contains: ["_owned->on_shutdown(_owned);", "private void Teardown()", "_owner.Dispose();", "public void Hold(global::KernelEngine.Interop.NativeOwner? owner)"],
+            absent: ["_owned->on_shutdown(_owned, null);"]);
 
         Expect("a result-returning slot that writes memory a projection owns answers with that projection",
             Vtable("ke_probe",
@@ -157,6 +156,92 @@ internal static class GeneratorShapeCases
             contains: [], absent: [],
             throws: "already names one");
 
+        Expect("a bounded fixed array of an expanded bag is a sequence copied into the array",
+            Vtable("ke_probe", Slot("build", "ke_result",
+                Param("p", "const ke_probe_build_params *"),
+                Param("out_size", "uint32_t *", "out"))),
+            contains: ["ReadOnlySpan<uint> layouts",
+                       "if (layouts.Length > 4) throw new ArgumentOutOfRangeException(nameof(layouts));",
+                       "p.layouts[layoutsAt] = (layoutsPtr)[layoutsAt];",
+                       "p.layout_count = (uint)layouts.Length;"],
+            absent: ["p.layouts = layoutsPtr;"],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_build_params",
+                ["doc"] = null,
+                ["tags"] = new JsonArray("bag"),
+                ["fields"] = new JsonArray(
+                    Param("layouts", "uint32_t [4]", "array_of:layout_count"),
+                    Param("layout_count", "uint32_t")),
+                ["slots"] = new JsonArray(),
+            }]);
+
+        Expect("a completion slot with an expanded bag fills the bag before the call",
+            Vtable("ke_probe", Slot("compile", "void",
+                Param("p", "const ke_probe_compile_params *"),
+                Param("on_ready", "ke_probe_ready_func", "completion:user"),
+                Param("user", "void *"))),
+            contains: ["global::System.Threading.Tasks.Task<uint> Compile(ReadOnlySpan<uint> stages)",
+                       "ke_probe_compile_params p = default;",
+                       "p.stage_count = (uint)stages.Length;",
+                       "Handle->compile(Handle, &p, "],
+            absent: ["(ke_probe_compile_params*)p"],
+            aliases: new() { ["ke_probe_ready_func"] = "void (*)(ke_result, uint32_t, void *)" },
+            callbacks: [Callback("ke_probe_ready_func", "void",
+                Param("result", "ke_result"), Param("value", "uint32_t"), Param("user", "void *", "context"))],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_compile_params",
+                ["doc"] = null,
+                ["tags"] = new JsonArray("bag"),
+                ["fields"] = new JsonArray(
+                    Param("stages", "const uint32_t *", "array_of:stage_count"),
+                    Param("stage_count", "uint32_t")),
+                ["slots"] = new JsonArray(),
+            }]);
+
+        Expect("an owner written through out is returned as the wrapper of the vtable it owns",
+            Vtable("ke_probe", Slot("open_child", "ke_result",
+                Param("out_child", "ke_probe_child_handle *", "out"))),
+            contains: ["public IProbeChild OpenChild()", "ke_probe_child_handle resultOut = default;",
+                       "return new ProbeChild(resultOut);"],
+            absent: ["ke_probe_child_handle OpenChild"],
+            vtables: [Vtable("ke_probe_child", Slot("flush", "void"))],
+            structs: [new JsonObject
+                {
+                    ["name"] = "ke_probe_child_handle",
+                    ["doc"] = null,
+                    ["tags"] = new JsonArray("owner"),
+                    ["fields"] = new JsonArray(
+                        Param("ref", "ke_probe_child *"),
+                        Param("destroy", "void (*)(ke_probe_child *)")),
+                    ["slots"] = new JsonArray(),
+                }]);
+
+        Register("a fixed char array of a value struct reads and writes as text", failures =>
+        {
+            var s = new ApiStruct("ke_probe_label", null, [], [new ApiField("text", "char [16]", [], null)], []);
+            var emitted = CSharpWriter.RenderText(s, "Probe", [], ProbeConvention.Value) ?? "";
+            foreach (var needle in new[] { "extension(ref ProbeLabel self)", "public string Text",
+                         "CreateSpan(ref self.TextBytes.e0, 16)", "bytes.IndexOf((byte)0)", "bytes.Length - 1" })
+                if (!emitted.Contains(needle, StringComparison.Ordinal))
+                    failures.Add($"fixed char text: expected to find \"{needle}\"");
+        });
+
+        Expect("a slot named after a keyword is called through its escaped field",
+            Vtable("ke_probe", Slot("params", "uint32_t")),
+            contains: ["public uint Params()", "Handle->@params(Handle)"],
+            absent: ["Handle->params(Handle)"]);
+
+        Expect("a float default and an absent string or handle default are spelled as constants",
+            Vtable("ke_probe", Slot("make", "void",
+                Param("key", "const char *", "utf8"),
+                Param("roughness", "float", "default:0.5"),
+                Param("parent", "ke_entity", "default:none"),
+                Param("shader", "const char *", "utf8,default:none"))),
+            contains: ["float roughness = 0.5f", "ulong parent = default", "string shader = \"\""],
+            absent: []);
+
         Expect("a callback and its context become one delegate parameter",
             Vtable("ke_probe", Slot("watch", "ke_result",
                 Param("on_event", "ke_probe_event_func", "closure:event_ctx"),
@@ -209,7 +294,7 @@ internal static class GeneratorShapeCases
                        "state.OnLoad is { } handler",
                        "state.OnUnload is { } handler",
                        "s_parkedCallbackException ??= ex;",
-                       "s_parkedCallbackException = null;\n        _destroy(_native);",
+                       "s_parkedCallbackException = null;\n        _destroy(_owned);",
                        "foreach (var retained in _retainedUserData.Values) retained.Free();",
                        "throw parked;"],
             absent: ["ke_probe_module_params* p", "void* userData", "onLoadHandle", "onUnloadHandle"],
@@ -311,6 +396,87 @@ internal static class GeneratorShapeCases
             contains: ["public partial struct ProbeDecl", "public ReadOnlyMemory<ProbeTerm> Terms;"],
             absent: ["TermCount", "term_count", "ProbeTerm*", "StructLayout"],
             alongside: [ValueStruct("ke_probe_term", ("cid", "uint32_t"))]);
+
+        Expect("an [inout] pointer to a plain struct is lent by reference",
+            Vtable("ke_probe", Slot("resolve", "float",
+                Param("cursor", "ke_probe_cursor_state *", "inout"))),
+            contains: ["public float Resolve(ref ProbeCursorState cursor)", "Unsafe.AsPointer(ref cursor)"],
+            absent: ["nint cursor"],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_cursor_state",
+                ["doc"] = null,
+                ["tags"] = new JsonArray(),
+                ["fields"] = new JsonArray(Param("id", "int32_t")),
+                ["slots"] = new JsonArray(),
+            }]);
+
+        Expect("a [typed] return is a reference to the type the caller names",
+            Vtable("ke_probe", Slot("get", "void *", Returning("typed"), Param("cid", "uint32_t"))),
+            contains: ["public ref T Get<T>(uint cid) where T : unmanaged", "return ref *(T*)at;"],
+            absent: ["nint Get("]);
+
+        Register("a header constant reads as a property building its value, and a list of borrowed structs as an array", failures =>
+        {
+            var model = NewModel();
+            model.Structs.Add(new ApiStruct("ke_probe_pose", null, [], [new ApiField("speed", "float", [], null), new ApiField("count", "uint32_t", [], null)], []));
+            model.Structs.Add(BorrowedStruct("ke_probe_named", ("name", "const char *", "utf8"), ("bytes", "const void *", "array_of:size"), ("size", "size_t", "")));
+            model.Data.Add(new ApiData("ke_probe_pose_initial", "ke_probe_pose", true,
+                new ApiValue(ApiValueKind.List, "", [new ApiValue(ApiValueKind.Number, "1.5", []), new ApiValue(ApiValueKind.Number, "", [])])));
+            model.Data.Add(new ApiData("ke_probe_named_list", "ke_probe_named[1]", true,
+                new ApiValue(ApiValueKind.List, "", [new ApiValue(ApiValueKind.List, "", [
+                    new ApiValue(ApiValueKind.String, "\"pose\"", []), new ApiValue(ApiValueKind.Name, "ke_probe_pose_initial", []), new ApiValue(ApiValueKind.SizeOf, "ke_probe_pose", [])])])));
+            var emitted = DataWriter.Render(model, "ProbeData", "Probe", [], ProbeConvention.Value)!;
+            foreach (var needle in new[] { "public static ProbePose ProbePoseInitial", "value.Speed = 1.5f;", "public static ProbeNamed[] ProbeNamedList => [", "new() { Name = \"pose\", Bytes = Bytes(ProbePoseInitial) }," })
+                if (!emitted.Contains(needle, StringComparison.Ordinal)) failures.Add($"expected to find \"{needle}\"");
+            if (emitted.Contains("value.Count", StringComparison.Ordinal)) failures.Add("a zero the initializer leaves out is assigned");
+        });
+
+        ExpectBorrowedStruct("a borrowed struct carrying bytes is built from a value through Of",
+            BorrowedStruct("ke_probe_given",
+                ("cid", "uint32_t", ""),
+                ("data", "const void *", "array_of:size"),
+                ("size", "size_t", "")),
+            contains: ["public static ProbeGiven Of<T>(uint cid, T data) where T : unmanaged =>",
+                       "new() { Cid = cid, Data = System.Runtime.InteropServices.MemoryMarshal.AsBytes(new[] { data }.AsSpan()).ToArray() };"],
+            absent: []);
+
+        ExpectBorrowedStruct("a borrowed struct holds a utf8 field as a string",
+            BorrowedStruct("ke_probe_named",
+                ("name", "const char *", "utf8"),
+                ("bytes", "const void *", "array_of:size"),
+                ("size", "size_t", "")),
+            contains: ["public string? Name;", "public ReadOnlyMemory<byte> Bytes;"],
+            absent: ["sbyte*", "ReadOnlyMemory<void>", "Size;"]);
+
+        Expect("a sequence of borrowed structs encodes each utf8 field for the call and frees it after",
+            Vtable("ke_probe", Slot("declare", "uint64_t",
+                Param("decls", "const ke_probe_named *", "array_of:decl_count"),
+                Param("decl_count", "uint32_t"))),
+            contains: ["var declsTexts = new List<nint>();",
+                       "declsTexts.Add(Marshal.StringToCoTaskMemUTF8(decls[declsAt].Name));",
+                       "foreach (var declsText in declsTexts) Marshal.FreeCoTaskMem(declsText);"],
+            absent: [],
+            structs: [new JsonObject
+            {
+                ["name"] = "ke_probe_named",
+                ["doc"] = null,
+                ["tags"] = new JsonArray((JsonNode)"borrowed"),
+                ["fields"] = new JsonArray(Param("name", "const char *", "utf8")),
+                ["slots"] = new JsonArray(),
+            }]);
+
+        Expect("a callback lane pointing at a vtable of the model hands the handler its class, borrowed",
+            Vtable("ke_probe", Slot("watch", "ke_result",
+                Param("on_event", "ke_probe_visit_fn", "closure:event_ctx"),
+                Param("event_ctx", "void *"))),
+            contains: ["public delegate void ProbeVisit(IProbeCursor cursor);",
+                       "handler(ProbeCursor.Borrow(arg0))"],
+            absent: ["ProbeVisit(nint cursor)"],
+            aliases: new() { ["ke_probe_visit_fn"] = "void (*)(ke_probe_cursor *, void *)" },
+            callbacks: [Callback("ke_probe_visit_fn", "void",
+                Param("cursor", "ke_probe_cursor *"), Param("ctx", "void *", "context"))],
+            vtables: [Vtable("ke_probe_cursor", Slot("next", "bool"))]);
 
         ExpectBorrowedStruct("a borrowed struct refuses a pointer nothing counts",
             BorrowedStruct("ke_probe_decl", ("terms", "const ke_probe_term *", "")),
@@ -445,7 +611,8 @@ internal static class GeneratorShapeCases
 
         void Expect(string what, JsonObject vtable, string[] contains, string[] absent,
             Dictionary<string, string>? aliases = null, JsonObject[]? callbacks = null,
-            JsonObject[]? structs = null, string? throws = null, JsonObject[]? functions = null)
+            JsonObject[]? structs = null, string? throws = null, JsonObject[]? functions = null,
+            JsonObject[]? vtables = null)
 
         {
             Register(what, failures =>
@@ -469,7 +636,7 @@ internal static class GeneratorShapeCases
                         new JsonObject { ["name"] = "destroy", ["type"] = "void (*)(ke_probe *)", ["tags"] = new JsonArray(), ["doc"] = null }),
                         ["slots"] = new JsonArray(),
                     }),
-                    ["vtables"] = new JsonArray(vtable),
+                    ["vtables"] = new JsonArray(new[] { vtable }.Concat(vtables ?? []).Cast<JsonNode>().ToArray()),
                     ["callbacks"] = new JsonArray((callbacks ?? []).Cast<JsonNode>().ToArray()),
                     ["functions"] = new JsonArray((functions ?? []).Cast<JsonNode>().ToArray()),
                     ["type_aliases"] = new JsonObject { ["ke_entity"] = "uint64_t" },
@@ -485,7 +652,7 @@ internal static class GeneratorShapeCases
                     var model = ApiReader.Read(api);
                     var convention = ProbeConvention.Value;
                     var classified = Classifier.Classify(model, [], [], convention);
-                    var provider = classified.Providers.Single();
+                    var provider = classified.Providers.First(p => p.Name == "ke_probe");
                     var source = CSharpWriter.RenderProvider(model, provider, classified, "Probe", "Probe.Native", [], convention);
                     emitted = source.Class + (source.Contract ?? "");
                 }
@@ -631,6 +798,7 @@ internal static class GeneratorShapeCases
                 string emitted;
                 try
                 {
+                    ApiModelChecks.Validate(model);
                     emitted = CSharpWriter.RenderStructSpans(model, s, "Probe.Native", ProbeConvention.Value);
                 }
                 catch (Exception ex)
@@ -716,6 +884,7 @@ internal static class GeneratorShapeCases
                 string emitted;
                 try
                 {
+                    ApiModelChecks.Validate(model);
                     emitted = CSharpWriter.RenderBorrowed(model, s, "Probe", [], ProbeConvention.Value);
                 }
                 catch (Exception ex)

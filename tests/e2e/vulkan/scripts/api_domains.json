@@ -1,7 +1,7 @@
 {
  "convention": {
   "symbolPrefix": "vk",
-  "commonManagedNamespace": "Vulkan",
+  "commonManagedNamespace": "Vulkan", "ownerClass": "global::Vulkan.NativeOwner",
   "commonBindingsNamespace": "Vulkan.Shared",
   "includeDirectoryName": "kernel_engine",
   "resultType": "VkResult",

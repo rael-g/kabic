@@ -55,6 +55,9 @@ public static class Regeneration
         Generation.CSharp(new Generation.CSharpRequest(
             apiJson, spec.Namespace, spec.NativeNamespace, output.OutDir, output.ContractDir,
             spec.Name, spec.Library, spec.Providers, [], spec.Usings, convention) { ContractNamespaces = spec.ContractNamespaces });
+        var formatter = Kabic.CSharp.CSharpFormatter.For(convention);
+        SourceFormat.Directory(formatter, output.OutDir);
+        if (output.ContractDir != output.OutDir) SourceFormat.Directory(formatter, output.ContractDir);
 
     }
 

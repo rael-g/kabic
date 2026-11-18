@@ -48,15 +48,18 @@ public static class Idioms
         "try", "catch", "finally", "throw", "int", "uint", "long", "ulong", "short", "ushort",
         "byte", "sbyte", "float", "double", "decimal", "bool", "char", "void", "enum", "const"];
 
+    static string Dimension(string word) =>
+        word.Length > 2 && word[^1] == 'd' && char.IsDigit(word[^2]) ? word[..^1] + "D" : word;
+
     /// <summary>
-    /// Converts a snake_case name to PascalCase. Returns <paramref name="s"/> unchanged when it is
-    /// empty.
+    /// Converts a snake_case name to PascalCase, a word ending in a dimension spelt as C# spells it
+    /// (<c>body2d</c> to <c>Body2D</c>). Returns <paramref name="s"/> unchanged when it is empty.
     /// </summary>
     public static string Pascal(string s)
     {
         if (s.Length == 0) return s;
         return string.Concat(s.Split('_').Where(p => p.Length > 0)
-            .Select(p => char.ToUpperInvariant(p[0]) + (p.Any(char.IsLower) ? p[1..] : p[1..].ToLowerInvariant())));
+            .Select(p => Dimension(char.ToUpperInvariant(p[0]) + (p.Any(char.IsLower) ? p[1..] : p[1..].ToLowerInvariant()))));
     }
 
     /// <summary>
@@ -69,10 +72,16 @@ public static class Idioms
         return p.Length == 0 ? p : char.ToLowerInvariant(p[0]) + p[1..];
     }
 
+    /// <summary>A native field name as C# spells it, prefixed with <c>@</c> when it is a keyword.</summary>
+    public static string Field(string s) => CsKeywords.Contains(s) ? "@" + s : s;
+
     /// <summary>
     /// A C# identifier for <paramref name="s"/>: its camelCase form, prefixed with <c>@</c> when
     /// that form is one of the C# keywords kabic escapes.
     /// </summary>
+    /// <summary>A native field's name as C# spells a member access to it: itself, escaped when a keyword.</summary>
+    public static string Member(string s) => CsKeywords.Contains(s) ? "@" + s : s;
+
     public static string Ident(string s)
     {
         var c = Camel(s);
@@ -109,7 +118,8 @@ public static class Idioms
         "INative" + Pascal(convention.StripPrefix(vtable));
 
     public static string TypeName(string name, Convention convention) =>
-        convention.Spell(TypeNames, name) is var spelled && spelled != name
+        convention.Project(Languages.CSharp, name) is { } projected ? projected
+        : convention.Spell(TypeNames, name) is var spelled && spelled != name
             ? spelled
             : Pascal(convention.StripPrefix(name));
 

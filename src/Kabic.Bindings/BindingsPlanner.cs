@@ -12,8 +12,38 @@ namespace Kabic.Bindings;
 /// Derives, from the <c>bindings</c> array of the manifest and the headers it names, the ClangSharp
 /// job of every binding assembly.
 /// </summary>
+
 public static class BindingsPlanner
 {
+    /// <summary>A variable a header defines as static: it has no symbol, so no binding can reach it.</summary>
+    static readonly Regex StaticVariable = new(@"^\s*static\s+const\s+[\w\s\*]+?\b(\w+)\s*(?:\[[^\]]*\])?\s*=", RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// The header each type is declared in, keyed by name. A definition wins over a forward
+    /// declaration, and among headers of the same kind the first in ordinal path order wins, so
+    /// the answer does not depend on the order <paramref name="headers"/> arrive in.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> DeclaredIn(string symbolPrefix, IReadOnlyList<(string Path, string Text)> headers)
+    {
+        var symbol = Regex.Escape(symbolPrefix) + @"\w+";
+        Regex[] definitions =
+        [
+            new($@"^\s*\}}\s*({symbol})\s*;", RegexOptions.Multiline),
+            new($@"typedef\s+(?:struct|enum|union)\s+\w*\s*\{{[^{{}}]*\}}\s*({symbol})\s*;"),
+        ];
+        var opaque = new Regex($@"^\s*typedef\s+(?:struct|enum|union)\s+({symbol})\s+\1\s*;", RegexOptions.Multiline);
+        var ordered = headers.OrderBy(h => h.Path, StringComparer.Ordinal).ToList();
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (path, text) in ordered)
+            foreach (var rx in definitions)
+                foreach (Match m in rx.Matches(text))
+                    found.TryAdd(m.Groups[1].Value, path);
+        foreach (var (path, text) in ordered)
+            foreach (Match m in opaque.Matches(text))
+                found.TryAdd(m.Groups[1].Value, path);
+        return found;
+    }
+
     static readonly Regex Include = new(@"#\s*include\s*<([^>]+)>", RegexOptions.Compiled);
     static readonly Regex ProjectReference = new(@"ProjectReference\s+Include=""([^""]+)""", RegexOptions.Compiled);
 
@@ -29,12 +59,6 @@ public static class BindingsPlanner
         var domains = DomainSpec.Load(manifestPath);
         var symbol = Regex.Escape(convention.SymbolPrefix) + @"\w+";
         var typeName = new Regex($@"\b{symbol}\b", RegexOptions.Compiled);
-        Regex[] declarations =
-        [
-            new($@"^\s*\}}\s*({symbol})\s*;", RegexOptions.Multiline | RegexOptions.Compiled),
-            new($@"typedef\s+(?:struct|enum|union)\s+\w*\s*\{{[^{{}}]*\}}\s*({symbol})\s*;", RegexOptions.Compiled),
-        ];
-        var opaque = new Regex($@"^\s*typedef\s+(?:struct|enum|union)\s+({symbol})\s+\1\s*;", RegexOptions.Multiline | RegexOptions.Compiled);
         var alias = new Regex($@"^\s*typedef\s+[\w \*]+?\s+({symbol})\s*;", RegexOptions.Multiline | RegexOptions.Compiled);
         var functionPointer = new Regex($@"typedef\s+[^;(]*\(\s*\*\s*({symbol})\s*\)\s*\(([^;]*)\)\s*;", RegexOptions.Compiled);
         var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
@@ -82,13 +106,8 @@ public static class BindingsPlanner
             .Order(StringComparer.Ordinal)
             .ToList();
         var sourceTexts = sourceHeaders.ToDictionary(h => h, File.ReadAllText);
-        foreach (var header in sourceHeaders)
-            foreach (var rx in declarations)
-                foreach (Match m in rx.Matches(sourceTexts[header]))
-                    declaredIn.TryAdd(m.Groups[1].Value, header);
-        foreach (var header in sourceHeaders)
-            foreach (Match m in opaque.Matches(sourceTexts[header]))
-                declaredIn.TryAdd(m.Groups[1].Value, header);
+        foreach (var (name, header) in DeclaredIn(convention.SymbolPrefix, sourceHeaders.Select(h => (h, sourceTexts[h])).ToList()))
+            declaredIn[name] = header;
         foreach (var header in sourceHeaders)
             foreach (Match m in alias.Matches(sourceTexts[header]))
                 if (!declaredIn.ContainsKey(m.Groups[1].Value)) aliases.Add(m.Groups[1].Value);
@@ -192,7 +211,7 @@ public static class BindingsPlanner
                 grew = false;
                 var declaredHere = declaredIn.Where(kv => traversed.Contains(kv.Value)).Select(kv => kv.Key)
                                              .ToHashSet(StringComparer.Ordinal);
-                var referenced = traversed.SelectMany(h => typeName.Matches(File.ReadAllText(h)).Select(m => m.Value))
+                var referenced = traversed.SelectMany(h => typeName.Matches(Regex.Replace(File.ReadAllText(h), @"/\*.*?\*/|//[^\n]*", "", RegexOptions.Singleline)).Select(m => m.Value))
                                           .ToHashSet(StringComparer.Ordinal);
                 var pending = new Queue<string>(referenced.Where(functionPointerParameters.ContainsKey));
                 while (pending.TryDequeue(out var pointer))
@@ -226,6 +245,10 @@ public static class BindingsPlanner
                 }
             }
 
+            foreach (var h in traversed)
+                foreach (Match m in StaticVariable.Matches(File.ReadAllText(h)))
+                    excludes.Add(m.Groups[1].Value);
+
             string file;
             string? umbrellaBody = null;
             if (headers.Count == 1)
@@ -256,7 +279,11 @@ public static class BindingsPlanner
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass));
         }
 
-        var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention, domains).ToList());
+        bool Declares(DomainSpec spec, string type) => declaredIn.TryGetValue(type, out var header)
+            ? spec.Headers.Any(h => Path.GetFullPath(Path.Combine(rootDir, h)) == Path.GetFullPath(header))
+            : spec.Headers.Select(h => Path.GetFullPath(Path.Combine(rootDir, h))).Any(h => sourceTexts.TryGetValue(h, out var text)
+                && Regex.IsMatch(text, $@"typedef[^;{{}}]*\b{Regex.Escape(type)}\s*;"));
+        var idiomatic = jobs.ToDictionary(j => j, j => Idiomatic(j, convention, domains, Declares).ToList());
         var ownedIds = idiomatic.Values.SelectMany(r => r).Where(r => r.Contains("=global::")).Distinct()
             .ToDictionary(r => r.Split('=')[0], r => r);
         foreach (var remaps in idiomatic.Values)
@@ -265,11 +292,18 @@ public static class BindingsPlanner
             remaps.RemoveAll(r => r.StartsWith('?'));
             remaps.AddRange(foreignIds.Where(ownedIds.ContainsKey).Select(id => ownedIds[id]));
         }
+        foreach (var (job, remaps) in idiomatic)
+            foreach (var other in idiomatic.Where(o => o.Key != job && o.Key.Namespace == job.Namespace))
+                remaps.AddRange(other.Value.Where(r => !r.Contains("=global::") && job.Excludes.Contains(r.Split('=')[0].Split("::")[0]) && !remaps.Contains(r)));
         var renamed = idiomatic.Values.SelectMany(r => r).Select(r => r.Split('=', 2))
-            .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).ToDictionary(r => r[0], r => r[1]);
+            .Where(r => !r[0].Contains("::") && !r[1].Contains('.')).DistinctBy(r => r[0]).ToDictionary(r => r[0], r => r[1]);
         var contracts = jobs.Select(j => (Job: j, Spec: ContractSpec(j)))
             .Where(x => x.Spec is not null).Select(x => (x.Job, Spec: x.Spec!, Types: AbstractTypes(x.Job, convention))).Where(x => x.Types.Count > 0).ToList();
-        var contractOf = contracts.SelectMany(c => c.Types.Select(t => (t, c.Spec.Namespace))).DistinctBy(x => x.t).ToDictionary(x => x.t, x => x.Item2);
+        bool DeclaresIt(DomainSpec spec, string type) => declaredIn.TryGetValue(type, out var header)
+            && spec.Headers.Any(h => Path.GetFullPath(Path.Combine(rootDir, h)) == Path.GetFullPath(header));
+        var contractOf = contracts.SelectMany(c => c.Types.Select(t => (t, c.Spec)))
+            .GroupBy(x => x.t)
+            .ToDictionary(g => g.Key, g => (g.FirstOrDefault(x => DeclaresIt(x.Spec, g.Key)).Spec ?? g.First().Spec).Namespace);
         string Located(string remap)
         {
             var source = remap.Split('=', 2)[0].TrimEnd();
@@ -289,7 +323,8 @@ public static class BindingsPlanner
             result.Add(new BindingJob(job.Name + "Contract", dir, "Types/", spec.Namespace, null,
                 job.IncludeDirectories.Select(Moved).ToList(), job.UmbrellaBody is null ? Moved(job.File) : job.File, job.UmbrellaBody,
                 job.Traverse.Select(Moved).ToList(), job.Additional,
-                [.. result.First(r => r.Name == job.Name).Remaps.Where(r => !types.Contains(r.Split('=')[0].TrimEnd()) && !r.Contains("::")),
+                [.. result.First(r => r.Name == job.Name).Remaps.Where(r => !types.Contains(r.Split('=')[0].TrimEnd())
+                    && (!r.Contains("::") || !r.Split('=')[0].Contains("::") && FieldTypes(job, convention, types).Contains(r.Split('=')[0].TrimEnd()))),
                     .. idiomatic[job].Where(r => r.Contains("=global::") || types.Contains(r.Split("::")[0].Split('=')[0].TrimEnd()))], [],
                 [.. job.Config.Where(c => c != "generate-helper-types")],
                 convention.SymbolPrefix, convention.CommonBindingsNamespace, convention.BindingsMethodsClass) { Includes = types });
@@ -316,13 +351,23 @@ public static class BindingsPlanner
         return [.. model.Enums.Where(e => !e.External && !mapped.ContainsKey(e.Name)).Select(e => e.Name), .. known];
     }
 
+    /// <summary>The types the fields of a contract's own records are spelled with.</summary>
+    static HashSet<string> FieldTypes(BindingJob job, Convention convention, List<string> types)
+    {
+        string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
+        var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
+            job.Traverse.Select(Full).ToList(), job.IncludeDirectories.Select(Full).ToList(), [], null, convention)))!.AsObject());
+        return model.Structs.Where(s => types.Contains(s.Name))
+            .SelectMany(s => s.Fields).Select(f => CType.Of(CTypes.FixedArray(f.Type)?.Element ?? f.Type).Name).ToHashSet();
+    }
+
     static string Renamed(string remap, IReadOnlyDictionary<string, string> renamed)
     {
         var (source, target) = (remap.Split('=', 2)[0], remap.Split('=', 2)[1]);
         return renamed.TryGetValue(source, out var name) ? $"{source}={target[..(target.LastIndexOf('.') + 1)]}{name}" : remap;
     }
 
-    static IEnumerable<string> Idiomatic(BindingJob job, Convention convention, IReadOnlyList<DomainSpec> domains)
+    static IEnumerable<string> Idiomatic(BindingJob job, Convention convention, IReadOnlyList<DomainSpec> domains, Func<DomainSpec, string, bool> declares)
     {
         string Full(string p) => Path.GetFullPath(Path.Combine(job.NativeDir, p));
         var model = ApiReader.Read(JsonNode.Parse(Extraction.Run(new Extraction.Request(
@@ -333,8 +378,10 @@ public static class BindingsPlanner
             Regex.IsMatch(text, $@"[(=][ \t]*{value}\b") && model.Enums.Any(o => o != owner
                 && o.Values.Any(v => Idioms.EnumMember(v.Name, o.Name) == Idioms.EnumMember(value, owner.Name)));
         foreach (var id in model.IdTypes)
-            if (domains.FirstOrDefault(d => d.NativeNamespace == job.Namespace) is { } home)
+            if (domains.FirstOrDefault(d => d.NativeNamespace == job.Namespace) is { } home
+                && (declares(home, id) || !domains.Any(d => declares(d, id))))
                 yield return $"{id}=global::{home.Namespace}.{Idioms.TypeName(id, convention)}";
+            else yield return $"?{id}";
         foreach (var (cType, target) in convention.TypeMap.GetValueOrDefault(Languages.CSharp) ?? new Dictionary<string, string>())
             yield return $"{cType}={target}";
         foreach (var e in model.Enums.Where(e => !e.External))
@@ -346,7 +393,7 @@ public static class BindingsPlanner
         foreach (var s in model.Structs.Where(CSharpWriter.IsValue).Where(s => convention.TypeMap.GetValueOrDefault(Languages.CSharp)?.ContainsKey(s.Name) != true))
         {
             yield return $"{s.Name}={Idioms.TypeName(s.Name, convention)}";
-            foreach (var f in s.Fields) yield return $"{s.Name}::{f.Name}={Idioms.Pascal(f.Name)}";
+            foreach (var f in s.Fields) yield return $"{s.Name}::{f.Name}={CSharpWriter.FieldName(f)}";
         }
     }
 }

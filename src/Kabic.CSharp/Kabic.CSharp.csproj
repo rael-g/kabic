@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Kabic.Core/Kabic.Core.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" />
+    <EmbeddedResource Include="default.editorconfig" LogicalName="default.editorconfig" />
   </ItemGroup>
 </Project>
