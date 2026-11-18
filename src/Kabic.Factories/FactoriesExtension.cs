@@ -231,6 +231,13 @@ public sealed class FactoriesExtension : IKabicExtension
         if (domain is null) return null;
         var name = Idioms.Ident(param.Name ?? target);
         var iface = $"{domain.Spec.Namespace}.{Idioms.NativeInterface(target, context.Convention)}";
+        if (domain.Model.Structs.First(s => s.Name == target && !s.External).Has("lent"))
+        {
+            var contract = $"{domain.Spec.Namespace}.I{Idioms.TypeName(target, context.Convention)}";
+            return param.Has("optional") || param.Has("nullable")
+                ? new FactoryArgument(param.Doc, null, name, contract + "?", $"({name} is null ? null : (({iface}){name}).Native)", false)
+                : new FactoryArgument(param.Doc, null, name, contract, $"(({iface}){name}).Native", false);
+        }
         return param.Has("optional") || param.Has("nullable")
             ? new FactoryArgument(param.Doc, null, name, iface + "?", $"({name} is null ? null : {name}.Native)", false)
             : new FactoryArgument(param.Doc, null, name, iface, $"{name}.Native", false);
