@@ -374,11 +374,11 @@ public sealed class FactoriesExtension : IKabicExtension
         if (f.Contract is null)
         {
             o.Append($"    public {f.ClassName}({Parameters(f)}) : this(Create({Names(f)}))\n    {{\n{holds}    }}\n\n");
-            o.Append($"    private {handle} _handle;\n\n    private readonly List<{convention.OwnerClass}> _held = new();\n\n");
+            o.Append($"    private {handle} _handle;\n\n    private readonly List<global::System.Runtime.InteropServices.SafeHandle> _held = new();\n\n");
             o.Append(f.Outputs.Count == 0
                 ? $"    private {f.ClassName}({handle} handle) => _handle = handle;\n\n"
                 : $"    private {f.ClassName}({created} made)\n    {{\n        _handle = made.Handle;{keep}\n    }}\n\n");
-            o.Append($"    private void Hold({convention.OwnerClass}? owner)\n    {{\n        if (owner is null) return;\n        var added = false;\n        owner.DangerousAddRef(ref added);\n        _held.Add(owner);\n    }}\n\n");
+            o.Append($"    private void Hold(global::System.Runtime.InteropServices.SafeHandle? owner)\n    {{\n        if (owner is null) return;\n        var added = false;\n        owner.DangerousAddRef(ref added);\n        _held.Add(owner);\n    }}\n\n");
             o.Append("    /// <summary>Releases the native object, then what it held.</summary>\n    public void Dispose()\n    {\n        if (_handle.@ref == null) return;\n        _handle.destroy(_handle.@ref);\n        _handle = default;\n        foreach (var held in _held) held.DangerousRelease();\n        _held.Clear();\n    }\n\n");
         }
         else if (f.Outputs.Count == 0)
