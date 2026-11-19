@@ -9,8 +9,9 @@ public sealed class ConventionBuilder
     string symbolPrefix = "";
     readonly Dictionary<string, List<(System.Text.RegularExpressions.Regex, string)>> nameRules = [];
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
-    string commonManagedNamespace = "", ownerClass = "";
-    string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "";
+    string commonManagedNamespace = "";
+    string resultType = "", resultOk = "", resultManagedType = "", resultFailure = "", resultGeneralException = "";
+    readonly List<KeyValuePair<string, string>> resultExceptions = [];
     readonly Dictionary<string, Dictionary<string, string>> typeMap = [];
 
     /// <summary>
@@ -39,23 +40,30 @@ public sealed class ConventionBuilder
     }
 
     /// <summary>
-    /// The managed namespace the projections import for the shared types, and the fully qualified
-    /// class that counts the references to a native object.
+    /// The managed namespace the projections import for the shared types.
     /// </summary>
-    public ConventionBuilder Managed(string commonNamespace, string owner)
+    public ConventionBuilder Managed(string commonNamespace)
     {
-        (commonManagedNamespace, ownerClass) = (commonNamespace, owner);
+        commonManagedNamespace = commonNamespace;
         return this;
     }
 
     /// <summary>
     /// How a fallible call returns its outcome as a code: the C type of the code, the constant that
-    /// means success, the managed type the bindings declare for it, and the class that turns a code
-    /// into an exception, the last two fully qualified.
+    /// means success, the managed type the bindings declare for it (fully qualified), the constant a
+    /// managed failure reports, and the fully qualified exception a constant with no
+    /// <see cref="AddResultException"/> entry becomes, empty for one that carries the code.
     /// </summary>
-    public ConventionBuilder Result(string cType, string ok, string managedType, string helperClass)
+    public ConventionBuilder Result(string cType, string ok, string managedType, string failure, string generalException = "")
     {
-        (resultType, resultOk, resultManagedType, resultHelperClass) = (cType, ok, managedType, helperClass);
+        (resultType, resultOk, resultManagedType, resultFailure, resultGeneralException) = (cType, ok, managedType, failure, generalException);
+        return this;
+    }
+
+    /// <summary>Makes the result constant <paramref name="code"/> become <paramref name="exception"/>, after the ones added before it.</summary>
+    public ConventionBuilder AddResultException(string code, string exception)
+    {
+        resultExceptions.Add(new(code, exception));
         return this;
     }
 
@@ -81,11 +89,12 @@ public sealed class ConventionBuilder
         CommonBindingsNamespace = commonBindingsNamespace,
         BindingsMethodsClass = bindingsMethodsClass,
         CommonManagedNamespace = commonManagedNamespace,
-        OwnerClass = ownerClass,
         ResultType = resultType,
         ResultOk = resultOk,
         ResultManagedType = resultManagedType,
-        ResultHelperClass = resultHelperClass,
+        ResultFailure = resultFailure,
+        ResultExceptions = resultExceptions.ToList(),
+        ResultGeneralException = resultGeneralException,
         TypeMap = typeMap.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(kv.Value)),
     };
 }

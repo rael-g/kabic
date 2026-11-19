@@ -37,17 +37,74 @@ public sealed class Convention
     public string ResultManagedType { get; init; } = "";
 
     /// <summary>
-    /// The fully qualified managed class that turns a code into an exception
-    /// (<c>ThrowIfFailed</c>, <c>FromCode</c>).
+    /// The constant of <see cref="ResultType"/> a managed failure reports to native code when the
+    /// exception carries no code of its own.
     /// </summary>
-    public string ResultHelperClass { get; init; } = "";
+    public string ResultFailure { get; init; } = "";
+
+    /// <summary><see cref="ResultFailure"/> spelled as a managed expression.</summary>
+    public string ResultFailureValue => ResultFailure.Length > 0 && (char.IsDigit(ResultFailure[0]) || ResultFailure[0] == '-') ? ResultFailure : $"{ResultManagedType}.{ResultFailure}";
 
     /// <summary>
-    /// The fully qualified <see cref="System.Runtime.InteropServices.SafeHandle"/> subclass that
-    /// counts the references to a native object an owner wrapper created, constructed over the
-    /// action that destroys it.
+    /// The exception each constant of <see cref="ResultType"/> becomes, by its managed name, in the
+    /// order the manifest lists them: the fully qualified type of an exception constructed over a
+    /// message. A managed exception of exactly one of these types reports the first constant naming it.
     /// </summary>
-    public string OwnerClass { get; init; } = "";
+    public IReadOnlyList<KeyValuePair<string, string>> ResultExceptions { get; init; } = [];
+
+    /// <summary>
+    /// The fully qualified exception, constructed over a message, a constant with no entry in
+    /// <see cref="ResultExceptions"/> becomes; when empty, an
+    /// <see cref="System.Runtime.InteropServices.ExternalException"/> carrying the code.
+    /// </summary>
+    public string ResultGeneralException { get; init; } = "";
+
+    /// <summary>
+    /// The private class every generated class that makes a fallible call declares, turning a code
+    /// into its exception and back.
+    /// </summary>
+    public const string ResultHelperClass = "NativeResult";
+
+    /// <summary>The declaration of <see cref="ResultHelperClass"/>, indented as a member of a class.</summary>
+    public IEnumerable<string> ResultHelperLines()
+    {
+        if (ResultManagedType.Length == 0) yield break;
+        var t = ResultManagedType;
+        yield return "";
+        yield return "    /// <summary>Turns a result code into the exception that carries it, and back.</summary>";
+        yield return $"    private static class {ResultHelperClass}";
+        yield return "    {";
+        yield return $"        public static void ThrowIfFailed({t} code, string call)";
+        yield return "        {";
+        yield return $"            if (code != {ResultOkValue}) throw FromCode(code, call);";
+        yield return "        }";
+        yield return "";
+        yield return $"        public static global::System.Exception FromCode({t} code, string call)";
+        yield return "        {";
+        yield return "            var message = $\"{call} failed with {code}\";";
+        yield return "            return code switch";
+        yield return "            {";
+        foreach (var (code, exception) in ResultExceptions)
+            yield return $"                {Constant(code)} => new global::{exception}(message),";
+        yield return ResultGeneralException.Length > 0
+            ? $"                _ => new global::{ResultGeneralException}(message),"
+            : "                _ => new global::System.Runtime.InteropServices.ExternalException(message, unchecked((int)code)),";
+        yield return "            };";
+        yield return "        }";
+        yield return "";
+        yield return $"        public static {t} ToCode(global::System.Exception exception)";
+        yield return "        {";
+        yield return $"            if (exception is global::System.Runtime.InteropServices.ExternalException native) return unchecked(({t})native.ErrorCode);";
+        yield return "            var type = exception.GetType();";
+        foreach (var (code, exception) in ResultExceptions.DistinctBy(e => e.Value))
+            yield return $"            if (type == typeof(global::{exception})) return {Constant(code)};";
+        yield return $"            return {ResultFailureValue};";
+        yield return "        }";
+        yield return "    }";
+
+        string Constant(string name) => char.IsDigit(name[0]) || name[0] == '-' ? name : $"{t}.{name}";
+    }
+
 
 
 
@@ -134,10 +191,12 @@ public sealed class Convention
             .Symbols(Text(json, "symbolPrefix"))
             .Bindings(Or(json, "includeDirectoryName", ""), Or(json, "commonBindingsNamespace", ""),
                 Or(json, "bindingsMethodsClass", "NativeMethods"))
-            .Managed(Text(json, "commonManagedNamespace"), Text(json, "ownerClass"));
+            .Managed(Text(json, "commonManagedNamespace"));
         if (json["resultType"] is not null)
             builder.Result(Text(json, "resultType"), Text(json, "resultOk"), Text(json, "resultManagedType"),
-                Text(json, "resultHelperClass"));
+                Text(json, "resultFailure"), Or(json, "resultGeneralException", ""));
+        foreach (var (code, exception) in json["resultExceptions"]?.AsObject() ?? [])
+            builder.AddResultException(code, exception!.GetValue<string>());
 
         foreach (var (language, rules) in json["names"]?.AsObject() ?? [])
             foreach (var rule in rules!.AsArray())
