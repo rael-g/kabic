@@ -451,6 +451,20 @@ internal static class GeneratorShapeCases
             if (emitted.Contains("value.Count", StringComparison.Ordinal)) failures.Add("a zero the initializer leaves out is assigned");
         });
 
+        Register("a macro naming a string or an integer reads as a constant of the same value, and any other macro is left out", failures =>
+        {
+            var model = NewModel();
+            model.Constants.Add(new ApiConstant("KE_PROBE_NAME", "const char *", "\"probe\"", null, "The name a probe is registered under."));
+            model.Constants.Add(new ApiConstant("KE_PROBE_COUNT", "int", "15", null, null));
+            model.Constants.Add(new ApiConstant("KE_PROBE_HUGE", "unsigned long long", "18446744073709551615", null, null));
+            model.Constants.Add(new ApiConstant("KE_PROBE_MASK", "unsigned", "0xFFu", null, null));
+            var emitted = DataWriter.RenderMacros(model, "Probe", "ProbeConstants", "Probe", ProbeConvention.Value)!;
+            foreach (var needle in new[] { "public static class ProbeConstants", "/// <summary>The name a probe is registered under.</summary>", "public const string ProbeName = \"probe\";", "public const int ProbeCount = 15;", "public const ulong ProbeHuge = 18446744073709551615;" })
+                if (!emitted.Contains(needle, StringComparison.Ordinal)) failures.Add($"expected to find \"{needle}\"");
+            if (emitted.Contains("ProbeMask", StringComparison.Ordinal)) failures.Add("a macro that is not a plain string or integer is projected");
+            if (DataWriter.RenderMacros(NewModel(), "Probe", "ProbeConstants", "Probe", ProbeConvention.Value) is not null) failures.Add("a header with no macro yields a class");
+        });
+
         ExpectBorrowedStruct("a borrowed struct carrying bytes is built from a value through Of",
             BorrowedStruct("ke_probe_given",
                 ("cid", "uint32_t", ""),
