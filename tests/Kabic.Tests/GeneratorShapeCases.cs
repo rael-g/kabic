@@ -37,6 +37,15 @@ internal static class GeneratorShapeCases
                        "NativeResult.ThrowIfFailed(Handle->flush(Handle, force), \"flush\");"],
             absent: ["&err", "ke_error"]);
 
+        Expect("a code becomes the exception the convention names for it, and that exception reports the code back",
+            Vtable("ke_probe", Slot("flush", "ke_result", Param("force", "bool"))),
+            contains: ["KernelEngine.Result.Native.ke_result.KE_RESULT_NOT_FOUND => new global::System.Collections.Generic.KeyNotFoundException(message),",
+                       "_ => new global::System.InvalidOperationException(message),",
+                       "if (type == typeof(global::System.Collections.Generic.KeyNotFoundException)) return KernelEngine.Result.Native.ke_result.KE_RESULT_NOT_FOUND;",
+                       "return KernelEngine.Result.Native.ke_result.KE_RESULT_GENERAL;",
+                       "if (code != KernelEngine.Result.Native.ke_result.KE_OK) throw FromCode(code, call);"],
+            absent: ["ExternalException(message"]);
+
         Expect("a slot returning the result code hands its single out parameter back as the return",
             Vtable("ke_probe", Slot("count_of", "ke_result", Param("kind", "uint32_t"),
                 ParamDoc("out_count", "uint32_t *", "out", "How many there are."))),
