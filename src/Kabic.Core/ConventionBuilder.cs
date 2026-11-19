@@ -10,7 +10,7 @@ public sealed class ConventionBuilder
     readonly Dictionary<string, List<(System.Text.RegularExpressions.Regex, string)>> nameRules = [];
     string includeDirectoryName = "", commonBindingsNamespace = "", bindingsMethodsClass = "NativeMethods";
     string commonManagedNamespace = "";
-    string resultType = "", resultOk = "", resultManagedType = "", resultHelperClass = "";
+    string resultType = "", resultOk = "", resultManagedType = "", resultFailure = "";
     readonly Dictionary<string, Dictionary<string, string>> typeMap = [];
 
     /// <summary>
@@ -52,9 +52,9 @@ public sealed class ConventionBuilder
     /// means success, the managed type the bindings declare for it, and the class that turns a code
     /// into an exception, the last two fully qualified.
     /// </summary>
-    public ConventionBuilder Result(string cType, string ok, string managedType, string helperClass)
+    public ConventionBuilder Result(string cType, string ok, string managedType, string failure)
     {
-        (resultType, resultOk, resultManagedType, resultHelperClass) = (cType, ok, managedType, helperClass);
+        (resultType, resultOk, resultManagedType, resultFailure) = (cType, ok, managedType, failure);
         return this;
     }
 
@@ -83,7 +83,7 @@ public sealed class ConventionBuilder
         ResultType = resultType,
         ResultOk = resultOk,
         ResultManagedType = resultManagedType,
-        ResultHelperClass = resultHelperClass,
+        ResultFailure = resultFailure,
         TypeMap = typeMap.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(kv.Value)),
     };
 }

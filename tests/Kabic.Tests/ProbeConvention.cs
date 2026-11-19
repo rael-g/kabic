@@ -13,7 +13,7 @@ internal static class ProbeConvention
         .Symbols("ke_")
         .Bindings("kernel_engine", "KernelEngine.Common.Native")
         .Managed("KernelEngine.Common")
-        .Result("ke_result", "KE_OK", "KernelEngine.Result.Native.ke_result", "KernelEngine.NativeResults")
+        .Result("ke_result", "KE_OK", "KernelEngine.Result.Native.ke_result", "KE_RESULT_GENERAL")
         .AddType(Languages.CSharp, "ke_mesh_handle", "KernelEngine.Render.MeshHandle")
         .AddType(Languages.CSharp, "ke_material_handle", "KernelEngine.Render.MaterialHandle")
         .AddType(Languages.CSharp, "ke_texture_handle", "KernelEngine.Render.TextureHandle")

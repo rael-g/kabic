@@ -11,7 +11,7 @@ try
     Sqlite.Sqlite.Exec(db, "not sql", null);
     throw new InvalidOperationException("no failure");
 }
-catch (SqliteException)
+catch (System.Runtime.InteropServices.ExternalException)
 {
     Console.WriteLine(Sqlite.Sqlite.Errmsg(db));
 }

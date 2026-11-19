@@ -34,7 +34,7 @@ internal static class GeneratorShapeCases
         Expect("a slot returning the result code throws on a code other than success",
             Vtable("ke_probe", Slot("flush", "ke_result", Param("force", "bool"))),
             contains: ["public void Flush(bool force)",
-                       "KernelEngine.NativeResults.ThrowIfFailed(Handle->flush(Handle, force), \"flush\");"],
+                       "NativeResult.ThrowIfFailed(Handle->flush(Handle, force), \"flush\");"],
             absent: ["&err", "ke_error"]);
 
         Expect("a slot returning the result code hands its single out parameter back as the return",
@@ -42,7 +42,7 @@ internal static class GeneratorShapeCases
                 ParamDoc("out_count", "uint32_t *", "out", "How many there are."))),
             contains: ["public uint CountOf(uint kind)",
                        "uint resultOut = default;",
-                       "KernelEngine.NativeResults.ThrowIfFailed(Handle->count_of(Handle, kind, &resultOut), \"count_of\");",
+                       "NativeResult.ThrowIfFailed(Handle->count_of(Handle, kind, &resultOut), \"count_of\");",
                        "return resultOut;", "<returns>How many there are.</returns>"],
             absent: ["&err", "out uint count"]);
 
@@ -96,7 +96,7 @@ internal static class GeneratorShapeCases
                 Slot("bind", "ke_result", Param("entity", "ke_entity"),
                      Param("instance", "void *", "rooted:entity")),
                 Slot("drop", "ke_result", "unroots:entity", Param("entity", "ke_entity"))),
-            contains: ["KernelEngine.NativeResults.ThrowIfFailed(Handle->drop(Handle, entity), \"drop\");\n"
+            contains: ["NativeResult.ThrowIfFailed(Handle->drop(Handle, entity), \"drop\");\n"
                        + "        if (_rooted.TryRemove(entity, out var freed)) freed.Free();"],
             absent: []);
 
@@ -146,7 +146,7 @@ internal static class GeneratorShapeCases
             contains: ["public void Attach<TData>(ulong entity, in TData data) where TData : unmanaged",
                        "fixed (TData* dataPtr = &data)",
                        "(void*)dataPtr, (nuint)sizeof(TData))",
-                       "KernelEngine.NativeResults.ThrowIfFailed("],
+                       "NativeResult.ThrowIfFailed("],
             absent: ["public void Attach(ulong"]);
 
         Expect("a typed pointer tagged as an opaque payload is refused",
@@ -269,7 +269,7 @@ internal static class GeneratorShapeCases
                        "private readonly Dictionary<uint, GCHandle> _retainedApply = new();",
                        "public void RegisterApply(uint cid, ProbeApply? apply)",
                        "private static KernelEngine.Result.Native.ke_result RegisterApplyTrampoline(void* ctx, uint arg1)",
-                       "return KernelEngine.NativeResults.ToCode(ex);",
+                       "return NativeResult.ToCode(ex);",
                        "if (_retainedApply.Remove(cid, out var replacedApply)) replacedApply.Free();",
                        "_retainedApply[cid] = applyHandle;",
                        "foreach (var retained in _retainedApply.Values) retained.Free();"],
@@ -335,7 +335,7 @@ internal static class GeneratorShapeCases
                        "private static KernelEngine.Result.Native.ke_result RegisterJobTrampoline(",
                        "(delegate* unmanaged[Cdecl]<void*, float, KernelEngine.Result.Native.ke_result>)&RegisterJobTrampoline",
                        "return KernelEngine.Result.Native.ke_result.KE_OK;",
-                       "return KernelEngine.NativeResults.ToCode(ex);"],
+                       "return NativeResult.ToCode(ex);"],
             absent: ["&err", "ke_error"],
             aliases: new() { ["ke_probe_job_fn"] = "ke_result (*)(void *, float)" },
             callbacks: [Callback("ke_probe_job_fn", "ke_result",
@@ -593,7 +593,7 @@ internal static class GeneratorShapeCases
             contains: ["public global::System.Threading.Tasks.Task<Bundle> OpenAsync(INativeProbe self, string path)",
                        "private static void OpenAsyncOnDoneTrampoline(KernelEngine.Result.Native.ke_result arg0, ke_probe_bundle* arg1, void* ctx)",
                        "if (arg0 != KernelEngine.Result.Native.ke_result.KE_OK || arg1 == null)",
-                       "state.Source.TrySetException(KernelEngine.NativeResults.FromCode(arg0, \"open_async\"));"],
+                       "state.Source.TrySetException(NativeResult.FromCode(arg0, \"open_async\"));"],
             absent: ["ke_error"],
             structs: [ViewJson("ke_probe_bundle")],
             aliases: new() { ["ke_probe_done_func"] = "void (*)(ke_result, ke_probe_bundle *, void *)" },

@@ -361,6 +361,8 @@ public sealed class FactoriesExtension : IKabicExtension
         o.Append($"namespace {f.ManagedNamespace};\n\n");
         o.Append($"/// <summary>{Xml(f.Function.Doc)}</summary>\n");
         o.Append($"public sealed unsafe partial class {f.ClassName}{(f.Contract is null ? " : IDisposable" : $" : {f.ContractClass}")}\n{{\n");
+        foreach (var line in convention.ResultHelperLines()) o.Append(line).Append('\n');
+        o.Append('\n');
         var handle = HandleTypeName(f);
         var created = CreatedType(f);
         var holds = string.Concat(f.Arguments.Where(a => a.IsRequiredProvider || a.IsOptionalProvider)
@@ -426,7 +428,7 @@ public sealed class FactoriesExtension : IKabicExtension
             o.Append($"{pad}{output.ManagedType} {Idioms.Ident(output.Property)} = default;\n");
         var call = f.Arguments.Select(a => a.Bundle is { } b ? $"&{b.Local}" : a.Assign).Distinct()
             .Concat(f.Outputs.Select(output => $"{output.NativeCast}&{Idioms.Ident(output.Property)}")).Append("&handle");
-        o.Append($"{pad}{convention.ResultHelperClass}.ThrowIfFailed({f.Job.Namespace}.{f.Job.MethodsClass}.{convention.StripPrefix(f.Function.Name)}({string.Join(", ", call)}), \"{f.Function.Name}\");\n");
+        o.Append($"{pad}{Convention.ResultHelperClass}.ThrowIfFailed({f.Job.Namespace}.{f.Job.MethodsClass}.{convention.StripPrefix(f.Function.Name)}({string.Join(", ", call)}), \"{f.Function.Name}\");\n");
         o.Append(f.Outputs.Count == 0 ? $"{pad}return handle;\n" : $"{pad}return (handle, {string.Join(", ", f.Outputs.Select(output => Idioms.Ident(output.Property)))});\n");
         if (strings) o.Append("        }\n");
         o.Append("    }\n}\n");

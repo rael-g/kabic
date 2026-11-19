@@ -37,10 +37,41 @@ public sealed class Convention
     public string ResultManagedType { get; init; } = "";
 
     /// <summary>
-    /// The fully qualified managed class that turns a code into an exception
-    /// (<c>ThrowIfFailed</c>, <c>FromCode</c>).
+    /// The constant of <see cref="ResultType"/> a managed failure reports to native code when the
+    /// exception carries no code of its own.
     /// </summary>
-    public string ResultHelperClass { get; init; } = "";
+    public string ResultFailure { get; init; } = "";
+
+    /// <summary><see cref="ResultFailure"/> spelled as a managed expression.</summary>
+    public string ResultFailureValue => ResultFailure.Length > 0 && (char.IsDigit(ResultFailure[0]) || ResultFailure[0] == '-') ? ResultFailure : $"{ResultManagedType}.{ResultFailure}";
+
+    /// <summary>
+    /// The private class every generated class that makes a fallible call declares, turning a code
+    /// into a <see cref="System.Runtime.InteropServices.ExternalException"/> that carries it and back.
+    /// </summary>
+    public const string ResultHelperClass = "NativeResult";
+
+    /// <summary>The declaration of <see cref="ResultHelperClass"/>, indented as a member of a class.</summary>
+    public IEnumerable<string> ResultHelperLines()
+    {
+        if (ResultManagedType.Length == 0) yield break;
+        var t = ResultManagedType;
+        yield return "";
+        yield return "    /// <summary>Turns a result code into the exception that carries it, and back.</summary>";
+        yield return $"    private static class {ResultHelperClass}";
+        yield return "    {";
+        yield return $"        public static void ThrowIfFailed({t} code, string call)";
+        yield return "        {";
+        yield return $"            if (code != {ResultOkValue}) throw FromCode(code, call);";
+        yield return "        }";
+        yield return "";
+        yield return $"        public static global::System.Exception FromCode({t} code, string call) =>";
+        yield return $"            new global::System.Runtime.InteropServices.ExternalException($\"{{call}} failed with {{code}}\", unchecked((int)code));";
+        yield return "";
+        yield return $"        public static {t} ToCode(global::System.Exception exception) =>";
+        yield return $"            exception is global::System.Runtime.InteropServices.ExternalException native ? unchecked(({t})native.ErrorCode) : {ResultFailureValue};";
+        yield return "    }";
+    }
 
 
 
@@ -131,7 +162,7 @@ public sealed class Convention
             .Managed(Text(json, "commonManagedNamespace"));
         if (json["resultType"] is not null)
             builder.Result(Text(json, "resultType"), Text(json, "resultOk"), Text(json, "resultManagedType"),
-                Text(json, "resultHelperClass"));
+                Text(json, "resultFailure"));
 
         foreach (var (language, rules) in json["names"]?.AsObject() ?? [])
             foreach (var rule in rules!.AsArray())

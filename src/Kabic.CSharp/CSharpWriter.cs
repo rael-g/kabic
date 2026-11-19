@@ -1369,6 +1369,7 @@ public static class CSharpWriter
         o.Add($"public unsafe partial class {typeName} : IDisposable, {nativeIface}"
             + (domainIface is null ? "" : $", {domainIface}"));
         o.Add("{");
+        o.AddRange(convention.ResultHelperLines());
         o.Add($"    private {vtable.Name}* _native;");
         o.Add($"    private readonly {vtable.Name}* _owned;");
         o.Add($"    private readonly delegate* unmanaged[Cdecl]<{vtable.Name}*, void> _destroy;");
@@ -1461,7 +1462,7 @@ public static class CSharpWriter
             : vtable.Slots.FirstOrDefault(sl => sl.Name == initSlot)?.Returns;
         var initCall = initSlot is null ? null
             : initSlotReturns is not null && convention.ReturnsResult(initSlotReturns)
-                ? $"        {convention.ResultHelperClass}.ThrowIfFailed(_native->{initSlot}(_native), \"{initSlot}\");"
+                ? $"        {Convention.ResultHelperClass}.ThrowIfFailed(_native->{initSlot}(_native), \"{initSlot}\");"
                 : throw new InvalidOperationException(
                     $"{vtable.Name}.{initSlot}: a startup lifecycle hook returns {convention.ResultType}, and this one returns {initSlotReturns}");
 
@@ -1682,13 +1683,13 @@ public static class CSharpWriter
 
         public string DeclareForCheck => $"{C.ResultManagedType} rc;";
 
-        public string ThrowIfFailed(string call) => $"{C.ResultHelperClass}.ThrowIfFailed({call}, \"{Context}\");";
+        public string ThrowIfFailed(string call) => $"{Convention.ResultHelperClass}.ThrowIfFailed({call}, \"{Context}\");";
 
         public string Ok(string call) => $"(rc = {call}) == {C.ResultOkValue}";
 
         public string Failed(string call) => $"(rc = {call}) != {C.ResultOkValue}";
 
-        public string Exception => $"{C.ResultHelperClass}.FromCode(rc, \"{Context}\")";
+        public string Exception => $"{Convention.ResultHelperClass}.FromCode(rc, \"{Context}\")";
     }
 
     /// <summary>Whether a C type spells a boolean.</summary>
@@ -2071,7 +2072,7 @@ public static class CSharpWriter
     /// </summary>
     static void RenderRaisedFailures(List<string> o, Convention convention)
     {
-        var check = System.Text.RegularExpressions.Regex.Escape(convention.ResultHelperClass + ".ThrowIfFailed(");
+        var check = System.Text.RegularExpressions.Regex.Escape(Convention.ResultHelperClass + ".ThrowIfFailed(");
         for (var i = 0; i < o.Count; i++)
             o[i] = System.Text.RegularExpressions.Regex.Replace(o[i], "(" + check + @")(Handle->.*)(, ""[^""]*""\);)$", "$1DrainRaised($2)$3");
         var end = o.FindLastIndex(l => l == "}");
@@ -2127,7 +2128,7 @@ public static class CSharpWriter
             o.Add($"                handler({args});");
             o.Add($"                return {convention.ResultOkValue};");
             o.Add("            }");
-            o.Add($"            return {convention.ResultHelperClass}.ToCode(new InvalidOperationException(\"{pair.Callback.Name}: no handler is registered\"));");
+            o.Add($"            return {Convention.ResultHelperClass}.ToCode(new InvalidOperationException(\"{pair.Callback.Name}: no handler is registered\"));");
         }
         else if (returns && !handlerAnswers)
         {
@@ -2145,7 +2146,7 @@ public static class CSharpWriter
         if (byResult)
         {
             o.Add(pair.Lifetime != ClosureLifetime.Retained ? "            s_parkedCallbackException ??= ex;" : "            s_raisedCallbackFailures.Enqueue(ex);");
-            o.Add($"            return {convention.ResultHelperClass}.ToCode(ex);");
+            o.Add($"            return {Convention.ResultHelperClass}.ToCode(ex);");
         }
         else
         {
@@ -2190,7 +2191,7 @@ public static class CSharpWriter
             : $"{BlittableLane(model, l.Type, convention)} arg{i}");
         var err = $"arg{completion.CodeLane}";
         var errFailed = $"{err} != {convention.ResultOkValue}";
-        var errException = $"{convention.ResultHelperClass}.FromCode({err}, \"{slot.Name}\")";
+        var errException = $"{Convention.ResultHelperClass}.FromCode({err}, \"{slot.Name}\")";
 
         string Answer()
         {
@@ -3018,6 +3019,7 @@ public static class CSharpWriter
         var closures = VtableClosures(model, classified.Functions, convention);
         foreach (var cb in closures.DistinctBy(c => c.Delegate)) RenderClosureDelegate(model, o, cb, typeName, convention);
         o.AddRange(["/// <summary>The functions of the domain.</summary>", $"public static unsafe partial class {typeName}", "{"]);
+        o.AddRange(convention.ResultHelperLines());
         if (closures.Count > 0) o.AddRange(["    [ThreadStatic]", "    private static Exception? s_parkedCallbackException;", ""]);
         foreach (var cs in classified.Functions)
         {

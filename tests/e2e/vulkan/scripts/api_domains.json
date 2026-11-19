@@ -6,7 +6,7 @@
   "resultType": "VkResult",
   "resultOk": "VkSuccess",
   "resultManagedType": "global::Vulkan.Native.VkResult",
-  "resultHelperClass": "global::Vulkan.Results",
+  "resultFailure": "VkErrorUnknown",
   "names": {
    "csharp": []
   }
